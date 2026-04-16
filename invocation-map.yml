@@ -1,0 +1,12 @@
+invocation_map:
+  skill_activation:
+    skill_prefix: "$"
+  subagent_spawn:
+    delegation_label: "Delegate to subagent"
+  task_register:
+    tools:
+      pending: nx_task_add
+      in_progress: nx_task_update
+      completed: nx_task_update
+  user_question:
+    style: prose

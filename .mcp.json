@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "nx": {
+      "command": "bun",
+      "args": [
+        "./dist/mcp/server.js"
+      ]
+    }
+  }
+}
