@@ -69,25 +69,36 @@ async function writeSubagentTranscript(config: {
 
   const lines = [sessionMetaLine];
   if (config.touchedPaths && config.touchedPaths.length > 0) {
-    const changes = Object.fromEntries(
-      config.touchedPaths.map((filePath) => [
-        filePath,
-        {
-          type: "update",
-          unified_diff: "@@ -1 +1 @@",
-          move_path: null
-        }
-      ])
-    );
+    const patchLines = ["*** Begin Patch"];
+    for (const filePath of config.touchedPaths) {
+      patchLines.push(`*** Update File: ${filePath}`);
+      patchLines.push("@@ -1 +1 @@");
+    }
+    patchLines.push("*** End Patch");
+
     lines.push(JSON.stringify({
       timestamp: "2026-04-16T12:00:05.000Z",
-      type: "event_msg",
+      type: "response_item",
       payload: {
-        type: "patch_apply_end",
+        type: "function_call",
+        name: "exec_command",
+        call_id: "exec-command-1",
+        arguments: JSON.stringify({
+          cmd: "pwd",
+          workdir: config.dir
+        }),
+        status: "completed"
+      }
+    }));
+    lines.push(JSON.stringify({
+      timestamp: "2026-04-16T12:00:06.000Z",
+      type: "response_item",
+      payload: {
+        type: "custom_tool_call",
+        name: "apply_patch",
         call_id: "apply-patch-1",
-        success: true,
         status: "completed",
-        changes
+        input: patchLines.join("\n")
       }
     }));
   }
@@ -126,6 +137,19 @@ const userPromptSubmitOutputSchema = hookUniversalSchema.extend({
   }
 });
 
+const agentTrackerEntrySchema = z.object({
+  harness_id: z.string(),
+  agent_name: z.string().optional(),
+  agent_id: z.string().optional(),
+  started_at: z.string(),
+  last_resumed_at: z.string().optional(),
+  resume_count: z.number().optional(),
+  status: z.enum(["running", "completed"]).optional(),
+  stopped_at: z.string().optional(),
+  last_message: z.string().optional(),
+  files_touched: z.array(z.string()).optional()
+}).strict();
+
 describe("codex-native-hook", () => {
   test("emits valid SessionStart hook output and bootstraps nexus state", async () => {
     const tempDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-hook-"));
@@ -144,7 +168,7 @@ describe("codex-native-hook", () => {
       expect(
         JSON.parse(readFileSync(path.join(tempDir, ".nexus", "state", "codex-nexus", "agent-tracker.json"), "utf8"))
       ).toEqual([]);
-      expect(readFileSync(path.join(tempDir, ".nexus", "state", "tool-log.jsonl"), "utf8")).toBe("");
+      expect(readFileSync(path.join(tempDir, ".nexus", "state", "codex-nexus", "tool-log.jsonl"), "utf8")).toBe("");
       expect(existsSync(path.join(tempDir, ".gitignore"))).toBe(true);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
@@ -155,7 +179,7 @@ describe("codex-native-hook", () => {
     const tempDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-hook-reset-"));
     try {
       const trackerPath = path.join(tempDir, ".nexus", "state", "codex-nexus", "agent-tracker.json");
-      const toolLogPath = path.join(tempDir, ".nexus", "state", "tool-log.jsonl");
+      const toolLogPath = path.join(tempDir, ".nexus", "state", "codex-nexus", "tool-log.jsonl");
 
       await runHook({
         hook_event_name: "SessionStart",
@@ -196,21 +220,19 @@ describe("codex-native-hook", () => {
         transcript_path: transcriptPath
       });
 
-      const tracker = JSON.parse(
+      const tracker = z.array(agentTrackerEntrySchema).parse(JSON.parse(
         readFileSync(path.join(tempDir, ".nexus", "state", "codex-nexus", "agent-tracker.json"), "utf8")
-      ) as Array<Record<string, unknown>>;
+      ));
 
       expect(tracker).toHaveLength(1);
       expect(tracker[0]).toMatchObject({
+        harness_id: "codex-nexus",
         agent_name: "researcher",
         agent_id: sessionId,
-        session_id: sessionId,
-        parent_session_id: "parent-session-1",
-        agent_nickname: "Russell",
-        agent_path: "researcher/1",
-        status: "started",
-        source: "subagent_thread_spawn"
+        status: "running",
+        last_message: "Subagent session started."
       });
+      expect(tracker[0].started_at.length).toBeGreaterThan(0);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
@@ -220,7 +242,7 @@ describe("codex-native-hook", () => {
     const tempDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-hook-subagent-reset-"));
     try {
       const trackerPath = path.join(tempDir, ".nexus", "state", "codex-nexus", "agent-tracker.json");
-      const toolLogPath = path.join(tempDir, ".nexus", "state", "tool-log.jsonl");
+      const toolLogPath = path.join(tempDir, ".nexus", "state", "codex-nexus", "tool-log.jsonl");
 
       await runHook({
         hook_event_name: "SessionStart",
@@ -246,13 +268,13 @@ describe("codex-native-hook", () => {
         transcript_path: transcriptPath
       });
 
-      const tracker = JSON.parse(readFileSync(trackerPath, "utf8")) as Array<Record<string, unknown>>;
+      const tracker = z.array(agentTrackerEntrySchema).parse(JSON.parse(readFileSync(trackerPath, "utf8")));
       expect(tracker).toHaveLength(2);
       expect(tracker[0]).toMatchObject({ agent_name: "existing-agent" });
       expect(tracker[1]).toMatchObject({
         agent_name: "researcher",
-        session_id: sessionId,
-        status: "started"
+        agent_id: sessionId,
+        status: "running"
       });
       expect(readFileSync(toolLogPath, "utf8")).toContain("/tmp/existing.txt");
     } finally {
@@ -264,7 +286,7 @@ describe("codex-native-hook", () => {
     const tempDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-hook-subagent-stop-"));
     try {
       const trackerPath = path.join(tempDir, ".nexus", "state", "codex-nexus", "agent-tracker.json");
-      const toolLogPath = path.join(tempDir, ".nexus", "state", "tool-log.jsonl");
+      const toolLogPath = path.join(tempDir, ".nexus", "state", "codex-nexus", "tool-log.jsonl");
       const touchedPaths = [
         path.join(tempDir, "src", "alpha.ts"),
         path.join(tempDir, "src", "beta.ts")
@@ -292,6 +314,37 @@ describe("codex-native-hook", () => {
         transcript_path: transcriptPath
       });
 
+      const postToolPatch = [
+        "*** Begin Patch",
+        ...touchedPaths.flatMap((filePath) => [
+          `*** Update File: ${filePath}`,
+          "@@ -1 +1 @@"
+        ]),
+        "*** End Patch"
+      ].join("\n");
+      const postToolUseResult = await runHookProcess(JSON.stringify({
+        hook_event_name: "PostToolUse",
+        cwd: tempDir,
+        session_id: sessionId,
+        tool_name: "apply_patch",
+        tool_call_id: "apply-patch-1",
+        timestamp: "2026-04-16T12:00:06.000Z",
+        tool_input: {
+          input: postToolPatch
+        },
+        tool_response: {
+          status: "completed"
+        }
+      }));
+      expect(postToolUseResult.code).toBe(0);
+      expect(postToolUseResult.stdout).toBe("");
+      const preStopToolLogEntries = readFileSync(toolLogPath, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+      expect(preStopToolLogEntries).toHaveLength(2);
+      expect(preStopToolLogEntries.map((entry) => entry.path).sort()).toEqual([...touchedPaths].sort());
+
       const result = await runHookProcess(JSON.stringify({
         hook_event_name: "Stop",
         cwd: tempDir,
@@ -303,11 +356,11 @@ describe("codex-native-hook", () => {
       expect(result.stdout).toBe("");
       expect(existsSync(trackerPath)).toBe(true);
 
-      const tracker = JSON.parse(readFileSync(trackerPath, "utf8")) as Array<Record<string, unknown>>;
+      const tracker = z.array(agentTrackerEntrySchema).parse(JSON.parse(readFileSync(trackerPath, "utf8")));
       expect(tracker).toHaveLength(1);
       expect(tracker[0]).toMatchObject({
         agent_name: "researcher",
-        session_id: sessionId,
+        agent_id: sessionId,
         status: "completed"
       });
       const filesTouched = Array.isArray(tracker[0].files_touched)
@@ -355,7 +408,7 @@ describe("codex-native-hook", () => {
   test("does not log plain Bash activity to tool-log", async () => {
     const tempDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-hook-bash-log-"));
     try {
-      const toolLogPath = path.join(tempDir, ".nexus", "state", "tool-log.jsonl");
+      const toolLogPath = path.join(tempDir, ".nexus", "state", "codex-nexus", "tool-log.jsonl");
 
       await runHook({
         hook_event_name: "SessionStart",

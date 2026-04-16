@@ -136,12 +136,16 @@ export function registerPlanTools(server: McpServer): void {
 
       const tracker = await readAgentTracker(paths.AGENT_TRACKER_FILE);
       const followupReady = tracker.invocations
-        .filter((entry) => ["architect", "designer", "postdoc", "strategist"].includes(entry.agent_name))
+        .filter(
+          (entry): entry is typeof entry & { agent_name: string } =>
+            typeof entry.agent_name === "string" &&
+            ["architect", "designer", "postdoc", "strategist"].includes(entry.agent_name)
+        )
         .map((entry) => ({
           role: entry.agent_name,
-          task_id: entry.task_id ?? null,
-          session_id: entry.session_id ?? null,
-          last_summary: entry.last_summary ?? null
+          task_id: null,
+          session_id: entry.agent_id ?? null,
+          last_summary: entry.last_message ?? null
         }));
 
       return textResult({
@@ -152,7 +156,7 @@ export function registerPlanTools(server: McpServer): void {
         research_summary: plan.research_summary,
         summary: summarize(plan),
         current_issue: currentIssue(plan),
-        followup_ready_roles: followupReady.filter((entry) => entry.task_id || entry.session_id || entry.last_summary)
+        followup_ready_roles: followupReady.filter((entry) => entry.session_id || entry.last_summary)
       });
     }
   );
@@ -178,11 +182,11 @@ export function registerPlanTools(server: McpServer): void {
 
       return textResult({
         role,
-        resumable: Boolean(participant.task_id || participant.session_id),
-        task_id: participant.task_id ?? null,
-        session_id: participant.session_id ?? null,
-        last_summary: participant.last_summary ?? null,
-        recommendation: participant.session_id
+        resumable: Boolean(participant.agent_id),
+        task_id: null,
+        session_id: participant.agent_id ?? null,
+        last_summary: participant.last_message ?? null,
+        recommendation: participant.agent_id
           ? `Resume the existing ${role} participant and continue: ${question ?? "follow up on the current issue."}`
           : `Rehydrate a fresh ${role} participant from the last summary and continue: ${question ?? "follow up on the current issue."}`
       });
@@ -212,12 +216,12 @@ export function registerPlanTools(server: McpServer): void {
         issue,
         delegation: {
           subagent_type: role,
-          resume_task_id: participant?.task_id ?? null,
-          resume_session_id: participant?.session_id ?? null,
-          prompt: participant?.session_id
+          resume_task_id: null,
+          resume_session_id: participant?.agent_id ?? null,
+          prompt: participant?.agent_id
             ? `Resume the existing ${role} participant and continue this follow-up: ${question}`
             : `Spawn a ${role} participant and continue this follow-up: ${question}`,
-          briefing_seed: participant?.last_summary ?? null
+          briefing_seed: participant?.last_message ?? null
         }
       });
     }

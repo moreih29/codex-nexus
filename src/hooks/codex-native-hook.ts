@@ -1,5 +1,10 @@
-import { createNexusPaths, ensureProjectGitignore, findProjectRoot } from "../shared/paths.js";
-import { readSubagentSessionInfo, readTranscriptToolLogEntries, type CodexSubagentSessionInfo } from "../shared/codex-session.js";
+import { HARNESS_ID, createNexusPaths, ensureProjectGitignore, findProjectRoot } from "../shared/paths.js";
+import {
+  readApplyPatchPathsFromInput,
+  readSubagentSessionInfo,
+  readTranscriptToolLogEntries,
+  type CodexSubagentSessionInfo
+} from "../shared/codex-session.js";
 import {
   appendToolLogEntries,
   collectFilesTouchedFromToolLog,
@@ -51,6 +56,35 @@ function readSessionId(payload: HookPayload): string {
 function readTranscriptPath(payload: HookPayload): string | null {
   const value = safeString(payload.transcript_path ?? payload.transcriptPath).trim();
   return value.length > 0 ? value : null;
+}
+
+function readToolName(payload: HookPayload): string {
+  return safeString(payload.tool_name ?? payload.toolName ?? payload.name).trim();
+}
+
+function readToolCallId(payload: HookPayload): string | undefined {
+  const value = safeString(
+    payload.tool_call_id ??
+    payload.toolCallId ??
+    payload.call_id ??
+    payload.callId
+  ).trim();
+  return value.length > 0 ? value : undefined;
+}
+
+function readEventTimestamp(payload: HookPayload): string {
+  const value = safeString(payload.timestamp ?? payload.ts).trim();
+  return value.length > 0 ? value : new Date().toISOString();
+}
+
+function readToolStatus(payload: HookPayload): string {
+  const response = safeObject(payload.tool_response ?? payload.toolResponse);
+  const explicit = safeString(response.status ?? payload.status).trim();
+  if (explicit.length > 0) return explicit;
+  if ((response.success ?? payload.success) === false) return "failed";
+  const exitCode = response.exit_code ?? response.exitCode;
+  if (typeof exitCode === "number" && exitCode !== 0) return "failed";
+  return "completed";
 }
 
 function buildAdditionalContext(eventName: HookEventName, message: string): Record<string, unknown> {
@@ -119,24 +153,22 @@ async function readSubagentFromPayload(payload: HookPayload): Promise<CodexSubag
 async function syncKnownSubagentTracker(
   paths: ReturnType<typeof createNexusPaths>,
   subagent: CodexSubagentSessionInfo | null,
-  status: string,
+  status: "running" | "completed",
   filesTouched?: string[]
 ): Promise<void> {
   if (!subagent) return;
+  const now = new Date().toISOString();
   await upsertAgentTrackerEntry(paths.AGENT_TRACKER_FILE, {
-    agent_name: subagent.agentRole ?? subagent.agentNickname ?? "subagent",
+    harness_id: HARNESS_ID,
+    started_at: now,
+    agent_name: subagent.agentRole ?? "subagent",
     agent_id: subagent.sessionId,
-    session_id: subagent.sessionId,
-    parent_session_id: subagent.parentSessionId,
     status,
-    last_summary: status === "completed"
+    stopped_at: status === "completed" ? now : undefined,
+    last_message: status === "completed"
       ? "Subagent session completed."
       : "Subagent session started.",
-    files_touched: filesTouched,
-    agent_nickname: subagent.agentNickname,
-    agent_path: subagent.agentPath ?? null,
-    transcript_path: subagent.transcriptPath ?? null,
-    source: "subagent_thread_spawn"
+    files_touched: filesTouched
   });
 }
 
@@ -154,13 +186,34 @@ async function syncTranscriptToolLog(
   return collectFilesTouchedFromToolLog(paths.TOOL_LOG_FILE, sessionId);
 }
 
+async function appendApplyPatchToolLogFromPostToolUse(
+  paths: ReturnType<typeof createNexusPaths>,
+  payload: HookPayload
+): Promise<void> {
+  if (readToolName(payload).toLowerCase() !== "apply_patch") return;
+  const toolInput = payload.tool_input ?? payload.toolInput;
+  const touchedPaths = readApplyPatchPathsFromInput(toolInput);
+  if (touchedPaths.length === 0) return;
+
+  const sessionId = readSessionId(payload);
+  const entries = touchedPaths.map((touchedPath) => ({
+    ts: readEventTimestamp(payload),
+    session_id: sessionId || undefined,
+    tool_name: "apply_patch",
+    call_id: readToolCallId(payload),
+    path: touchedPath,
+    status: readToolStatus(payload)
+  }));
+  await appendToolLogEntries(paths.TOOL_LOG_FILE, entries);
+}
+
 async function handleSessionStart(cwd: string, payload: HookPayload): Promise<Record<string, unknown> | null> {
   const paths = createNexusPaths(cwd);
   await ensureNexusStructure(paths);
   await ensureProjectGitignore(cwd);
   const subagent = await readSubagentFromPayload(payload);
   if (subagent) {
-    await syncKnownSubagentTracker(paths, subagent, "started");
+    await syncKnownSubagentTracker(paths, subagent, "running");
   } else {
     await resetSessionScopedState(paths);
   }
@@ -202,11 +255,15 @@ async function handlePreToolUse(cwd: string, payload: HookPayload): Promise<Reco
   return null;
 }
 
-async function handlePostToolUse(_cwd: string, payload: HookPayload): Promise<Record<string, unknown> | null> {
+async function handlePostToolUse(cwd: string, payload: HookPayload): Promise<Record<string, unknown> | null> {
+  const paths = createNexusPaths(cwd);
+  await appendApplyPatchToolLogFromPostToolUse(paths, payload);
+
+  if (readToolName(payload).toLowerCase() !== "bash") return null;
   const command = readCommand(payload);
   if (!command) return null;
 
-  const response = safeObject(payload.tool_response);
+  const response = safeObject(payload.tool_response ?? payload.toolResponse);
   const exitCode = response.exit_code ?? response.exitCode;
   const stderr = safeString(response.stderr);
   const stdout = safeString(response.stdout);

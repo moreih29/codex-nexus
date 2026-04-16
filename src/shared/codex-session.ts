@@ -52,6 +52,79 @@ function safeBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
 
+function resolveToolStatus(payload: Record<string, unknown> | null | undefined): string {
+  if (!payload) return "completed";
+  return safeString(payload.status)
+    ?? (safeBoolean(payload.success) === false ? "failed" : "completed");
+}
+
+function collectPatchPathsFromPatchText(patchText: string): string[] {
+  const paths: string[] = [];
+  for (const rawLine of patchText.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const fileMatch = line.match(/^\*\*\* (?:Update|Add|Delete) File:\s+(.+)$/);
+    if (fileMatch?.[1]) {
+      paths.push(fileMatch[1].trim());
+      continue;
+    }
+    const moveMatch = line.match(/^\*\*\* Move to:\s+(.+)$/);
+    if (moveMatch?.[1]) {
+      paths.push(moveMatch[1].trim());
+    }
+  }
+  return Array.from(new Set(paths.filter((item) => item.length > 0)));
+}
+
+function collectPatchPathsFromInput(value: unknown): string[] {
+  const text = safeString(value);
+  if (text) {
+    const directPaths = collectPatchPathsFromPatchText(text);
+    if (directPaths.length > 0) return directPaths;
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      const parsedPaths = collectPatchPathsFromInput(parsed);
+      if (parsedPaths.length > 0) return parsedPaths;
+    } catch {
+      // Ignore malformed JSON payloads and continue best-effort parsing.
+    }
+  }
+
+  const object = safeObject(value);
+  if (!object) return [];
+
+  const candidates = [
+    object.patch,
+    object.input,
+    object.arguments,
+    object.args,
+    object.content
+  ];
+  for (const candidate of candidates) {
+    const candidatePaths = collectPatchPathsFromInput(candidate);
+    if (candidatePaths.length > 0) return candidatePaths;
+  }
+  return [];
+}
+
+export function readApplyPatchPathsFromInput(value: unknown): string[] {
+  return collectPatchPathsFromInput(value);
+}
+
+function collectPatchPathsFromChanges(changes: Record<string, unknown>): string[] {
+  const paths: string[] = [];
+  for (const [filePath, changeValue] of Object.entries(changes)) {
+    if (filePath.trim().length > 0) {
+      paths.push(filePath);
+    }
+    const changeObject = safeObject(changeValue);
+    const movePath = safeString(changeObject?.move_path ?? changeObject?.movePath);
+    if (movePath) {
+      paths.push(movePath);
+    }
+  }
+  return Array.from(new Set(paths));
+}
+
 function defaultCodexHomeDir(): string {
   return process.env.CODEX_HOME ?? path.join(process.env.HOME ?? "~", ".codex");
 }
@@ -204,31 +277,65 @@ export async function readTranscriptToolLogEntries(options: {
     } catch {
       continue;
     }
-
-    if (parsed.type !== "event_msg") continue;
-
-    const payload = safeObject(parsed.payload);
-    if (safeString(payload?.type) !== "patch_apply_end") continue;
-
-    const callId = safeString(payload?.call_id);
-    const status = safeString(payload?.status)
-      ?? (safeBoolean(payload?.success) === false ? "failed" : "completed");
     const timestamp = safeString(parsed.timestamp) ?? new Date().toISOString();
-    const changes = safeObject(payload?.changes);
-    if (!changes) continue;
 
-    for (const [filePath, changeValue] of Object.entries(changes)) {
-      const paths = [filePath];
-      const movePath = safeString(safeObject(changeValue)?.move_path ?? safeObject(changeValue)?.movePath);
-      if (movePath) {
-        paths.push(movePath);
-      }
+    if (parsed.type === "event_msg") {
+      const payload = safeObject(parsed.payload);
+      if (safeString(payload?.type) !== "patch_apply_end") continue;
 
-      for (const touchedPath of paths) {
+      const callId = safeString(payload?.call_id ?? payload?.callId);
+      const status = resolveToolStatus(payload);
+      const changes = safeObject(payload?.changes);
+      if (!changes) continue;
+      const touchedPaths = collectPatchPathsFromChanges(changes);
+
+      for (const touchedPath of touchedPaths) {
         const entry: ToolLogEntry = {
           ts: timestamp,
           session_id: sessionId,
           tool_name: "apply_patch",
+          call_id: callId,
+          path: touchedPath,
+          status
+        };
+        const key = [
+          entry.session_id ?? "",
+          entry.call_id ?? "",
+          entry.tool_name,
+          entry.path,
+          entry.status ?? ""
+        ].join("\u0000");
+        if (seen.has(key)) continue;
+        seen.add(key);
+        entries.push(entry);
+      }
+      continue;
+    }
+
+    if (parsed.type === "response_item") {
+      const payload = safeObject(parsed.payload);
+      const item = safeObject(payload?.item) ?? payload;
+      const itemType = safeString(item?.type);
+      if (itemType !== "custom_tool_call" && itemType !== "function_call") continue;
+
+      const toolName = safeString(item?.name ?? item?.tool_name ?? item?.toolName);
+      if (toolName !== "apply_patch") continue;
+
+      const callId = safeString(item?.call_id ?? item?.callId ?? item?.id);
+      const status = resolveToolStatus(item);
+      const output = safeObject(item?.output);
+      const outputChanges = safeObject(output?.changes ?? item?.changes);
+      const touchedPathsFromInput = collectPatchPathsFromInput(item?.input ?? item?.arguments ?? item?.args);
+      const touchedPaths = touchedPathsFromInput.length > 0
+        ? touchedPathsFromInput
+        : (outputChanges ? collectPatchPathsFromChanges(outputChanges) : []);
+      if (touchedPaths.length === 0) continue;
+
+      for (const touchedPath of touchedPaths) {
+        const entry: ToolLogEntry = {
+          ts: timestamp,
+          session_id: sessionId,
+          tool_name: toolName,
           call_id: callId,
           path: touchedPath,
           status

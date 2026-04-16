@@ -32,4 +32,14 @@ describe("config merge", () => {
     expect(merged).toContain("[mcp_servers.nx]");
     expect(merged).toContain("/tmp/codex-nexus/dist/mcp/server.js");
   });
+
+  test("registers PostToolUse hook without Bash-only matcher", () => {
+    const merged = mergeManagedHooks(null, "/tmp/codex-nexus");
+    const parsed = JSON.parse(merged) as {
+      hooks: Record<string, Array<Record<string, unknown>>>;
+    };
+
+    expect(parsed.hooks.PreToolUse[0]?.matcher).toBe("Bash");
+    expect(parsed.hooks.PostToolUse[0]?.matcher).toBeUndefined();
+  });
 });

@@ -34,7 +34,7 @@ export function buildManagedHooks(packageRoot: string): Record<HookEventName, un
     SessionStart: [buildCommandEntry(command)],
     UserPromptSubmit: [buildCommandEntry(command)],
     PreToolUse: [buildCommandEntry(command, "Bash")],
-    PostToolUse: [buildCommandEntry(command, "Bash")],
+    PostToolUse: [buildCommandEntry(command)],
     Stop: [buildCommandEntry(command)]
   };
 }
