@@ -419,6 +419,25 @@
           "created_at": "2026-04-16T14:43:59.441Z"
         }
       ]
+    },
+    {
+      "completed_at": "2026-04-16T22:48:40.833Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Merge current branch into main and push origin/main",
+          "context": "브랜치 `fix/codex-hook-json`에서 작업 중이며 워킹트리는 깨끗하다. 원격은 `origin`이다.",
+          "deps": [],
+          "approach": "origin을 fetch한 뒤 local main으로 전환해 현재 브랜치를 merge하고, 문제가 없으면 origin main으로 push한다.",
+          "acceptance": "1) local main에 현재 브랜치 커밋이 포함된다. 2) origin/main에 푸시가 완료된다.",
+          "risk": "원격 main 선행 변경이나 merge conflict가 있을 수 있다.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-16T22:47:21.018Z"
+        }
+      ]
     }
   ]
 }
