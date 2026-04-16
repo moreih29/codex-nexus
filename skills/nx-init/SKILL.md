@@ -58,8 +58,12 @@ Show backup directory list, let user select backups to delete.
 ```
 IF --reset --cleanup flag:
   Show list of .nexus/bak.*/ directories
-  Prompt user with options via `Ask the user this question directly: Select a backup to delete (or cancel)
-Options: [<backup list...>, {label: Cancel, description: "Exit without changes"}]`.
+  Prompt user with options via `If request_user_input is available in the current mode, use it with one question:
+- header: Question
+- id: select_a_backup_to_delete_or
+- question: Select a backup to delete (or cancel)
+- options: [<backup list...>, {label: Cancel, description: "Exit without changes"}]
+If request_user_input is unavailable, ask the same question in prose and wait for the user's reply.`.
   Delete selected backup and exit
 
 ELSE IF --reset flag:
@@ -168,8 +172,12 @@ On completion: "context knowledge N files generated"
 Check whether team custom rules are needed.
 
 ```
-Ask the user this question directly: Do you want to set up development rules now?
-Options: [{label: "Set up", description: "Coding conventions, test policy, commit rules, etc."}, {label: Skip, description: "Can be added later via [rule] tag"}]
+If request_user_input is available in the current mode, use it with one question:
+- header: Question
+- id: do_you_want_to_set_up
+- question: Do you want to set up development rules now?
+- options: [{label: "Set up", description: "Coding conventions, test policy, commit rules, etc."}, {label: Skip, description: "Can be added later via [rule] tag"}]
+If request_user_input is unavailable, ask the same question in prose and wait for the user's reply.
 ```
 
 If "Set up": present a draft based on scan results → user confirms → save via the harness's file-creation primitive to `.nexus/rules/{topic}.md`.

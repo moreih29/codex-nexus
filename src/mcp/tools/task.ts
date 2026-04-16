@@ -2,7 +2,9 @@ import { existsSync, unlinkSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { textResult } from "../../shared/mcp-utils.js";
+import { agentHasCapability } from "../../agents/definitions.js";
+import { readSubagentSessionInfo, readTurnMetadataFromRequestMeta } from "../../shared/codex-session.js";
+import { textErrorResult, textResult } from "../../shared/mcp-utils.js";
 import { createNexusPaths, ensureDir, findProjectRoot } from "../../shared/paths.js";
 import { readPlan, type PlanFile } from "./plan.js";
 import type { TaskRecord, TasksFile } from "../../shared/tasks.js";
@@ -49,6 +51,54 @@ async function appendHistoryCycle(plan: PlanFile | null, tasks: TaskRecord[]): P
   return history.cycles.length;
 }
 
+export function getTaskCloseDeniedReason(requestMeta: unknown): string | null {
+  const turnMetadata = readTurnMetadataFromRequestMeta(requestMeta);
+  if (turnMetadata?.thread_source === "subagent") {
+    return "Subagents cannot call nx_task_close. Delegate cycle closure to the lead session.";
+  }
+  return null;
+}
+
+export function getTaskAddDeniedReason(requestMeta: unknown): string | null {
+  const turnMetadata = readTurnMetadataFromRequestMeta(requestMeta);
+  if (turnMetadata?.thread_source === "subagent") {
+    return "Subagents cannot call nx_task_add. The no_task_create capability requires delegating task creation to the lead session.";
+  }
+  return null;
+}
+
+export function getTaskUpdateDeniedReason(
+  requestMeta: unknown,
+  subagentRole: string | null
+): string | null {
+  const turnMetadata = readTurnMetadataFromRequestMeta(requestMeta);
+  if (turnMetadata?.thread_source !== "subagent") return null;
+  if (!subagentRole) return null;
+  if (!agentHasCapability(subagentRole, "no_task_update")) return null;
+  return `Subagent role "${subagentRole}" cannot call nx_task_update. The no_task_update capability requires delegating task status updates to the lead session.`;
+}
+
+async function readSubagentRoleFromRequestMeta(requestMeta: unknown): Promise<string | null> {
+  const turnMetadata = readTurnMetadataFromRequestMeta(requestMeta);
+  if (turnMetadata?.thread_source !== "subagent" || !turnMetadata.session_id) return null;
+  try {
+    const subagent = await readSubagentSessionInfo({ sessionId: turnMetadata.session_id });
+    return subagent?.agentRole ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function taskMutationDeniedError(requestMeta: unknown, deniedReason: string, subagentRole?: string | null) {
+  const turnMetadata = readTurnMetadataFromRequestMeta(requestMeta);
+  return textErrorResult({
+    error: deniedReason,
+    session_id: turnMetadata?.session_id ?? null,
+    thread_source: turnMetadata?.thread_source ?? null,
+    agent_role: subagentRole ?? null
+  });
+}
+
 export function registerTaskTools(server: McpServer): void {
   server.tool(
     "nx_task_list",
@@ -83,7 +133,12 @@ export function registerTaskTools(server: McpServer): void {
       owner_agent_id: z.string().optional(),
       owner_reuse_policy: z.enum(["fresh", "resume_if_same_artifact", "resume"]).optional()
     },
-    async (input) => {
+    async (input, extra) => {
+      const deniedReason = getTaskAddDeniedReason(extra._meta);
+      if (deniedReason) {
+        return taskMutationDeniedError(extra._meta, deniedReason);
+      }
+
       const data = (await readTasks()) ?? { goal: "", decisions: [], tasks: [] };
       if (input.goal) data.goal = input.goal;
       if (input.decisions) data.decisions = [...data.decisions, ...input.decisions];
@@ -118,7 +173,13 @@ export function registerTaskTools(server: McpServer): void {
       id: z.number(),
       status: z.enum(["pending", "in_progress", "completed"])
     },
-    async ({ id, status }) => {
+    async ({ id, status }, extra) => {
+      const subagentRole = await readSubagentRoleFromRequestMeta(extra._meta);
+      const deniedReason = getTaskUpdateDeniedReason(extra._meta, subagentRole);
+      if (deniedReason) {
+        return taskMutationDeniedError(extra._meta, deniedReason, subagentRole);
+      }
+
       const data = await readTasks();
       if (!data) return textResult({ error: "tasks.json not found" });
       const task = data.tasks.find((entry) => entry.id === id);
@@ -133,7 +194,12 @@ export function registerTaskTools(server: McpServer): void {
     "nx_task_close",
     "Archive the current cycle to history.json",
     {},
-    async () => {
+    async (_, extra) => {
+      const deniedReason = getTaskCloseDeniedReason(extra._meta);
+      if (deniedReason) {
+        return taskMutationDeniedError(extra._meta, deniedReason);
+      }
+
       const paths = createNexusPaths(findProjectRoot());
       const plan = await readPlan();
       const tasks = await readTasks();

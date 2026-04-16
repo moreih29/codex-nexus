@@ -1,8 +1,13 @@
-import { readFileSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { createNexusPaths, ensureDir, ensureProjectGitignore, findProjectRoot } from "../shared/paths.js";
-import { appendToolLog, ensureNexusStructure, upsertAgentTrackerEntry } from "../shared/state.js";
+import { createNexusPaths, ensureProjectGitignore, findProjectRoot } from "../shared/paths.js";
+import { readSubagentSessionInfo, readTranscriptToolLogEntries, type CodexSubagentSessionInfo } from "../shared/codex-session.js";
+import {
+  appendToolLogEntries,
+  collectFilesTouchedFromToolLog,
+  ensureNexusStructure,
+  removeAgentTracker,
+  resetSessionScopedState,
+  upsertAgentTrackerEntry
+} from "../shared/state.js";
 import { readTasksSummary } from "../shared/tasks.js";
 
 type HookPayload = Record<string, unknown>;
@@ -39,9 +44,19 @@ function readCommand(payload: HookPayload): string {
   return safeString(safeObject(payload.tool_input).command).trim();
 }
 
-function buildAdditionalContext(message: string): Record<string, unknown> {
+function readSessionId(payload: HookPayload): string {
+  return safeString(payload.session_id ?? payload.sessionId).trim();
+}
+
+function readTranscriptPath(payload: HookPayload): string | null {
+  const value = safeString(payload.transcript_path ?? payload.transcriptPath).trim();
+  return value.length > 0 ? value : null;
+}
+
+function buildAdditionalContext(eventName: HookEventName, message: string): Record<string, unknown> {
   return {
     hookSpecificOutput: {
+      hookEventName: eventName,
       additionalContext: message
     }
   };
@@ -94,11 +109,63 @@ function buildUserPromptContext(prompt: string): string | null {
   return null;
 }
 
-async function handleSessionStart(cwd: string): Promise<Record<string, unknown> | null> {
+async function readSubagentFromPayload(payload: HookPayload): Promise<CodexSubagentSessionInfo | null> {
+  return readSubagentSessionInfo({
+    sessionId: readSessionId(payload),
+    transcriptPath: readTranscriptPath(payload)
+  });
+}
+
+async function syncKnownSubagentTracker(
+  paths: ReturnType<typeof createNexusPaths>,
+  subagent: CodexSubagentSessionInfo | null,
+  status: string,
+  filesTouched?: string[]
+): Promise<void> {
+  if (!subagent) return;
+  await upsertAgentTrackerEntry(paths.AGENT_TRACKER_FILE, {
+    agent_name: subagent.agentRole ?? subagent.agentNickname ?? "subagent",
+    agent_id: subagent.sessionId,
+    session_id: subagent.sessionId,
+    parent_session_id: subagent.parentSessionId,
+    status,
+    last_summary: status === "completed"
+      ? "Subagent session completed."
+      : "Subagent session started.",
+    files_touched: filesTouched,
+    agent_nickname: subagent.agentNickname,
+    agent_path: subagent.agentPath ?? null,
+    transcript_path: subagent.transcriptPath ?? null,
+    source: "subagent_thread_spawn"
+  });
+}
+
+async function syncTranscriptToolLog(
+  paths: ReturnType<typeof createNexusPaths>,
+  payload: HookPayload
+): Promise<string[]> {
+  const sessionId = readSessionId(payload);
+  const entries = await readTranscriptToolLogEntries({
+    sessionId,
+    transcriptPath: readTranscriptPath(payload)
+  });
+  await appendToolLogEntries(paths.TOOL_LOG_FILE, entries);
+  if (!sessionId) return [];
+  return collectFilesTouchedFromToolLog(paths.TOOL_LOG_FILE, sessionId);
+}
+
+async function handleSessionStart(cwd: string, payload: HookPayload): Promise<Record<string, unknown> | null> {
   const paths = createNexusPaths(cwd);
   await ensureNexusStructure(paths);
   await ensureProjectGitignore(cwd);
+  const subagent = await readSubagentFromPayload(payload);
+  if (subagent) {
+    await syncKnownSubagentTracker(paths, subagent, "started");
+  } else {
+    await resetSessionScopedState(paths);
+  }
   return buildAdditionalContext(
+    "SessionStart",
     "[nexus] Codex Nexus is active. Use AGENTS.md as the orchestration surface, `$nx-init` for onboarding, `[plan]` for decisions, and `[run]` for task-based execution."
   );
 }
@@ -107,7 +174,7 @@ async function handleUserPromptSubmit(payload: HookPayload): Promise<Record<stri
   const prompt = readPrompt(payload);
   const message = buildUserPromptContext(prompt);
   if (!message) return null;
-  return buildAdditionalContext(message);
+  return buildAdditionalContext("UserPromptSubmit", message);
 }
 
 async function handlePreToolUse(cwd: string, payload: HookPayload): Promise<Record<string, unknown> | null> {
@@ -135,16 +202,9 @@ async function handlePreToolUse(cwd: string, payload: HookPayload): Promise<Reco
   return null;
 }
 
-async function handlePostToolUse(cwd: string, payload: HookPayload): Promise<Record<string, unknown> | null> {
+async function handlePostToolUse(_cwd: string, payload: HookPayload): Promise<Record<string, unknown> | null> {
   const command = readCommand(payload);
   if (!command) return null;
-
-  const paths = createNexusPaths(cwd);
-  await appendToolLog(paths.TOOL_LOG_FILE, {
-    hook: "PostToolUse",
-    tool_name: safeString(payload.tool_name),
-    command
-  });
 
   const response = safeObject(payload.tool_response);
   const exitCode = response.exit_code ?? response.exitCode;
@@ -162,22 +222,31 @@ async function handlePostToolUse(cwd: string, payload: HookPayload): Promise<Rec
   return null;
 }
 
-async function handleStop(cwd: string): Promise<Record<string, unknown> | null> {
+async function handleStop(cwd: string, payload: HookPayload): Promise<Record<string, unknown> | null> {
   const paths = createNexusPaths(cwd);
+  const subagent = await readSubagentFromPayload(payload);
+  if (subagent) {
+    const filesTouched = await syncTranscriptToolLog(paths, payload);
+    await syncKnownSubagentTracker(paths, subagent, "completed", filesTouched);
+    return null;
+  }
+
   const summary = await readTasksSummary(paths);
-  if (!summary.exists) return null;
-  if (summary.pending > 0 || summary.in_progress > 0) {
+  if (summary.exists && (summary.pending > 0 || summary.in_progress > 0)) {
     return {
       decision: "block",
       reason: `Nexus cycle still active: ${summary.pending} pending, ${summary.in_progress} in progress. Finish work or update task state before stopping.`
     };
   }
-  if (summary.allCompleted) {
+  if (summary.exists && summary.allCompleted) {
     return {
       decision: "block",
       reason: "All tasks are complete but the cycle is not archived. Run nx_task_close before stopping."
     };
   }
+
+  await syncTranscriptToolLog(paths, payload);
+  await removeAgentTracker(paths.AGENT_TRACKER_FILE);
   return null;
 }
 
@@ -186,11 +255,11 @@ async function dispatch(payload: HookPayload): Promise<Record<string, unknown> |
   const event = readHookEventName(payload);
   if (!event) return null;
 
-  if (event === "SessionStart") return handleSessionStart(cwd);
+  if (event === "SessionStart") return handleSessionStart(cwd, payload);
   if (event === "UserPromptSubmit") return handleUserPromptSubmit(payload);
   if (event === "PreToolUse") return handlePreToolUse(cwd, payload);
   if (event === "PostToolUse") return handlePostToolUse(cwd, payload);
-  if (event === "Stop") return handleStop(cwd);
+  if (event === "Stop") return handleStop(cwd, payload);
   return null;
 }
 
@@ -215,11 +284,7 @@ export async function runCodexNativeHookCli(): Promise<void> {
 if (import.meta.main) {
   runCodexNativeHookCli().catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
-    process.stdout.write(
-      `${JSON.stringify({
-        decision: "block",
-        reason: `codex-nexus native hook failed: ${message}`
-      })}\n`
-    );
+    process.stderr.write(`codex-nexus native hook failed: ${message}\n`);
+    process.exitCode = 1;
   });
 }

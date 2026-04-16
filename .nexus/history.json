@@ -1,0 +1,323 @@
+{
+  "cycles": [
+    {
+      "completed_at": "2026-04-16T12:17:52.239Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Reproduce and diagnose Codex hook JSON contract failures",
+          "context": "User reported Codex hook errors: invalid session start JSON output and invalid user prompt submit JSON output. Investigate current hook contract, reproduce failures locally, and isolate mismatch points in src/hooks/codex-native-hook.ts and related config.",
+          "deps": [],
+          "approach": "Inspect current hook payload/response handling, compare against Codex hook contract, and add reproduction coverage.",
+          "acceptance": "Cause of invalid JSON output is identified with a reproducible test or fixture.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-16T12:11:56.977Z"
+        },
+        {
+          "id": 2,
+          "title": "Fix Codex hook output to match supported contract",
+          "context": "Current native hook likely returns unsupported structure for prompt/session events.",
+          "deps": [],
+          "approach": "Adjust hook response builders and any event-specific output shape to match Codex expectations while preserving current behavior where valid.",
+          "acceptance": "SessionStart and UserPromptSubmit hooks no longer fail contract validation in tests and produce valid event-specific output.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-16T12:11:56.978Z"
+        },
+        {
+          "id": 3,
+          "title": "Harden hook tests for event-specific response schemas",
+          "context": "Current tests only assert presence of additionalContext for [plan] prompt and do not validate SessionStart or event-level response schemas.",
+          "deps": [],
+          "approach": "Add focused tests for SessionStart, UserPromptSubmit, and invalid/empty cases using the built hook artifact.",
+          "acceptance": "Tests fail on invalid response shape and pass on the corrected implementation.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-16T12:11:56.979Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-16T12:34:22.183Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Inspect agent-tracker and tool-log hook wiring",
+          "context": "",
+          "deps": [],
+          "approach": "Read the native hook and shared state implementation, then identify the concrete state files and event paths used for logging.",
+          "acceptance": "Can point to the exact code path that writes agent-tracker and tool-log, and identify any missing wiring.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-16T12:32:50.119Z"
+        },
+        {
+          "id": 2,
+          "title": "Run subagent smoke test and inspect state files",
+          "context": "",
+          "deps": [],
+          "approach": "Spawn a few small subagents with bounded prompts, wait for completion, then read .nexus/state/codex-nexus/agent-tracker.json and tool-log.jsonl.",
+          "acceptance": "Provide a concrete pass/fail result for agent-tracker and tool-log based on observed files after the smoke test.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-16T12:32:50.121Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-16T12:34:22.253Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": []
+    },
+    {
+      "completed_at": "2026-04-16T12:34:37.544Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": []
+    },
+    {
+      "completed_at": "2026-04-16T12:45:56.326Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Implement subagent task_close guard",
+          "context": "",
+          "deps": [],
+          "approach": "Use MCP request context sessionId to detect whether the caller session is a subagent via Codex rollout session metadata, then refuse nx_task_close for subagent callers.",
+          "acceptance": "nx_task_close returns an explicit error for subagent sessions and still succeeds for non-subagent sessions.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-16T12:39:28.707Z"
+        },
+        {
+          "id": 2,
+          "title": "Verify subagent guard and tracker behavior",
+          "context": "",
+          "deps": [],
+          "approach": "Extend hook and MCP tool tests or add focused tests for session meta parsing and task_close gating.",
+          "acceptance": "Automated tests fail before the fix and pass after the fix.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-16T12:39:28.787Z"
+        },
+        {
+          "id": 3,
+          "title": "Implement subagent agent-tracker registration",
+          "context": "",
+          "deps": [],
+          "approach": "Parse Codex rollout session metadata from hook payload transcript_path or session lookup, detect subagent thread-spawn metadata, and upsert tracker entries keyed by session.",
+          "acceptance": "SessionStart for a subagent creates or updates an agent-tracker entry with role/name and session identity.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-16T12:39:28.788Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-16T13:23:25.000Z",
+      "branch": "default",
+      "plan": {
+        "id": 1,
+        "topic": "Validate codex-nexus invocation-map.yml usage against nexus-core consumer docs and migration guidance",
+        "issues": [
+          {
+            "id": 1,
+            "title": "Determine whether codex-nexus invocation-map.yml matches both nexus-core invocation semantics and the official Codex skill/subagent/tool surface",
+            "status": "decided",
+            "decision": "Selected approach: experiment-first validation against the locally installed Codex CLI (version 0.121.0 observed on April 16, 2026) before changing codex-nexus mappings. Reason: official Codex docs clearly ground skills and subagents at a high level, but the authoritative evidence for the exact runtime surfaces relevant here is the local Codex runtime itself, which already exposes strong signals for `spawn_agent` and `request_user_input`. Rejected alternative: continue docs-only investigation before probing. Reason dismissed: the public docs are incomplete for these surfaces, while local binary strings and session/runtime evidence are sufficient to justify direct validation now. Constraint derived from this decision: treat `task_register` as unresolved until a native Codex progress/TUI surface is experimentally confirmed; do not keep mapping it to persistent `nx_task_*` state changes without validation."
+          }
+        ],
+        "research_summary": "Local research: codex-nexus reads invocation-map.yml in scripts/generate-from-nexus-core.lib.mjs and uses it only at code-generation time to expand nexus-core body.md macros into Codex-specific prose. The current file defines entries for skill_activation, subagent_spawn, task_register, and user_question. nexus-core docs describe vocabulary/invocations.yml as a harness-local semantic primitive registry; consumer-implementation-guide.md says consumers maintain their own local map from these primitives to concrete syntax and load skill/agent body.md into the LLM context. Installed package v0.10.0 omits CONSUMING.md/MIGRATIONS from node_modules, but upstream GitHub docs confirm the upgrade protocol reads CHANGELOG, migration docs, and semver policy from the repo tag. Upstream CONSUMING.md points consumers to docs/consumer-implementation-guide.md for a new consumer build. CHANGELOG v0.10.0 and migration guidance indicate task decomposition/runtime dispatch changes are consumer-local, while canonical assets remain neutral. Relevant implication: invocation-map.yml is consumer-owned glue, but the docs frame it as mapping semantic primitives to harness syntax/behavior, not as a canonical file from nexus-core. No prior project memory/rules/history entries were found on this topic.",
+        "created_at": "2026-04-16T12:59:11.242Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Probe live Codex subagent surface",
+          "context": "",
+          "deps": [],
+          "approach": "Run controlled local Codex experiments to confirm the actual subagent invocation surface, accepted built-in agent names, and emitted runtime/session evidence for native agent spawning. Use the installed Codex CLI as the authority for this step, with docs and oh-my-codex only as supporting triangulation.",
+          "acceptance": "Produces concrete evidence for whether Codex exposes the `spawn_agent` surface in interactive use, what built-in agent names are valid in practice, and what session/log events identify successful native subagent spawn behavior.",
+          "risk": "Observed behavior may be version-specific to the installed Codex CLI and may differ from undocumented future releases.",
+          "plan_issue": 1,
+          "owner": "lead",
+          "status": "pending",
+          "created_at": "2026-04-16T13:19:30.476Z"
+        },
+        {
+          "id": 2,
+          "title": "Translate probe results into mapping rules",
+          "context": "",
+          "deps": [
+            1,
+            3
+          ],
+          "approach": "Compare probe results with the current invocation-map and macro expander semantics. Decide, per primitive, whether to map to a validated native Codex surface, keep a prose fallback, or leave the primitive unresolved until more evidence exists.",
+          "acceptance": "Yields a concrete per-primitive recommendation for `skill_activation`, `subagent_spawn`, `user_question`, and `task_register`, with explicit justification for any fallback or unresolved state.",
+          "risk": "If Codex lacks a native progress-registration surface, `task_register` may need to remain best-effort prose rather than a concrete tool mapping.",
+          "plan_issue": 1,
+          "owner": "lead",
+          "status": "pending",
+          "created_at": "2026-04-16T13:19:30.527Z"
+        },
+        {
+          "id": 3,
+          "title": "Probe live structured user-input surface",
+          "context": "",
+          "deps": [],
+          "approach": "Run controlled local Codex experiments to trigger the structured user-question path and capture whether `request_user_input` or elicitation-backed UI appears in interactive sessions, including any mode or environment constraints.",
+          "acceptance": "Produces concrete evidence for whether structured user input is available in the current Codex runtime, what question/option shape it accepts, and what runtime/session evidence identifies a successful user-input request.",
+          "risk": "The tool may be gated by interaction mode, API version, or feature flags, which could make negative results ambiguous without careful control.",
+          "plan_issue": 1,
+          "owner": "lead",
+          "status": "pending",
+          "created_at": "2026-04-16T13:19:30.528Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-16T13:30:43.484Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Update invocation-map semantics for Codex runtime surfaces",
+          "context": "",
+          "deps": [],
+          "approach": "Adjust consumer-owned invocation-map entries and macro expansion so generated skills reference validated Codex surfaces rather than misleading tool names or semantically incorrect task-state tools.",
+          "acceptance": "Generated skill text no longer maps task_register to nx_task_add/nx_task_update, and subagent/user-question expansion reflects validated Codex runtime surfaces plus fallback behavior.",
+          "risk": "Changing generated wording may require corresponding test updates and careful preservation of existing skill intent.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-16T13:27:03.692Z"
+        },
+        {
+          "id": 2,
+          "title": "Regenerate Nexus-derived skills and inspect diffs",
+          "context": "",
+          "deps": [
+            1
+          ],
+          "approach": "Run the generation pipeline after code/config changes and inspect the resulting skill diffs to confirm the new invocation wording propagates correctly.",
+          "acceptance": "Regenerated skill files reflect the updated invocation semantics without introducing malformed macro expansion output.",
+          "risk": "Generated output may expose additional mismatches from upstream nexus-core wording that need minor follow-up handling.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-16T13:27:03.709Z"
+        },
+        {
+          "id": 3,
+          "title": "Verify updated generation behavior",
+          "context": "",
+          "deps": [
+            1,
+            2
+          ],
+          "approach": "Run the most relevant automated tests or focused validation commands for generation/config behavior, then summarize any remaining gaps.",
+          "acceptance": "Validation provides evidence that the updated invocation mapping works as intended or identifies concrete residual failures.",
+          "risk": "Existing unrelated worktree changes may limit full-suite verification.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-16T13:27:03.710Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-16T14:01:26.588Z",
+      "branch": "default",
+      "plan": {
+        "id": 2,
+        "topic": "Align codex-nexus session state, tool-log semantics, and subagent capability restrictions with nexus-core",
+        "issues": [
+          {
+            "id": 1,
+            "title": "Reset session-scoped state files on session start and stop according to nexus-core lifecycle",
+            "status": "decided",
+            "decision": "Selected approach: overwrite session-scoped state on SessionStart and clean up on Stop, while aligning paths/schema to nexus-core. Reason: ensureFile preserves stale state and the current tracker/log locations do not match nexus-core lifecycle expectations. Rejected alternative: keep append-only session files and only clear them opportunistically. Dismissed because it leaves stale tracker/log state across sessions and still violates nexus-core path/schema requirements."
+          },
+          {
+            "id": 2,
+            "title": "Record only real file-modification events in tool-log and use them to populate subagent files_touched",
+            "status": "decided",
+            "decision": "Selected approach: stop logging raw Bash commands and instead derive tool-log entries from transcript file-edit events, recording only concrete file modifications plus result status and touched paths. Reason: Codex hooks expose Bash only, so command logging is a poor proxy; rollout transcripts provide authoritative patch/file-change events. Rejected alternative: regex-classify mutating Bash commands inline. Dismissed because it still logs shell activity rather than actual file-modification tools and misses structured apply_patch/function-call edits."
+          },
+          {
+            "id": 3,
+            "title": "Restrict subagent tool access according to nexus-core capabilities using Codex-native role config and Nexus MCP guards",
+            "status": "decided",
+            "decision": "Selected approach: enforce nexus-core capabilities with role-level Codex config overrides and Nexus MCP guards. For roles with no_file_edit, use read-only sandbox and disable apply_patch; for roles with no_task_create/no_task_update, disable corresponding nx MCP tools and reject guarded calls server-side. Reason: local Codex runtime supports role config layers, include_apply_patch_tool, sandbox_mode, and MCP server tool filters, which is the strongest available native restriction surface. Rejected alternative: rely on prompt-only instructions. Dismissed because nexus-core explicitly expects capability restrictions to be applied by the consumer, not merely described."
+          }
+        ],
+        "research_summary": "Current codex-native hook initializes state with ensureFile, so agent-tracker and tool-log persist across sessions instead of resetting. createNexusPaths currently places tool-log under .nexus/state/codex-nexus/tool-log.jsonl, while nexus-core consumer docs require session-scoped tool-log at .nexus/state/tool-log.jsonl and agent-tracker at .nexus/state/{harness-id}/agent-tracker.json as an array. Current agent-tracker schema is an object with harness_id/started_at/invocations, which conflicts with nexus-core docs and schema. PostToolUse currently appends every Bash command, but Codex hook runtime only exposes PreToolUse/PostToolUse for Bash commands; it does not expose generic tool names there. However rollout transcripts include concrete file-edit events: custom_tool_call apply_patch plus patch_apply_end changes with touched file paths. Codex role config supports full config-layer overrides for spawned agents, including sandbox_mode, include_apply_patch_tool, web_search, and mcp_servers.<server>.disabled_tools/enabled_tools. nexus-core manifest/meta define capabilities per role: engineer/writer=no_task_create; researcher/reviewer/tester=no_file_edit+no_task_create; architect/designer/postdoc/strategist=no_file_edit+no_task_create+no_task_update. Therefore the viable implementation is: reset session files at SessionStart, delete tracker at Stop, source tool-log entries from transcript-derived file-edit events only, update files_touched from those entries on subagent completion, and encode role-based restrictions via native agent TOML config plus MCP-side guards for Nexus task mutations.",
+        "created_at": "2026-04-16T13:47:23.076Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Reset session-scoped Nexus state and align tracker/log locations",
+          "context": "Target files are expected under src/hooks/, src/shared/, src/config/, and tests that cover hook lifecycle/state files. Current implementation preserves agent-tracker and tool-log across sessions, stores tool-log under .nexus/state/codex-nexus/, and writes agent-tracker as an object instead of the nexus-core array schema.",
+          "deps": [],
+          "approach": "Update path/state helpers so SessionStart overwrites session-scoped tracker/log files with fresh defaults, places tool-log at .nexus/state/tool-log.jsonl, and makes Stop remove agent-tracker while keeping tool-log/session history behavior aligned with nexus-core docs. Update hook lifecycle tests to assert reset/delete semantics and schema shape.",
+          "acceptance": "SessionStart recreates a fresh empty agent-tracker array and a fresh empty tool-log file every session. agent-tracker is stored at .nexus/state/codex-nexus/agent-tracker.json with a top-level array schema. Stop removes agent-tracker when the session can end cleanly.",
+          "risk": "Changing session-scoped file layout can break existing tests or local assumptions if helper paths and fixtures are not updated together.",
+          "plan_issue": 1,
+          "owner": "engineer",
+          "status": "completed",
+          "created_at": "2026-04-16T13:47:44.008Z"
+        },
+        {
+          "id": 2,
+          "title": "Log only real file-modification events and propagate files_touched",
+          "context": "Codex hook runtime exposes Bash-only PreToolUse/PostToolUse events, so current command logging is a weak proxy. Rollout transcripts contain structured apply_patch and patch_apply_end events with changed file paths. The tracker should record files_touched for completed subagents using authoritative file-edit evidence rather than shell command strings.",
+          "deps": [],
+          "approach": "Introduce transcript parsing for file-edit events, append tool-log entries only for concrete file modifications with tool name/file path/status, ignore plain Bash command activity, and use accumulated tool-log entries to populate files_touched when a subagent session completes. Add focused tests using transcript fixtures.",
+          "acceptance": "tool-log stays empty for non-edit Bash activity. file-edit transcript events append entries with tool name, status, and touched file path(s). Completed subagent tracker entries include files_touched derived from logged edits.",
+          "risk": "Transcript parsing must tolerate missing or partial rollout lines without corrupting state or crashing the hook.",
+          "plan_issue": 2,
+          "owner": "engineer",
+          "status": "completed",
+          "created_at": "2026-04-16T13:47:44.009Z"
+        },
+        {
+          "id": 3,
+          "title": "Verify session lifecycle, edit logging, and capability enforcement",
+          "context": "Verification should focus on the changed hook lifecycle behavior, transcript-derived tool-log/files_touched behavior, generated agent role config restrictions, and Nexus task guard paths.",
+          "deps": [
+            1,
+            2,
+            4
+          ],
+          "approach": "Run targeted automated tests covering hook lifecycle/state files, transcript-based edit logging, native agent config generation, and task mutation guards. Extend or add tests where needed before running the focused suite and then the repo test command if time allows.",
+          "acceptance": "Focused tests covering the changed behavior pass, and any broader suite run used for verification completes without regressions attributable to these changes.",
+          "risk": "Some existing tests may assume the old state-file layout and require coordinated fixture updates before meaningful verification can run.",
+          "plan_issue": 3,
+          "owner": "tester",
+          "status": "completed",
+          "created_at": "2026-04-16T13:47:44.080Z"
+        },
+        {
+          "id": 4,
+          "title": "Apply nexus-core capability restrictions to spawned native agents",
+          "context": "Local Codex runtime supports role config layers for spawned agents, including sandbox_mode, include_apply_patch_tool, web_search, and MCP server tool filters. nexus-core assigns role capabilities such as no_file_edit, no_task_create, and no_task_update, but codex-nexus currently emits agent TOML without any real tool restrictions and only guards nx_task_close for subagents.",
+          "deps": [],
+          "approach": "Encode nexus-core capabilities in local agent definitions/native agent TOML generation, apply read-only sandbox and apply_patch disablement for no_file_edit roles, disable nx MCP task mutation tools per capability, and add server-side guards for disallowed Nexus task mutations from subagents. Add tests for generated agent config and task guard behavior.",
+          "acceptance": "Generated native agent configs reflect nexus-core capability restrictions for each role. Roles with no_file_edit cannot receive apply_patch and run in read-only sandbox. Roles with no_task_create/no_task_update cannot invoke the corresponding nx task mutation tools, with explicit errors when attempted.",
+          "risk": "Codex role config can restrict some surfaces natively but not every built-in tool, so runtime guards must be kept consistent with config-layer restrictions.",
+          "plan_issue": 3,
+          "owner": "engineer",
+          "status": "completed",
+          "created_at": "2026-04-16T13:47:44.081Z"
+        }
+      ]
+    }
+  ]
+}

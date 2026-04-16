@@ -91,7 +91,7 @@ export function createNexusPaths(projectRoot: string): NexusPaths {
     PLAN_FILE: path.join(STATE_ROOT, "plan.json"),
     TASKS_FILE: path.join(STATE_ROOT, "tasks.json"),
     AGENT_TRACKER_FILE: path.join(HARNESS_STATE_ROOT, "agent-tracker.json"),
-    TOOL_LOG_FILE: path.join(HARNESS_STATE_ROOT, "tool-log.jsonl"),
+    TOOL_LOG_FILE: path.join(STATE_ROOT, "tool-log.jsonl"),
     ARTIFACTS_ROOT: path.join(HARNESS_STATE_ROOT, "artifacts")
   };
 }

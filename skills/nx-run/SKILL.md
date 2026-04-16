@@ -31,16 +31,16 @@ Execution norm that Lead follows when the user invokes the [run] tag. Composes s
 - **Branch Guard**: if on main/master, create a branch appropriate to the task type before proceeding (prefix: `feat/`, `fix/`, `chore/`, `research/`, etc. — Lead's judgment). Auto-create without user confirmation.
 - Check for `tasks.json`:
   - **Exists** → read it and proceed to Step 2.
-  - **Absent** → auto-invoke `Load and follow the `$nx-plan` skill now (mode: auto).` to generate tasks.json. Do NOT ask — `[run]` implies execution intent. After plan generation, proceed to Step 2.
+  - **Absent** → auto-invoke `Load and follow the $nx-plan skill now (mode: auto).` to generate tasks.json. Do NOT ask — `[run]` implies execution intent. After plan generation, proceed to Step 2.
 - If tasks.json exists, check prior decisions with `nx_plan_status`.
 
 ### Step 1.5: TUI Progress
 
 Register tasks for visual progress tracking (Ctrl+T):
 
-- **≤ 10 tasks**: `Register task "<per-task label>" with `nx_task_add` before proceeding.` per task
-- **> 10 tasks**: group by `plan_issue`, `Register task "<group label>" with `nx_task_add` before proceeding.` per group
-- Update the registered entry via `Update the corresponding task with `nx_task_update` and state "in_progress".` / `Update the corresponding task with `nx_task_update` and state "completed".` as execution proceeds
+- **≤ 10 tasks**: `Best effort only: if the runtime exposes a Codex visual progress tracker, register or update "<per-task label>" there with state "pending". Do not use nx_task_add or nx_task_update for this primitive; those tools manage persistent Nexus task state rather than transient UI progress.` per task
+- **> 10 tasks**: group by `plan_issue`, `Best effort only: if the runtime exposes a Codex visual progress tracker, register or update "<group label>" there with state "pending". Do not use nx_task_add or nx_task_update for this primitive; those tools manage persistent Nexus task state rather than transient UI progress.` per group
+- Update the registered entry via `Best effort only: if the runtime exposes a Codex visual progress tracker, register or update "<label>" there with state "in_progress". Do not use nx_task_add or nx_task_update for this primitive; those tools manage persistent Nexus task state rather than transient UI progress.` / `Best effort only: if the runtime exposes a Codex visual progress tracker, register or update "<label>" there with state "completed". Do not use nx_task_add or nx_task_update for this primitive; those tools manage persistent Nexus task state rather than transient UI progress.` as execution proceeds
 - **Skip only if**: non-TTY environment (VSCode, headless)
 - **Known issue**: TUI may freeze during auto-compact (#27919) — task data on disk remains correct
 
@@ -97,7 +97,7 @@ For each task, Lead chooses between fresh spawn and resume based on the `owner`'
 
 Execute in order:
 
-1. **nx-sync**: invoke `Load and follow the `$nx-sync` skill now.` if code changes were made in this cycle. Best effort — failure does not block cycle completion.
+1. **nx-sync**: invoke `Load and follow the $nx-sync skill now.` if code changes were made in this cycle. Best effort — failure does not block cycle completion.
 2. **nx_task_close**: call to archive plan+tasks to history.json. This updates `.nexus/history.json`.
 3. **git commit**: stage and commit source changes, build artifacts (`bridge/`, `scripts/`), `.nexus/history.json`, and any modified `.nexus/memory/` or `.nexus/context/`. Use explicit `git add` with paths (not `git add -A`) and a HEREDOC commit message with `Co-Authored-By`. This ensures the cycle's history archive lands in the same commit as the code changes, giving a 1:1 cycle-commit mapping.
 4. **Report**: summarize to user — changed files, key decisions applied, and suggested next steps. Merge/push is the user's decision and outside this skill's scope.

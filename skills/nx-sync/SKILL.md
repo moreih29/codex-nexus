@@ -51,11 +51,11 @@ Only update files where a concrete change is detected. If no staleness is found,
 Spawn Writer agent to update affected context documents:
 
 ```
-Delegate to subagent `writer` now.
-Suggested delegation payload:
-- role: writer
-- name: writer-sync-context
-- prompt:
+Use spawn_agent to spawn the writer subagent now.
+Suggested call shape:
+- agent_type: writer
+- requested label: writer-sync-context
+- message:
 Update .nexus/context/ documents based on the following changes. Read current files with the harness's file-reading primitive, then write updates with the harness's file-creation primitive. Changes: {change_manifest}
 ```
 

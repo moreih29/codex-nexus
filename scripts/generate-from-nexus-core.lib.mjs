@@ -192,36 +192,56 @@ export function parseMacroParams(raw) {
   return params;
 }
 
+function normalizeSubagentRole(targetRole, cfg) {
+  if (typeof targetRole !== "string" || targetRole.length === 0) return targetRole;
+  return cfg.role_aliases?.[targetRole] ?? targetRole;
+}
+
+function deriveQuestionId(question) {
+  const words = String(question).toLowerCase().match(/[a-z0-9]+/g) ?? [];
+  if (words.length === 0) return "user_choice";
+  return words.slice(0, 6).join("_");
+}
+
 export function expandPrimitive(primitive, params, invocationMap) {
   const cfg = invocationMap?.invocation_map?.[primitive] ?? {};
 
   if (primitive === "skill_activation") {
     const modeSuffix = params.mode ? ` (mode: ${params.mode})` : "";
-    return `Load and follow the \`${cfg.skill_prefix ?? "$"}${params.skill}\` skill now${modeSuffix}.`;
+    return `Load and follow the ${cfg.skill_prefix ?? "$"}${params.skill} skill now${modeSuffix}.`;
   }
 
   if (primitive === "subagent_spawn") {
+    const agentType = normalizeSubagentRole(params.target_role, cfg);
     const lines = [
-      `${cfg.delegation_label ?? "Delegate to subagent"} \`${params.target_role}\` now.`,
-      "Suggested delegation payload:",
-      `- role: ${params.target_role}`
+      `Use ${cfg.tool ?? "spawn_agent"} to spawn the ${agentType} subagent now.`,
+      "Suggested call shape:",
+      `- ${cfg.role_param ?? "agent_type"}: ${agentType}`
     ];
-    if (params.name) lines.push(`- name: ${params.name}`);
-    lines.push("- prompt:");
+    if (params.name) lines.push(`- requested label: ${params.name}`);
+    lines.push(`- ${cfg.message_param ?? "message"}:`);
     lines.push(String(params.prompt));
     return lines.join("\n");
   }
 
   if (primitive === "task_register") {
-    const tool = cfg.tools?.[params.state];
-    if (params.state === "pending") {
-      return `Register task "${params.label}" with \`${tool}\` before proceeding.`;
-    }
-    return `Update the corresponding task with \`${tool}\` and state "${params.state}".`;
+    return `Best effort only: if the runtime exposes a ${cfg.surface ?? "visual progress tracker"}, register or update "${params.label}" there with state "${params.state}". Do not use nx_task_add or nx_task_update for this primitive; those tools manage persistent Nexus task state rather than transient UI progress.`;
   }
 
   if (primitive === "user_question") {
-    return `Ask the user this question directly: ${params.question}\nOptions: ${params.options}`;
+    const options = String(params.options ?? "").trim();
+    if (options === "[]") {
+      return `Ask the user this question in prose and wait for a free-form reply: ${params.question}`;
+    }
+
+    return [
+      `If ${cfg.tool ?? "request_user_input"} is available in the current mode, use it with one question:`,
+      `- header: ${cfg.header ?? "Question"}`,
+      `- id: ${deriveQuestionId(params.question)}`,
+      `- question: ${params.question}`,
+      `- options: ${options}`,
+      `If ${cfg.tool ?? "request_user_input"} is unavailable, ask the same question in prose and wait for the user's reply.`
+    ].join("\n");
   }
 
   throw new Error(`Unknown primitive "${primitive}"`);
