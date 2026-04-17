@@ -40,7 +40,7 @@ codex-nexus install
 
 를 순서대로 선택할 수 있습니다.
 
-`install`은 `.codex/config.toml`에 `nx` MCP 서버와 hosted `Context7` MCP 서버를 기본으로 설정합니다. Context7 인증과 더 높은 rate limit을 쓰려면 셸에 `CONTEXT7_API_KEY`를 export 해두세요.
+`install`은 `.codex/config.toml`에 `nx` MCP 서버와 optional MCP 통합을 기본으로 설정합니다. 현재 기본 통합은 hosted `Context7`이고, Context7 인증과 더 높은 rate limit을 쓰려면 셸에 `CONTEXT7_API_KEY`를 export 해두세요.
 
 명시적으로 설치하려면:
 
@@ -49,10 +49,10 @@ codex-nexus install --scope user --version latest
 codex-nexus install --scope project --version 0.1.0
 ```
 
-Context7 기본 설정을 빼고 설치하려면:
+optional MCP 통합 없이 core만 설치하려면:
 
 ```bash
-codex-nexus install --no-context7
+codex-nexus install --core-only
 ```
 
 설치 상태를 확인하려면:
@@ -190,7 +190,7 @@ resume 관련 런타임 상태는 주로 여기에 저장됩니다.
 
 ```bash
 codex-nexus install
-codex-nexus install --no-context7
+codex-nexus install --core-only
 codex-nexus install --scope user --version latest
 codex-nexus install --scope project --version 0.1.0
 codex-nexus doctor --scope project

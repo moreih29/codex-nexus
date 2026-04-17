@@ -35,7 +35,7 @@ describe("config merge", () => {
     expect(merged).toContain("[mcp_servers.context7]");
     expect(merged).toContain('url = "https://mcp.context7.com/mcp"');
     expect(merged).toContain('bearer_token_env_var = "CONTEXT7_API_KEY"');
-    expect(merged).toContain("Use the context7 MCP server");
+    expect(merged).toContain("Use optional MCP integrations such as context7");
   });
 
   test("preserves an existing custom Context7 MCP configuration", () => {
@@ -57,9 +57,9 @@ describe("config merge", () => {
 
   test("removes only the default managed Context7 entry when opted out", () => {
     const managed = mergeConfigToml("", "/tmp/codex-nexus");
-    const optedOut = mergeConfigToml(managed, "/tmp/codex-nexus", { includeContext7: false });
+    const optedOut = mergeConfigToml(managed, "/tmp/codex-nexus", { coreOnly: true });
     expect(optedOut).not.toContain("[mcp_servers.context7]");
-    expect(optedOut).not.toContain("Use the context7 MCP server");
+    expect(optedOut).not.toContain("Use optional MCP integrations such as context7");
   });
 
   test("keeps custom Context7 config when install opts out of the managed default", () => {
@@ -70,7 +70,7 @@ describe("config merge", () => {
           bearer_token_env_var: "CUSTOM_CONTEXT7_TOKEN"
         }
       }
-    }), "/tmp/codex-nexus", { includeContext7: false });
+    }), "/tmp/codex-nexus", { coreOnly: true });
 
     expect(custom).toContain("[mcp_servers.context7]");
     expect(custom).toContain('url = "https://example.com/mcp"');

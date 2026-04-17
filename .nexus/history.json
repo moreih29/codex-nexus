@@ -904,6 +904,24 @@
           "created_at": "2026-04-17T06:16:36.243Z"
         }
       ]
+    },
+    {
+      "completed_at": "2026-04-17T06:35:34.129Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Rename optional MCP install flag to core-only",
+          "context": "The current branch feat/install-context7-hosted added --no-context7. The user wants a broader name because more optional MCP integrations may be added later.",
+          "deps": [],
+          "approach": "Rename the CLI option to --core-only, preserve the same behavior of installing only the core nx MCP integration, update summaries/help/docs to match, and refresh regression tests.",
+          "acceptance": "install accepts --core-only, no longer documents or tests --no-context7, and tests pass.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-17T06:34:13.099Z"
+        }
+      ]
     }
   ]
 }

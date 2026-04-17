@@ -5,7 +5,7 @@ const CONTEXT7_URL = "https://mcp.context7.com/mcp";
 const CONTEXT7_BEARER_TOKEN_ENV_VAR = "CONTEXT7_API_KEY";
 
 export interface ManagedConfigOptions {
-  includeContext7?: boolean;
+  coreOnly?: boolean;
 }
 
 function safeObject(value: unknown): Record<string, unknown> {
@@ -32,7 +32,7 @@ export function mergeConfigToml(
   const parsed = existingContent ? TOML.parse(existingContent) as Record<string, unknown> : {};
   const features = safeObject(parsed.features);
   const mcpServers = safeObject(parsed.mcp_servers);
-  const includeContext7 = options.includeContext7 ?? true;
+  const coreOnly = options.coreOnly ?? false;
 
   parsed.features = {
     ...features,
@@ -46,7 +46,7 @@ export function mergeConfigToml(
     args: [path.join(packageRoot, "dist", "mcp", "server.js")]
   };
 
-  if (includeContext7) {
+  if (!coreOnly) {
     if (!("context7" in mcpServers)) {
       mcpServers.context7 = {
         url: CONTEXT7_URL,
@@ -64,7 +64,7 @@ export function mergeConfigToml(
     "Use AGENTS.md as the primary orchestration surface.",
     "Use workflow skills via $nx-plan, $nx-run, $nx-init, and $nx-sync when routed by tags or user request.",
     "Use the nx MCP server for stateful plan, task, onboarding, and sync workflows.",
-    ...(hasContext7 ? ["Use the context7 MCP server for up-to-date library and API documentation when it is available."] : []),
+    ...(hasContext7 ? ["Use optional MCP integrations such as context7 for up-to-date library and API documentation when they are available."] : []),
     "Installed native subagents live under .codex/agents and are available for bounded delegation."
   ].join(" ");
 

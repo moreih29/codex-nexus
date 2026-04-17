@@ -38,7 +38,7 @@ When `codex-nexus install` runs in a TTY, it prompts for:
 - which package version to install
 - which target scope to install into (`user` or `project`)
 
-`install` writes the `nx` MCP server and, by default, the hosted `Context7` MCP server into `.codex/config.toml`. Export `CONTEXT7_API_KEY` in your shell if you want authenticated Context7 access and higher rate limits.
+`install` writes the `nx` MCP server and default optional MCP integrations into `.codex/config.toml`. The current default optional integration is hosted `Context7`. Export `CONTEXT7_API_KEY` in your shell if you want authenticated Context7 access and higher rate limits.
 
 To install explicitly:
 
@@ -47,10 +47,10 @@ codex-nexus install --scope user --version latest
 codex-nexus install --scope project --version 0.1.0
 ```
 
-To skip the default Context7 configuration:
+To install only the core Nexus setup without optional MCP integrations:
 
 ```bash
-codex-nexus install --no-context7
+codex-nexus install --core-only
 ```
 
 To verify the installation:
@@ -188,7 +188,7 @@ Resume-related runtime state lives primarily in:
 
 ```bash
 codex-nexus install
-codex-nexus install --no-context7
+codex-nexus install --core-only
 codex-nexus install --scope user --version latest
 codex-nexus install --scope project --version 0.1.0
 codex-nexus doctor --scope project

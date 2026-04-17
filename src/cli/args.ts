@@ -6,7 +6,7 @@ export interface CliCommandOptions {
   scope?: SetupScope;
   version?: string;
   verbose: boolean;
-  context7: boolean;
+  coreOnly: boolean;
 }
 
 export type ParsedCliArgs =
@@ -29,7 +29,7 @@ function parseScope(value: string | undefined): SetupScope | null {
 function parseCommandArgs(command: CliCommand, argv: string[]): ParsedCliArgs {
   const options: CliCommandOptions = {
     verbose: false,
-    context7: true
+    coreOnly: false
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -51,7 +51,7 @@ function parseCommandArgs(command: CliCommand, argv: string[]): ParsedCliArgs {
       continue;
     }
 
-    if (token === "--no-context7") {
+    if (token === "--core-only") {
       if (command !== "install") {
         return {
           kind: "error",
@@ -59,7 +59,7 @@ function parseCommandArgs(command: CliCommand, argv: string[]): ParsedCliArgs {
           message: `Unknown option "${token}" for ${command}.`
         };
       }
-      options.context7 = false;
+      options.coreOnly = true;
       continue;
     }
 

@@ -66,7 +66,7 @@ async function executeCommand(command: CliCommand, options: CliCommandOptions, i
   if (command === "install") {
     const version = await resolveInstallVersion(options, interactive);
     const scope = await resolveScope(command, options, interactive);
-    const run = () => installCommand({ scope, version, includeContext7: options.context7 });
+    const run = () => installCommand({ scope, version, coreOnly: options.coreOnly });
     const result = interactive
       ? await runWithSpinner("Installing Codex Nexus surfaces...", run)
       : await run();

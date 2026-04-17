@@ -24,7 +24,7 @@ const TEST_VERSIONS_ENV = "CODEX_NEXUS_TEST_VERSIONS";
 export interface InstallOptions {
   scope: SetupScope;
   version: string;
-  includeContext7: boolean;
+  coreOnly: boolean;
 }
 
 export interface InstallResult {
@@ -208,7 +208,7 @@ async function writeManagedSurfaces(
 
   const existingConfig = await readTextIfExists(scopePaths.configTomlPath);
   const mergedConfig = mergeConfigToml(existingConfig, packageRootPath, {
-    includeContext7: options.includeContext7
+    coreOnly: options.coreOnly
   });
   await writeText(scopePaths.configTomlPath, mergedConfig);
 

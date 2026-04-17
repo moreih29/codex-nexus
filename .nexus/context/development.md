@@ -5,10 +5,10 @@
 - Docs: AGENTS.md, README.md
 
 ## Recent Activity
+- feat: enable hosted context7 during install
 - chore: archive merge to main cycle
 - feat: implement codex subagent resume continuity
 - feat: unify CLI around install
 - docs: add publish workflow and update install docs
-- docs: clarify pre-release install flow
 
 > Refreshed by nx_sync.
