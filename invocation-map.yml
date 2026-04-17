@@ -9,6 +9,10 @@ invocation_map:
       explore: explorer
   task_register:
     surface: "Codex visual progress tracker"
+    tool: update_plan
+    collection_param: plan
+    step_param: step
+    status_param: status
   user_question:
     tool: request_user_input
     header: Question

@@ -225,6 +225,10 @@ export function expandPrimitive(primitive, params, invocationMap) {
   }
 
   if (primitive === "task_register") {
+    if (cfg.tool) {
+      return `Best effort only: if the runtime exposes a ${cfg.surface ?? "visual progress tracker"}, use ${cfg.tool} to keep the existing ${cfg.collection_param ?? "plan"} items in sync, setting the entry whose ${cfg.step_param ?? "step"} is "${params.label}" to ${cfg.status_param ?? "status"} "${params.state}" and appending it if missing. Do not use nx_task_add or nx_task_update for this primitive; those tools manage persistent Nexus task state rather than transient UI progress.`;
+    }
+
     return `Best effort only: if the runtime exposes a ${cfg.surface ?? "visual progress tracker"}, register or update "${params.label}" there with state "${params.state}". Do not use nx_task_add or nx_task_update for this primitive; those tools manage persistent Nexus task state rather than transient UI progress.`;
   }
 
