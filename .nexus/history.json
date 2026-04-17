@@ -922,6 +922,41 @@
           "created_at": "2026-04-17T06:34:13.099Z"
         }
       ]
+    },
+    {
+      "completed_at": "2026-04-17T06:37:45.680Z",
+      "branch": "default",
+      "plan": {
+        "id": 10,
+        "topic": "Commit core-only flag rename and merge into main",
+        "issues": [
+          {
+            "id": 1,
+            "title": "Verify the core-only rename changes are ready to commit and merge",
+            "status": "pending"
+          },
+          {
+            "id": 2,
+            "title": "Commit the branch tip and merge feat/install-context7-hosted into main safely",
+            "status": "pending"
+          }
+        ],
+        "research_summary": "The feature branch already contains hosted Context7 install support plus a follow-up rename from --no-context7 to --core-only. Need to verify status, rerun tests if necessary, commit the remaining changes, then merge the branch into main and archive the merge cycle.",
+        "created_at": "2026-04-17T06:36:53.042Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Commit core-only rename and merge feat/install-context7-hosted into main",
+          "context": "Current branch feat/install-context7-hosted has uncommitted changes for renaming the install opt-out flag to --core-only plus updated docs/tests and .nexus history/context. Need to commit them and merge into main.",
+          "deps": [],
+          "approach": "Inspect current status, rerun verification, commit explicit paths, fast-forward merge into main, archive the merge cycle, and confirm the final repository state.",
+          "acceptance": "The rename changes are committed, main contains the feature branch tip, tests are passing, and the worktree is clean after archiving the merge cycle.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-17T06:36:53.046Z"
+        }
+      ]
     }
   ]
 }
