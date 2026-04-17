@@ -842,6 +842,68 @@
           "created_at": "2026-04-17T05:34:36.466Z"
         }
       ]
+    },
+    {
+      "completed_at": "2026-04-17T06:20:17.264Z",
+      "branch": "default",
+      "plan": {
+        "id": 9,
+        "topic": "Add hosted Context7 MCP to install flow",
+        "issues": [
+          {
+            "id": 1,
+            "title": "Define how install manages hosted Context7 MCP without clobbering user config",
+            "status": "pending"
+          },
+          {
+            "id": 2,
+            "title": "Update the install CLI, managed config output, and user-facing docs for Context7 defaults",
+            "status": "pending"
+          },
+          {
+            "id": 3,
+            "title": "Verify the new install behavior with regression tests and archive the execution cycle",
+            "status": "pending"
+          }
+        ],
+        "research_summary": "Codex supports hosted MCP servers via [mcp_servers.<name>] url plus bearer_token_env_var. Context7 offers a hosted MCP endpoint at https://mcp.context7.com/mcp authenticated with a bearer token environment variable. The install flow currently only manages the nx MCP server, so install should add Context7 by default with an opt-out while preserving existing user context7 overrides.",
+        "created_at": "2026-04-17T06:16:36.240Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Implement hosted Context7 default in install config merge",
+          "context": "src/config/toml.ts currently injects only the nx MCP server. install writes .codex/config.toml during every install. Need hosted Context7 at https://mcp.context7.com/mcp using bearer_token_env_var = CONTEXT7_API_KEY.",
+          "deps": [],
+          "approach": "Extend the managed config merge to know about Context7, add opt-out handling from install, and make removal safe by stripping only the default managed Context7 entry when opt-out is chosen.",
+          "acceptance": "install writes nx plus hosted Context7 by default, --no-context7 omits or removes only the managed default Context7 entry, and existing custom Context7 config is preserved.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-17T06:16:36.241Z"
+        },
+        {
+          "id": 2,
+          "title": "Update CLI surface and documentation for Context7-enabled install",
+          "context": "src/cli/args.ts and src/cli/help.ts define install options. README.md and README.en.md document install behavior.",
+          "deps": [],
+          "approach": "Add an install flag for opting out of Context7, reflect the default in help text and summaries, and update README docs to explain the hosted MCP setup and required CONTEXT7_API_KEY env var.",
+          "acceptance": "CLI help and README clearly state that install enables hosted Context7 by default and show how to opt out or provide the token.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-17T06:16:36.242Z"
+        },
+        {
+          "id": 3,
+          "title": "Add regression coverage for Context7 install behavior",
+          "context": "Current tests cover nx MCP injection, CLI parser/help behavior, and install integration for project scope.",
+          "deps": [],
+          "approach": "Add config merge tests for default add, custom preservation, and opt-out removal; update CLI parser/help tests; extend install integration assertions for the generated config.",
+          "acceptance": "Automated tests cover the hosted Context7 config shape, opt-out behavior, and install output, and the full test suite passes.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-17T06:16:36.243Z"
+        }
+      ]
     }
   ]
 }

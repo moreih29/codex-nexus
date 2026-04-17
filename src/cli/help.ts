@@ -41,7 +41,7 @@ function topLevelHelp(): string {
       title: "Behavior",
       lines: [
         "When stdin/stdout are TTYs and install values are omitted, the CLI prompts for version and scope.",
-        "When not running in a TTY, install defaults to latest + user scope."
+        "When not running in a TTY, install defaults to latest + user scope and enables hosted Context7."
       ]
     },
     {
@@ -67,8 +67,16 @@ function installHelp(): string {
       lines: [
         "--scope <user|project>   Target Codex install scope (default: user when non-interactive)",
         "--version <value>        Package version or dist-tag to install (default: latest when non-interactive)",
+        "--no-context7            Skip the default hosted Context7 MCP entry",
         "--verbose                Print a detailed installation summary",
         "--help                   Show this help"
+      ]
+    },
+    {
+      title: "Defaults",
+      lines: [
+        "Install writes the nx MCP server and, by default, the hosted Context7 MCP server.",
+        "Context7 uses bearer_token_env_var = CONTEXT7_API_KEY in .codex/config.toml."
       ]
     },
     {
@@ -86,6 +94,7 @@ function installHelp(): string {
       title: "Examples",
       lines: [
         "codex-nexus install",
+        "codex-nexus install --no-context7",
         "codex-nexus install --scope user",
         "codex-nexus install --scope project --version 0.1.0",
         "codex-nexus install --scope user --version latest --verbose"

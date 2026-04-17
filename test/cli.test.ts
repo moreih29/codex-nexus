@@ -53,19 +53,21 @@ describe("CLI parser", () => {
       kind: "command",
       command: "install",
       options: {
-        verbose: false
+        verbose: false,
+        context7: true
       }
     });
   });
 
-  test("parses install with explicit scope, version, and verbose", () => {
-    expect(parseCliArgs(["install", "--scope", "project", "--version", "0.1.0", "--verbose"])).toEqual({
+  test("parses install with explicit scope, version, verbose, and context7 opt-out", () => {
+    expect(parseCliArgs(["install", "--scope", "project", "--version", "0.1.0", "--verbose", "--no-context7"])).toEqual({
       kind: "command",
       command: "install",
       options: {
         scope: "project",
         version: "0.1.0",
-        verbose: true
+        verbose: true,
+        context7: false
       }
     });
   });
@@ -105,6 +107,7 @@ describe("CLI help", () => {
     const help = renderCommandHelp("install");
     expect(help).toContain("codex-nexus install [options]");
     expect(help).toContain("--version <value>");
+    expect(help).toContain("--no-context7");
     expect(help).toContain(".codex/packages/node_modules/codex-nexus");
     expect(help).toContain(".codex/config.toml");
     expect(help).toContain("AGENTS.md Nexus section");
@@ -146,6 +149,7 @@ describe("CLI integration", () => {
       expect(install.stdout).toContain("Install complete.");
       expect(install.stdout).toContain("Scope: project");
       expect(install.stdout).toContain(`Installed version: ${getCurrentVersion()}`);
+      expect(install.stdout).toContain("Configured MCP servers: nx, context7");
       expect(install.stdout).toContain("Installed skills");
       expect(existsSync(path.join(repoRoot, ".codex", "config.toml"))).toBe(true);
       expect(existsSync(path.join(repoRoot, ".codex", "hooks.json"))).toBe(true);
@@ -160,6 +164,7 @@ describe("CLI integration", () => {
       const architectToml = await readFile(path.join(repoRoot, ".codex", "agents", "architect.toml"), "utf8");
       const engineerToml = await readFile(path.join(repoRoot, ".codex", "agents", "engineer.toml"), "utf8");
       const reviewerToml = await readFile(path.join(repoRoot, ".codex", "agents", "reviewer.toml"), "utf8");
+      const configToml = await readFile(path.join(repoRoot, ".codex", "config.toml"), "utf8");
       expect(architectToml).toContain('model = "gpt-5.4"');
       expect(engineerToml).toContain('model = "gpt-5.3-codex"');
       expect(reviewerToml).toContain('model = "gpt-5.3-codex"');
@@ -169,11 +174,37 @@ describe("CLI integration", () => {
       expect(architectToml).not.toContain("model_reasoning_effort");
       expect(engineerToml).not.toContain("model_reasoning_effort");
       expect(reviewerToml).not.toContain("model_reasoning_effort");
+      expect(configToml).toContain("[mcp_servers.context7]");
+      expect(configToml).toContain('url = "https://mcp.context7.com/mcp"');
+      expect(configToml).toContain('bearer_token_env_var = "CONTEXT7_API_KEY"');
+      expect(configToml).toContain("Use the context7 MCP server");
 
       const doctor = await runCli(["doctor", "--scope", "project"], repoRoot);
       expect(doctor.code).toBe(0);
       expect(doctor.stdout).toContain("codex-nexus doctor");
       expect(doctor.stdout).toContain("Doctor passed.");
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("omits the default Context7 MCP entry when install opts out", async () => {
+    const repoRoot = await mkdtemp(path.join(os.tmpdir(), "codex-nexus-cli-"));
+    try {
+      await mkdir(path.join(repoRoot, ".git"));
+
+      const install = await runCli(
+        ["install", "--scope", "project", "--version", getCurrentVersion(), "--no-context7", "--verbose"],
+        repoRoot
+      );
+      expect(install.code).toBe(0);
+      expect(install.stdout).toContain("Configured MCP servers: nx");
+      expect(install.stdout).not.toContain("context7");
+
+      const configToml = await readFile(path.join(repoRoot, ".codex", "config.toml"), "utf8");
+      expect(configToml).toContain("[mcp_servers.nx]");
+      expect(configToml).not.toContain("[mcp_servers.context7]");
+      expect(configToml).not.toContain("Use the context7 MCP server");
     } finally {
       await rm(repoRoot, { recursive: true, force: true });
     }

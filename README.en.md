@@ -38,11 +38,19 @@ When `codex-nexus install` runs in a TTY, it prompts for:
 - which package version to install
 - which target scope to install into (`user` or `project`)
 
+`install` writes the `nx` MCP server and, by default, the hosted `Context7` MCP server into `.codex/config.toml`. Export `CONTEXT7_API_KEY` in your shell if you want authenticated Context7 access and higher rate limits.
+
 To install explicitly:
 
 ```bash
 codex-nexus install --scope user --version latest
 codex-nexus install --scope project --version 0.1.0
+```
+
+To skip the default Context7 configuration:
+
+```bash
+codex-nexus install --no-context7
 ```
 
 To verify the installation:
@@ -141,7 +149,7 @@ nx_task_update(id=<task id>, owner_agent_id=<returned agent id>, status="in_prog
 An install updates these managed surfaces under the selected scope:
 
 - `.codex/packages/node_modules/codex-nexus`
-- `.codex/config.toml`
+- `.codex/config.toml` (`nx` MCP plus hosted `context7` MCP by default)
 - `.codex/hooks.json`
 - `.codex/skills/nx-init`
 - `.codex/skills/nx-plan`
@@ -180,6 +188,7 @@ Resume-related runtime state lives primarily in:
 
 ```bash
 codex-nexus install
+codex-nexus install --no-context7
 codex-nexus install --scope user --version latest
 codex-nexus install --scope project --version 0.1.0
 codex-nexus doctor --scope project

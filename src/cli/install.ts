@@ -24,6 +24,7 @@ const TEST_VERSIONS_ENV = "CODEX_NEXUS_TEST_VERSIONS";
 export interface InstallOptions {
   scope: SetupScope;
   version: string;
+  includeContext7: boolean;
 }
 
 export interface InstallResult {
@@ -41,6 +42,7 @@ export interface InstallResult {
   agentsMdPath: string;
   installedSkills: string[];
   installedAgents: string[];
+  configuredMcpServers: string[];
   wroteProjectGitignore: boolean;
 }
 
@@ -175,9 +177,14 @@ async function resolveInstalledPackageRoot(scopePaths: ScopePaths, requestedVers
   return installedRoot;
 }
 
-async function writeManagedSurfaces(packageRootPath: string, scopePaths: ScopePaths): Promise<{
+async function writeManagedSurfaces(
+  packageRootPath: string,
+  scopePaths: ScopePaths,
+  options: InstallOptions
+): Promise<{
   installedSkills: string[];
   installedAgents: string[];
+  configuredMcpServers: string[];
   wroteProjectGitignore: boolean;
 }> {
   await ensureDir(scopePaths.codexHomeDir);
@@ -200,7 +207,10 @@ async function writeManagedSurfaces(packageRootPath: string, scopePaths: ScopePa
   const installedAgents = await installNativeAgentConfigs(packageRootPath, scopePaths.agentsDir);
 
   const existingConfig = await readTextIfExists(scopePaths.configTomlPath);
-  await writeText(scopePaths.configTomlPath, mergeConfigToml(existingConfig, packageRootPath));
+  const mergedConfig = mergeConfigToml(existingConfig, packageRootPath, {
+    includeContext7: options.includeContext7
+  });
+  await writeText(scopePaths.configTomlPath, mergedConfig);
 
   const existingHooks = await readTextIfExists(scopePaths.hooksJsonPath);
   await writeText(scopePaths.hooksJsonPath, mergeManagedHooks(existingHooks, packageRootPath));
@@ -218,6 +228,10 @@ async function writeManagedSurfaces(packageRootPath: string, scopePaths: ScopePa
   return {
     installedSkills: installedSkills.sort(),
     installedAgents: installedAgents.sort(),
+    configuredMcpServers: [
+      "nx",
+      ...(mergedConfig.includes("[mcp_servers.context7]") ? ["context7"] : [])
+    ],
     wroteProjectGitignore
   };
 }
@@ -233,7 +247,8 @@ export function formatInstallSummary(result: InstallResult, verbose: boolean): s
 
   lines.push(
     `Installed skills (${result.installedSkills.length}): ${result.installedSkills.join(", ")}`,
-    `Installed agents (${result.installedAgents.length}): ${result.installedAgents.join(", ")}`
+    `Installed agents (${result.installedAgents.length}): ${result.installedAgents.join(", ")}`,
+    `Configured MCP servers: ${result.configuredMcpServers.join(", ")}`
   );
 
   if (verbose) {
@@ -258,7 +273,7 @@ export async function installCommand(options: InstallOptions): Promise<InstallRe
   const requestedVersion = options.version.trim().length > 0 ? options.version.trim() : "latest";
   const installedPackageRoot = await resolveInstalledPackageRoot(scopePaths, requestedVersion);
   const installedVersion = await readInstalledPackageVersion(installedPackageRoot);
-  const assets = await writeManagedSurfaces(installedPackageRoot, scopePaths);
+  const assets = await writeManagedSurfaces(installedPackageRoot, scopePaths, options);
 
   return {
     scope: scopePaths.scope,
@@ -275,6 +290,7 @@ export async function installCommand(options: InstallOptions): Promise<InstallRe
     agentsMdPath: scopePaths.agentsMdPath,
     installedSkills: assets.installedSkills,
     installedAgents: assets.installedAgents,
+    configuredMcpServers: assets.configuredMcpServers,
     wroteProjectGitignore: assets.wroteProjectGitignore
   };
 }
