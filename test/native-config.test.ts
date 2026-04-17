@@ -48,4 +48,26 @@ describe("native agent capability restrictions", () => {
     expect(parsed.include_apply_patch_tool).toBe(false);
     expect(readNxDisabledTools(parsed)).toEqual(["nx_task_close", "nx_task_add", "nx_task_update"]);
   });
+
+  test("prefers prompt frontmatter metadata when generating agent configs", () => {
+    const parsed = TOML.parse(
+      generateAgentToml(
+        AGENT_DEFINITIONS.engineer,
+        [
+          "---",
+          'name: "engineer"',
+          'description: "Prompt-owned description"',
+          'category: "how"',
+          "---",
+          "",
+          "Prompt body"
+        ].join("\n")
+      )
+    ) as Record<string, unknown>;
+
+    expect(parsed.description).toBe("Prompt-owned description");
+    expect(parsed.model).toBe("gpt-5.4");
+    expect(parsed.developer_instructions).toBe("Prompt body\n");
+    expect(readNxDisabledTools(parsed)).toEqual(["nx_task_close", "nx_task_add"]);
+  });
 });

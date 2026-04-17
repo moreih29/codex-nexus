@@ -438,6 +438,73 @@
           "created_at": "2026-04-16T22:47:21.018Z"
         }
       ]
+    },
+    {
+      "completed_at": "2026-04-17T00:17:07.056Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Update global Codex defaults for full access and GPT-5.4 1M context override",
+          "context": "User requested global Codex defaults under ~/.codex/config.toml. Current file already sets model=gpt-5.4 and reasoning effort. Verified valid config keys: sandbox_mode, approval_policy, model_context_window.",
+          "deps": [],
+          "approach": "Patch ~/.codex/config.toml in place, preserving existing unrelated settings. Then read the file back and validate by loading Codex against that config.",
+          "acceptance": "~/.codex/config.toml contains model=gpt-5.4, sandbox_mode=danger-full-access, approval_policy=never, and model_context_window=1000000. Codex accepts the config without parse errors.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-17T00:16:45.437Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-17T00:22:43.391Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Correct global Codex GPT-5.4 context window from official docs and align auto compact threshold",
+          "context": "Official OpenAI model page for GPT-5.4 shows 1,050,000 context window as of 2026-04-17. Codex config reference documents model_context_window and model_auto_compact_token_limit. Local Codex model cache remains stale at 272000 with effective_context_window_percent=95.",
+          "deps": [],
+          "approach": "Patch ~/.codex/config.toml to set model_context_window=1050000 and model_auto_compact_token_limit=997500 (95% of 1,050,000), preserving other settings. Then validate the config parses.",
+          "acceptance": "~/.codex/config.toml contains model_context_window=1050000 and model_auto_compact_token_limit=997500, and Codex loads the config without parse errors.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-17T00:22:23.698Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-17T00:30:10.249Z",
+      "branch": "default",
+      "plan": {
+        "id": 5,
+        "topic": "Fix agent role definition issue",
+        "issues": [
+          {
+            "id": 1,
+            "title": "Identify the root cause of the current agent role definition problem and implement a fix without regressing native agent config generation.",
+            "status": "pending"
+          }
+        ],
+        "research_summary": "Inspected nx-run guidance, current branch state, and agent definition files. tasks.json was absent, so starting a run-cycle plan. Candidate fault area is the native agent role/config generation path around src/agents/definitions.ts and src/agents/native-config.ts.",
+        "created_at": "2026-04-17T00:25:56.094Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Diagnose and fix agent role definition handling",
+          "context": "Primary suspect files: src/agents/definitions.ts, src/agents/native-config.ts, tests covering native agent config generation and CLI install behavior. Existing unrelated modification: .nexus/history.json.",
+          "deps": [],
+          "approach": "Run targeted tests to reproduce, inspect the agent definition / config generation pipeline, patch the faulty logic, and rerun focused verification.",
+          "acceptance": "The underlying agent role definition issue is reproduced and explained, the implementation is fixed, and relevant tests pass without reverting unrelated workspace changes.",
+          "plan_issue": 1,
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-17T00:25:56.235Z"
+        }
+      ]
     }
   ]
 }

@@ -10,55 +10,55 @@ export interface AgentDefinition {
 export const AGENT_DEFINITIONS: Record<string, AgentDefinition> = {
   architect: {
     name: "architect",
-    description: "Technical design, interfaces, architectural trade-offs",
+    description: "Technical design — evaluates How, reviews architecture, advises on implementation approach",
     category: "how",
     capabilities: ["no_file_edit", "no_task_create", "no_task_update"]
   },
   designer: {
     name: "designer",
-    description: "UX, UI, and interaction design review",
+    description: "UX/UI design — evaluates user experience, interaction patterns, and how users will experience the product",
     category: "how",
     capabilities: ["no_file_edit", "no_task_create", "no_task_update"]
   },
   postdoc: {
     name: "postdoc",
-    description: "Research method design and evidence synthesis",
+    description: "Research methodology and synthesis — designs investigation approach, evaluates evidence quality, writes synthesis documents",
     category: "how",
     capabilities: ["no_file_edit", "no_task_create", "no_task_update"]
   },
   strategist: {
     name: "strategist",
-    description: "Product and business strategy guidance",
+    description: "Business strategy — evaluates market positioning, competitive landscape, and business viability of decisions",
     category: "how",
     capabilities: ["no_file_edit", "no_task_create", "no_task_update"]
   },
   engineer: {
     name: "engineer",
-    description: "Code implementation, fixes, and debugging",
+    description: "Implementation — writes code, debugs issues, follows specifications from Lead and architect",
     category: "do",
     capabilities: ["no_task_create"]
   },
   researcher: {
     name: "researcher",
-    description: "Independent investigation and evidence gathering",
+    description: "Independent investigation — conducts web searches, gathers evidence, and reports findings with citations",
     category: "do",
     capabilities: ["no_file_edit", "no_task_create"]
   },
   writer: {
     name: "writer",
-    description: "Documentation and structured written deliverables",
+    description: "Technical writing — transforms research findings, code, and analysis into clear documents and presentations for the intended audience",
     category: "do",
     capabilities: ["no_task_create"]
   },
   reviewer: {
     name: "reviewer",
-    description: "Content and output review with fact and quality checks",
+    description: "Content verification — validates accuracy, checks facts, confirms grammar and format of non-code deliverables",
     category: "check",
     capabilities: ["no_file_edit", "no_task_create"]
   },
   tester: {
     name: "tester",
-    description: "Testing, verification, and regression risk checks",
+    description: "Testing and verification — tests, verifies, validates stability and security of implementations",
     category: "check",
     capabilities: ["no_file_edit", "no_task_create"]
   }

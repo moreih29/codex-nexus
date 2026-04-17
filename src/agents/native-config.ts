@@ -7,6 +7,7 @@ import {
   type AgentCapability,
   type AgentDefinition
 } from "./definitions.js";
+import { parseAgentPromptMetadata } from "./prompt-metadata.js";
 
 function stripFrontmatter(content: string): string {
   const match = content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
@@ -82,12 +83,19 @@ export function generateStandaloneAgentToml(config: {
 }
 
 export function generateAgentToml(agent: AgentDefinition, promptContent: string): string {
+  const promptMetadata = parseAgentPromptMetadata(promptContent);
+  const resolvedAgent = {
+    ...agent,
+    name: promptMetadata.name ?? agent.name,
+    description: promptMetadata.description ?? agent.description,
+    category: promptMetadata.category ?? agent.category
+  } satisfies AgentDefinition;
   const restrictions = runtimeRestrictions(agent);
   return generateStandaloneAgentToml({
-    name: agent.name,
-    description: agent.description,
+    name: resolvedAgent.name,
+    description: resolvedAgent.description,
     developerInstructions: stripFrontmatter(promptContent),
-    model: AGENT_MODEL_BY_CATEGORY[agent.category],
+    model: AGENT_MODEL_BY_CATEGORY[resolvedAgent.category],
     sandboxMode: restrictions.sandboxMode,
     includeApplyPatchTool: restrictions.includeApplyPatchTool,
     nxDisabledTools: restrictions.nxDisabledTools
