@@ -37,7 +37,6 @@ describe("native agent capability restrictions", () => {
     const nxServer = readNxServer(parsed);
 
     expect(parsed.sandbox_mode).toBeUndefined();
-    expect(parsed.include_apply_patch_tool).toBeUndefined();
     expect(nxServer.command).toBe("bun");
     expect(nxServer.args).toEqual([path.join(TEST_PACKAGE_ROOT, "dist", "mcp", "server.js")]);
     expect(readNxDisabledTools(parsed)).toEqual(["nx_task_close", "nx_task_add"]);
@@ -48,7 +47,6 @@ describe("native agent capability restrictions", () => {
     const nxServer = readNxServer(parsed);
 
     expect(parsed.sandbox_mode).toBe("read-only");
-    expect(parsed.include_apply_patch_tool).toBe(false);
     expect(nxServer.command).toBe("bun");
     expect(nxServer.args).toEqual([path.join(TEST_PACKAGE_ROOT, "dist", "mcp", "server.js")]);
     expect(readNxDisabledTools(parsed)).toEqual(["nx_task_close", "nx_task_add"]);
@@ -59,7 +57,6 @@ describe("native agent capability restrictions", () => {
     const nxServer = readNxServer(parsed);
 
     expect(parsed.sandbox_mode).toBe("read-only");
-    expect(parsed.include_apply_patch_tool).toBe(false);
     expect(nxServer.command).toBe("bun");
     expect(nxServer.args).toEqual([path.join(TEST_PACKAGE_ROOT, "dist", "mcp", "server.js")]);
     expect(readNxDisabledTools(parsed)).toEqual(["nx_task_close", "nx_task_add", "nx_task_update"]);

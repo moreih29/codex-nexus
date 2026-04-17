@@ -39,13 +39,11 @@ function disabledNxTaskMutationTools(capabilities: readonly AgentCapability[]): 
 
 function runtimeRestrictions(agent: AgentDefinition): {
   sandboxMode?: "read-only";
-  includeApplyPatchTool?: boolean;
   nxDisabledTools: string[];
 } {
   const noFileEdit = agent.capabilities.includes("no_file_edit");
   return {
     sandboxMode: noFileEdit ? "read-only" : undefined,
-    includeApplyPatchTool: noFileEdit ? false : undefined,
     nxDisabledTools: disabledNxTaskMutationTools(agent.capabilities)
   };
 }
@@ -70,7 +68,6 @@ export function generateStandaloneAgentToml(config: {
   developerInstructions: string;
   model: string;
   sandboxMode?: "read-only";
-  includeApplyPatchTool?: boolean;
   nxMcpServer?: {
     command: string;
     args: readonly string[];
@@ -82,9 +79,6 @@ export function generateStandaloneAgentToml(config: {
     `description = "${escapeTomlBasicString(config.description)}"`,
     `model = "${escapeTomlBasicString(config.model)}"`,
     ...(config.sandboxMode ? [`sandbox_mode = "${escapeTomlBasicString(config.sandboxMode)}"`] : []),
-    ...(typeof config.includeApplyPatchTool === "boolean"
-      ? [`include_apply_patch_tool = ${config.includeApplyPatchTool ? "true" : "false"}`]
-      : []),
     'developer_instructions = """',
     escapeTomlMultiline(config.developerInstructions),
     '"""',
@@ -117,7 +111,6 @@ export function generateAgentToml(agent: AgentDefinition, promptContent: string,
     developerInstructions: stripFrontmatter(promptContent),
     model: AGENT_MODEL_BY_CATEGORY[resolvedAgent.category],
     sandboxMode: restrictions.sandboxMode,
-    includeApplyPatchTool: restrictions.includeApplyPatchTool,
     nxMcpServer: nxMcpServerConfig(packageRoot, restrictions.nxDisabledTools)
   });
 }

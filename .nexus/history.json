@@ -561,6 +561,50 @@
           "created_at": "2026-04-17T00:54:32.206Z"
         }
       ]
+    },
+    {
+      "completed_at": "2026-04-17T01:06:03.070Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Remove unsupported include_apply_patch_tool from generated agent role TOML",
+          "context": "Current generated agent TOML still emits `include_apply_patch_tool = false` for read-only agents such as `researcher`. Official Codex docs/config reference do not document this as a supported custom-agent field, while `sandbox_mode` is documented.",
+          "deps": [],
+          "approach": "Update native agent TOML generation to stop emitting `include_apply_patch_tool` entirely. Preserve `sandbox_mode = \"read-only\"` and existing instructions so read-only agents remain non-editing without relying on an unsupported field.",
+          "acceptance": "Generated custom agent TOML no longer contains `include_apply_patch_tool` for any agent, while read-only agents still emit `sandbox_mode = \"read-only\"`.",
+          "risk": "Removing the field may slightly widen visible tool surface, so protection must continue to rely on read-only sandboxing and agent instructions.",
+          "plan_issue": 1,
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-17T01:03:41.464Z"
+        },
+        {
+          "id": 2,
+          "title": "Update tests to reflect supported custom-agent config fields only",
+          "context": "Tests currently assert the legacy field for some agents.",
+          "deps": [],
+          "approach": "Revise native config tests to assert absence of `include_apply_patch_tool` and keep checking supported fields such as `sandbox_mode`, nx MCP transport, and disabled tools.",
+          "acceptance": "Tests cover absence of `include_apply_patch_tool` and still validate supported restrictions.",
+          "plan_issue": 1,
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-17T01:03:41.552Z"
+        },
+        {
+          "id": 3,
+          "title": "Rebuild and verify generated agent TOML output",
+          "context": "The warning is observed against generated local agent files under `.codex/agents`.",
+          "deps": [],
+          "approach": "Run the targeted tests, rebuild, rerun project setup generation, and inspect representative agent TOML output.",
+          "acceptance": "Targeted tests pass and inspected generated agent TOML does not contain `include_apply_patch_tool`.",
+          "plan_issue": 1,
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-17T01:03:41.554Z"
+        }
+      ]
     }
   ]
 }
