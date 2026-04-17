@@ -149,7 +149,7 @@
           "risk": "Observed behavior may be version-specific to the installed Codex CLI and may differ from undocumented future releases.",
           "plan_issue": 1,
           "owner": "lead",
-          "status": "pending",
+          "status": "completed",
           "created_at": "2026-04-16T13:19:30.476Z"
         },
         {
@@ -693,6 +693,42 @@
           "owner": "lead",
           "status": "completed",
           "created_at": "2026-04-17T03:17:55.024Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-17T03:38:41.144Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Unify CLI around install with version-aware package install",
+          "context": "Current CLI exposes setup/install/update but setup and update are wrappers around the same setupCommand that only rewrites managed Codex surfaces from the current package version. User wants install to be the only command, with scope/version flags and interactive clack prompts when omitted.",
+          "deps": [],
+          "approach": "Refactor CLI parsing/help/UI to expose install only, implement version-aware install logic for user/project scope, preserve non-interactive defaults, update tests, and revise README to document the new install flow.",
+          "acceptance": "CLI exposes install only, supports scope/version selection interactively and via flags, tests pass, and README matches the new behavior.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-17T03:30:50.983Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-17T03:42:58.823Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Rewrite user-facing README and add English version",
+          "context": "User wants README to be written for end users, referencing claude-nexus style, and wants local development details removed. An English version should be added as well.",
+          "deps": [],
+          "approach": "Review the current codex-nexus README plus claude-nexus README/README.en.md for tone and structure, then rewrite README.md for Korean users and add README.en.md with equivalent user-facing content based on the current CLI/install model.",
+          "acceptance": "README.md and README.en.md are user-focused, aligned with current CLI behavior, and avoid local development/internal bootstrap guidance.",
+          "owner": "lead",
+          "status": "pending",
+          "created_at": "2026-04-17T03:41:02.043Z"
         }
       ]
     }

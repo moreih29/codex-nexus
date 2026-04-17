@@ -1,9 +1,10 @@
 import type { SetupScope } from "../shared/paths.js";
 
-export type CliCommand = "setup" | "install" | "update" | "doctor";
+export type CliCommand = "install" | "doctor";
 
 export interface CliCommandOptions {
   scope?: SetupScope;
+  version?: string;
   verbose: boolean;
 }
 
@@ -13,7 +14,7 @@ export type ParsedCliArgs =
   | { kind: "command"; command: CliCommand; options: CliCommandOptions }
   | { kind: "error"; message: string; command?: CliCommand };
 
-const COMMANDS: CliCommand[] = ["setup", "install", "update", "doctor"];
+const COMMANDS: CliCommand[] = ["install", "doctor"];
 
 function isCliCommand(value: string): value is CliCommand {
   return COMMANDS.includes(value as CliCommand);
@@ -37,6 +38,13 @@ function parseCommandArgs(command: CliCommand, argv: string[]): ParsedCliArgs {
     }
 
     if (token === "--verbose") {
+      if (command !== "install") {
+        return {
+          kind: "error",
+          command,
+          message: `Unknown option "${token}" for ${command}.`
+        };
+      }
       options.verbose = true;
       continue;
     }
@@ -51,6 +59,28 @@ function parseCommandArgs(command: CliCommand, argv: string[]): ParsedCliArgs {
         };
       }
       options.scope = parsedScope;
+      index += 1;
+      continue;
+    }
+
+    if (token === "--version") {
+      if (command !== "install") {
+        return {
+          kind: "error",
+          command,
+          message: `Unknown option "${token}" for ${command}.`
+        };
+      }
+
+      const value = argv[index + 1];
+      if (!value || value.startsWith("-")) {
+        return {
+          kind: "error",
+          command,
+          message: "Missing value for --version."
+        };
+      }
+      options.version = value;
       index += 1;
       continue;
     }
@@ -71,7 +101,7 @@ function parseCommandArgs(command: CliCommand, argv: string[]): ParsedCliArgs {
 
 export function parseCliArgs(argv: string[]): ParsedCliArgs {
   if (argv.length === 0) {
-    return parseCommandArgs("setup", []);
+    return parseCommandArgs("install", []);
   }
 
   const [firstToken, ...rest] = argv;

@@ -55,6 +55,69 @@ export async function promptScope(command: CliCommand, defaultValue: SetupScope 
   return selection as SetupScope;
 }
 
+export async function promptInstallVersionMode(defaultValue: "latest" | "specific" = "latest"): Promise<"latest" | "specific"> {
+  const selection = await select({
+    message: "Which codex-nexus version do you want to install?",
+    initialValue: defaultValue,
+    options: [
+      {
+        value: "latest",
+        label: "latest",
+        hint: "Recommended"
+      },
+      {
+        value: "specific",
+        label: "Choose published version",
+        hint: "Select from the npm registry list"
+      }
+    ] satisfies Option<"latest" | "specific">[]
+  });
+
+  if (isCancel(selection)) {
+    throw new Error("Interrupted");
+  }
+
+  return selection as "latest" | "specific";
+}
+
+export async function promptPublishedVersion(versions: string[], defaultValue?: string): Promise<string> {
+  const normalized = versions.filter((version) => version.trim().length > 0);
+  if (normalized.length === 0) {
+    throw new Error("No published versions available.");
+  }
+
+  const selection = await select({
+    message: "Select a published codex-nexus version",
+    initialValue: defaultValue ?? normalized[0],
+    options: normalized.map((version, index) => ({
+      value: version,
+      label: version,
+      hint: index === 0 ? "Latest published" : undefined
+    })) satisfies Option<string>[]
+  });
+
+  if (isCancel(selection)) {
+    throw new Error("Interrupted");
+  }
+
+  return selection as string;
+}
+
+export async function fallbackPromptVersion(defaultValue = "latest"): Promise<string> {
+  const rl = readline.createInterface({ input, output });
+
+  try {
+    while (true) {
+      const answer = (await rl.question(`Version to install [${defaultValue}]: `)).trim();
+      if (answer) return answer;
+      if (defaultValue) return defaultValue;
+      output.write("Enter a version or dist-tag.\n");
+    }
+  } finally {
+    rl.close();
+  }
+}
+
 export async function promptContinue(message: string, initialValue = true): Promise<boolean> {
   const result = await confirm({
     message,

@@ -21,7 +21,9 @@ function runCli(args: string[], cwd = process.cwd()): Promise<CliResult> {
       cwd,
       env: {
         ...process.env,
-        CODEX_NEXUS_FORCE_TTY: "0"
+        CODEX_NEXUS_FORCE_TTY: "0",
+        CODEX_NEXUS_TEST_PACKAGE_ROOT: process.cwd(),
+        CODEX_NEXUS_TEST_VERSIONS: JSON.stringify([getCurrentVersion()])
       },
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -46,22 +48,23 @@ function runCli(args: string[], cwd = process.cwd()): Promise<CliResult> {
 }
 
 describe("CLI parser", () => {
-  test("defaults to setup when no command is provided", () => {
+  test("defaults to install when no command is provided", () => {
     expect(parseCliArgs([])).toEqual({
       kind: "command",
-      command: "setup",
+      command: "install",
       options: {
         verbose: false
       }
     });
   });
 
-  test("parses install alias with explicit scope and verbose", () => {
-    expect(parseCliArgs(["install", "--scope", "project", "--verbose"])).toEqual({
+  test("parses install with explicit scope, version, and verbose", () => {
+    expect(parseCliArgs(["install", "--scope", "project", "--version", "0.1.0", "--verbose"])).toEqual({
       kind: "command",
       command: "install",
       options: {
         scope: "project",
+        version: "0.1.0",
         verbose: true
       }
     });
@@ -75,10 +78,17 @@ describe("CLI parser", () => {
   });
 
   test("rejects invalid scope values", () => {
-    expect(parseCliArgs(["setup", "--scope", "workspace"])).toEqual({
+    expect(parseCliArgs(["install", "--scope", "workspace"])).toEqual({
       kind: "error",
-      command: "setup",
+      command: "install",
       message: 'Invalid --scope value "workspace". Expected "user" or "project".'
+    });
+  });
+
+  test("rejects setup after install-only consolidation", () => {
+    expect(parseCliArgs(["setup"])).toEqual({
+      kind: "error",
+      message: 'Unknown command "setup".'
     });
   });
 });
@@ -91,9 +101,11 @@ describe("CLI help", () => {
     expect(help).toContain("codex-nexus version");
   });
 
-  test("renders setup help with install surface details", () => {
-    const help = renderCommandHelp("setup");
-    expect(help).toContain("codex-nexus setup [options]");
+  test("renders install help with version-aware install details", () => {
+    const help = renderCommandHelp("install");
+    expect(help).toContain("codex-nexus install [options]");
+    expect(help).toContain("--version <value>");
+    expect(help).toContain(".codex/packages/node_modules/codex-nexus");
     expect(help).toContain(".codex/config.toml");
     expect(help).toContain("AGENTS.md Nexus section");
   });
@@ -129,13 +141,15 @@ describe("CLI integration", () => {
         "utf8"
       );
 
-      const setup = await runCli(["setup", "--scope", "project", "--verbose"], repoRoot);
-      expect(setup.code).toBe(0);
-      expect(setup.stdout).toContain("Setup complete.");
-      expect(setup.stdout).toContain("Scope: project");
-      expect(setup.stdout).toContain("Installed skills");
+      const install = await runCli(["install", "--scope", "project", "--version", getCurrentVersion(), "--verbose"], repoRoot);
+      expect(install.code).toBe(0);
+      expect(install.stdout).toContain("Install complete.");
+      expect(install.stdout).toContain("Scope: project");
+      expect(install.stdout).toContain(`Installed version: ${getCurrentVersion()}`);
+      expect(install.stdout).toContain("Installed skills");
       expect(existsSync(path.join(repoRoot, ".codex", "config.toml"))).toBe(true);
       expect(existsSync(path.join(repoRoot, ".codex", "hooks.json"))).toBe(true);
+      expect(existsSync(path.join(repoRoot, ".codex", "packages"))).toBe(true);
       expect(existsSync(path.join(repoRoot, ".codex", "skills", "nx-plan", "SKILL.md"))).toBe(true);
       expect(existsSync(path.join(repoRoot, ".codex", "agents", "nexus.toml"))).toBe(false);
       expect(existsSync(path.join(repoRoot, ".codex", "agents", "architect.toml"))).toBe(true);

@@ -32,9 +32,7 @@ function topLevelHelp(): string {
     {
       title: "Commands",
       lines: [
-        "setup     Install or refresh Codex Nexus surfaces",
-        "install   Alias for setup",
-        "update    Refresh installed Codex Nexus assets from the current package version",
+        "install   Install Codex Nexus surfaces for a scope and version",
         "doctor    Inspect the current Codex Nexus installation",
         "version   Print the installed codex-nexus version"
       ]
@@ -42,16 +40,15 @@ function topLevelHelp(): string {
     {
       title: "Behavior",
       lines: [
-        "When stdin/stdout are TTYs and --scope is omitted, the CLI prompts for user vs project scope.",
-        "When not running in a TTY, the CLI stays non-interactive and defaults scope to user."
+        "When stdin/stdout are TTYs and install values are omitted, the CLI prompts for version and scope.",
+        "When not running in a TTY, install defaults to latest + user scope."
       ]
     },
     {
       title: "Examples",
       lines: [
-        "codex-nexus setup",
-        "codex-nexus setup --scope project --verbose",
-        "codex-nexus update --scope user",
+        "codex-nexus install",
+        "codex-nexus install --scope project --version 0.1.0 --verbose",
         "codex-nexus doctor --scope project",
         "codex-nexus version"
       ]
@@ -59,16 +56,17 @@ function topLevelHelp(): string {
   ]);
 }
 
-function setupLikeHelp(command: "setup" | "install"): string {
-  return renderHelp(`${command} command`, [
+function installHelp(): string {
+  return renderHelp("install command", [
     {
       title: "Usage",
-      lines: [`codex-nexus ${command} [options]`]
+      lines: ["codex-nexus install [options]"]
     },
     {
       title: "Options",
       lines: [
         "--scope <user|project>   Target Codex install scope (default: user when non-interactive)",
+        "--version <value>        Package version or dist-tag to install (default: latest when non-interactive)",
         "--verbose                Print a detailed installation summary",
         "--help                   Show this help"
       ]
@@ -76,35 +74,21 @@ function setupLikeHelp(command: "setup" | "install"): string {
     {
       title: "Installs",
       lines: [
+        ".codex/packages/node_modules/codex-nexus",
         ".codex/config.toml",
         ".codex/hooks.json",
         ".codex/skills/nx-init|nx-plan|nx-run|nx-sync",
         ".codex/agents/*.toml",
         "AGENTS.md Nexus section"
       ]
-    }
-  ]);
-}
-
-function updateHelp(): string {
-  return renderHelp("update command", [
-    {
-      title: "Usage",
-      lines: ["codex-nexus update [options]"]
     },
     {
-      title: "Options",
+      title: "Examples",
       lines: [
-        "--scope <user|project>   Target Codex install scope (default: user when non-interactive)",
-        "--verbose                Print a detailed refresh summary",
-        "--help                   Show this help"
-      ]
-    },
-    {
-      title: "Behavior",
-      lines: [
-        "Refreshes installed Codex Nexus assets from the currently installed package version.",
-        "Does not change installation semantics; it rewrites managed Nexus assets in place."
+        "codex-nexus install",
+        "codex-nexus install --scope user",
+        "codex-nexus install --scope project --version 0.1.0",
+        "codex-nexus install --scope user --version latest --verbose"
       ]
     }
   ]);
@@ -136,7 +120,6 @@ function doctorHelp(): string {
 
 export function renderCommandHelp(command?: CliCommand): string {
   if (!command) return topLevelHelp();
-  if (command === "setup" || command === "install") return setupLikeHelp(command);
-  if (command === "update") return updateHelp();
+  if (command === "install") return installHelp();
   return doctorHelp();
 }

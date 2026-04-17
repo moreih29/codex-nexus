@@ -12,6 +12,7 @@ export interface ScopePaths {
   scope: SetupScope;
   projectRoot: string;
   codexHomeDir: string;
+  packageStoreDir: string;
   configTomlPath: string;
   hooksJsonPath: string;
   skillsDir: string;
@@ -58,11 +59,13 @@ export function resolveScopePaths(scope: SetupScope, cwd = process.cwd()): Scope
   const codexHomeDir = scope === "project"
     ? path.join(projectRoot, ".codex")
     : path.join(process.env.CODEX_HOME ?? path.join(process.env.HOME ?? "~", ".codex"));
+  const packageStoreDir = path.join(codexHomeDir, "packages");
 
   return {
     scope,
     projectRoot,
     codexHomeDir,
+    packageStoreDir,
     configTomlPath: path.join(codexHomeDir, "config.toml"),
     hooksJsonPath: path.join(codexHomeDir, "hooks.json"),
     skillsDir: path.join(codexHomeDir, "skills"),
@@ -121,7 +124,8 @@ export async function ensureProjectGitignore(projectRoot: string): Promise<void>
   const requiredLines = [
     ".nexus/state/",
     ".codex/config.toml",
-    ".codex/hooks.json"
+    ".codex/hooks.json",
+    ".codex/packages/"
   ];
   const existing = (await readTextIfExists(gitignorePath)) ?? "";
   const lines = new Set(existing.split(/\r?\n/).filter(Boolean));

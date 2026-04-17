@@ -4,14 +4,16 @@ import { parseCliArgs, type CliCommand, type CliCommandOptions } from "./args.js
 import { renderCommandHelp } from "./help.js";
 import { getCurrentVersion } from "../shared/version.js";
 import { doctorCommand, formatDoctorSummary } from "./doctor.js";
-import { formatSetupSummary, setupCommand } from "./setup.js";
-import { updateCommand } from "./update.js";
+import { fetchPublishedVersions, formatInstallSummary, installCommand } from "./install.js";
 import {
   beginInteractiveSession,
   endInteractiveSession,
+  fallbackPromptVersion,
   fallbackPromptScope,
   isInteractiveTerminal,
   printInteractiveNote,
+  promptInstallVersionMode,
+  promptPublishedVersion,
   promptScope,
   runWithSpinner
 } from "./ui.js";
@@ -30,17 +32,48 @@ async function resolveScope(command: CliCommand, options: CliCommandOptions, int
   }
 }
 
-async function executeCommand(command: CliCommand, options: CliCommandOptions, interactive: boolean): Promise<number> {
-  const scope = await resolveScope(command, options, interactive);
+async function resolveInstallVersion(options: CliCommandOptions, interactive: boolean): Promise<string> {
+  if (options.version) return options.version;
+  if (!interactive) return "latest";
 
-  if (command === "setup" || command === "install") {
-    const run = () => setupCommand({ scope });
+  try {
+    const mode = await promptInstallVersionMode("latest");
+    if (mode === "latest") {
+      return "latest";
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === "Interrupted") {
+      throw error;
+    }
+    return fallbackPromptVersion("latest");
+  }
+
+  try {
+    const versions = (await fetchPublishedVersions()).slice().reverse();
+    if (versions.length > 0) {
+      return await promptPublishedVersion(versions, versions[0]);
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === "Interrupted") {
+      throw error;
+    }
+  }
+
+  return fallbackPromptVersion("latest");
+}
+
+async function executeCommand(command: CliCommand, options: CliCommandOptions, interactive: boolean): Promise<number> {
+  if (command === "install") {
+    const version = await resolveInstallVersion(options, interactive);
+    const scope = await resolveScope(command, options, interactive);
+    const run = () => installCommand({ scope, version });
     const result = interactive
       ? await runWithSpinner("Installing Codex Nexus surfaces...", run)
       : await run();
-    const summary = formatSetupSummary("setup", result, options.verbose);
+    const summary = formatInstallSummary(result, options.verbose);
     if (interactive) {
       printInteractiveNote("Installed surfaces", [
+        `.codex/packages/node_modules/codex-nexus`,
         `.codex/config.toml`,
         `.codex/hooks.json`,
         `.codex/skills/*`,
@@ -54,21 +87,8 @@ async function executeCommand(command: CliCommand, options: CliCommandOptions, i
     return 0;
   }
 
-  if (command === "update") {
-    const run = () => updateCommand(scope);
-    const result = interactive
-      ? await runWithSpinner("Refreshing Codex Nexus surfaces...", run)
-      : await run();
-    const summary = formatSetupSummary("update", result, options.verbose);
-    if (interactive) {
-      endInteractiveSession(summary);
-    } else if (options.verbose) {
-      console.log(summary);
-    }
-    return 0;
-  }
-
   if (command === "doctor") {
+    const scope = await resolveScope(command, options, interactive);
     const run = () => doctorCommand(scope);
     const result = interactive
       ? await runWithSpinner("Inspecting Codex Nexus installation...", run)
