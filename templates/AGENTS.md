@@ -12,6 +12,19 @@ Before starting work, check `.nexus/context/`, `.nexus/memory/`, and `.nexus/rul
 - `[d]` records a decision against the current plan issue.
 - `$nx-init` bootstraps `.nexus/` knowledge for the current repository.
 
+### Nexus-Core Upgrade Protocol
+
+Source of truth: `moreih29/nexus-core` `CONSUMING.md`.
+
+When upgrading `@moreih29/nexus-core`, follow this exact order:
+
+1. Check local `package.json` and detect the target version change.
+2. Read local `node_modules/@moreih29/nexus-core/manifest.json`.
+3. WebFetch `CHANGELOG.md` at the exact `vX.Y.Z` tag and scan for `nx-car` markers.
+4. If the `CHANGELOG` lists one, WebFetch `MIGRATIONS/{from}_to_{to}.md` for that upgrade path.
+5. WebFetch `.nexus/rules/semver-policy.md` at the exact `vX.Y.Z` tag.
+6. Run `bun run validate:conformance` in the consumer repo, and extend fixture coverage if new state-schema fields were added.
+
 ### Skills
 
 Read and follow these installed skills when routed by user intent or tags:

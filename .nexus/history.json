@@ -957,6 +957,214 @@
           "created_at": "2026-04-17T06:36:53.046Z"
         }
       ]
+    },
+    {
+      "completed_at": "2026-04-17T11:21:36.168Z",
+      "branch": "default",
+      "plan": {
+        "id": 11,
+        "topic": "Align codex-nexus with @moreih29/nexus-core v0.12.0 from the current v0.10.0 baseline",
+        "issues": [
+          {
+            "id": 1,
+            "title": "Bump the consumer baseline from @moreih29/nexus-core 0.10.0 to 0.12.0 and verify generated assets remain in sync",
+            "status": "decided",
+            "decision": "Selected approach: Option C — bump @moreih29/nexus-core from 0.10.0 to 0.12.0, regenerate consumer-owned outputs, and add/execute an explicit verification gate rather than treating this as a lockfile-only update. Reason: upstream comparison shows generated skill bodies are expected to stay mostly stable, but codex-nexus is a contract-sensitive consumer and should prove that stability with regeneration and verification rather than assume it. Rejected alternative A: minimal dependency/lockfile bump only. Dismissed because it leaves no evidence that consumer-owned generated assets and contract assumptions still match the new nexus-core baseline. Rejected alternative B: dependency bump plus regeneration/diff inspection without a stronger verification gate. Dismissed because it improves confidence but still under-specifies upgrade safety for future schema/fixture drift and makes the consumer's compliance posture weaker than necessary."
+          },
+          {
+            "id": 2,
+            "title": "Add the nexus-core upgrade protocol to AGENTS surfaces so future version bumps follow the official CONSUMING.md flow",
+            "status": "decided",
+            "decision": "Selected approach: Option B — add the official @moreih29/nexus-core upgrade protocol block to both the repository root AGENTS.md and the install-time templates/AGENTS.md surface. Reason: the root AGENTS.md governs work in this repo today, while templates/AGENTS.md governs the AGENTS section written into downstream installs; keeping both in sync ensures the current consumer repo and newly installed consumer surfaces follow the same CONSUMING.md-prescribed upgrade flow. Rejected alternative A: add the protocol only to templates/AGENTS.md. Dismissed because it would fix future installed outputs but leave this repository's own active agent-memory surface behind the official protocol. Rejected alternative C: move the protocol to a different surface instead of AGENTS. Dismissed because CONSUMING.md explicitly instructs consumer repos to place the one-time setup in an agent-memory file such as AGENTS.md, so a non-AGENTS-only placement would weaken compliance and discoverability."
+          },
+          {
+            "id": 3,
+            "title": "Add a validate:conformance entrypoint and fixture coverage checks aligned with nexus-core v0.12.0 conformance expectations",
+            "status": "decided",
+            "decision": "Selected approach: Option B — add a dedicated validate:conformance entrypoint and include it in the default check path, without also forcing it into the broader test command. Reason: this makes conformance coverage part of the normal static verification loop while keeping the heavier build-and-test path focused on runtime behavior. Rejected alternative A: add only a standalone script. Dismissed because an opt-in command would be easy to forget and would not reliably protect against schema/fixture drift. Rejected alternative C: force conformance validation through both check and test. Dismissed because it increases verification surface and runtime cost without enough additional value; conformance coverage belongs in the contract/static validation lane more than in the runtime test lane."
+          }
+        ],
+        "research_summary": "Current codex-nexus is pinned to @moreih29/nexus-core ^0.10.0 in package.json and bun.lock, and node_modules currently contains 0.10.0. npm latest and the upstream GitHub tags both show 0.12.0 as the latest release on 2026-04-17. Upstream CHANGELOG and MIGRATIONS/v0_11_to_v0_12.md explicitly say codex-nexus may skip v0.11.0 and upgrade directly from v0.10.x to v0.12.0; the withdrawn v0.11.0 obligation was creating harness-content/nexus-hook-mapping.md and accepting the nexus_hook_mapping token. Local code already does not implement nexus_hook_mapping and only appends resume_invocation harness docs, so no hook-mapping dead-code removal is needed. Direct package comparison between local 0.10.0 and packed 0.12.0 shows skills/nx-run body/meta, skills/nx-plan body/meta, and vocabulary/invocations.yml are unchanged; generated skill output is therefore expected to stay stable after a version bump. The meaningful upstream diffs are docs/consumer-implementation-guide.md changes, manifest version/ordering metadata, package metadata, validate script internals, and two added lifecycle fixtures: conformance/lifecycle/session-end.json and conformance/lifecycle/memory-access-record.json. Local repo currently lacks a validate:conformance script or any explicit invocation of nexus-validate-conformance, and ripgrep found no local conformance fixture coverage checks beyond upstream files sitting in node_modules. Current AGENTS.md and templates/AGENTS.md also do not include the one-time nexus-core upgrade protocol block that CONSUMING.md instructs consumer repos to place in agent memory. Therefore the required consumer-side work is: update the devDependency/lockfile to 0.12.0, add the official upgrade-protocol memory to AGENTS surfaces, and establish a first-class conformance validation command that covers the newly added lifecycle fixtures and future schema-field drift.",
+        "created_at": "2026-04-17T11:14:12.379Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Upgrade nexus-core baseline and regenerate Nexus-derived outputs",
+          "context": "task_exception=generated_artifacts; includes package.json/bun.lock baseline changes plus any generated prompts/skills/templates that must be regenerated under the new manifest.",
+          "deps": [],
+          "approach": "Bump @moreih29/nexus-core to ^0.12.0, refresh the lockfile/install state, rerun the generation pipeline, and inspect consumer-owned generated outputs for drift while keeping the existing invocation-map semantics intact.",
+          "acceptance": "package.json and bun.lock reference @moreih29/nexus-core ^0.12.0; generation succeeds against 0.12.0; generated outputs in the repo are either intentionally updated or confirmed unchanged except for expected version metadata.",
+          "risk": "Upstream manifest and contract-document changes may expose latent assumptions in the generator or install pipeline even when skill bodies are unchanged.",
+          "plan_issue": 1,
+          "owner": "engineer",
+          "status": "pending",
+          "created_at": "2026-04-17T11:20:29.186Z"
+        },
+        {
+          "id": 2,
+          "title": "Add nexus-core upgrade protocol to AGENTS surfaces",
+          "context": "task_exception=docs_only.coherent; update the root AGENTS.md and templates/AGENTS.md as one coherent documentation unit so repo-local and install-time AGENTS surfaces stay synchronized.",
+          "deps": [],
+          "approach": "Add the official @moreih29/nexus-core upgrade protocol block from CONSUMING.md to both AGENTS surfaces with the same wording and explicit read order, keeping the surrounding Nexus orchestration guidance intact.",
+          "acceptance": "Both AGENTS.md and templates/AGENTS.md contain the same upgrade protocol guidance, and the protocol instructs agents to detect version changes and read manifest.json, CONSUMING.md, CHANGELOG, MIGRATIONS, and semver-policy in the prescribed order.",
+          "risk": "Duplicated protocol text across two AGENTS surfaces can drift unless both files are updated together.",
+          "plan_issue": 2,
+          "owner": "writer",
+          "status": "pending",
+          "created_at": "2026-04-17T11:20:37.126Z"
+        },
+        {
+          "id": 3,
+          "title": "Review AGENTS upgrade protocol against nexus-core CONSUMING.md",
+          "context": "task_exception=docs_only.coherent; paired review for the AGENTS protocol deliverable to confirm wording fidelity and cross-surface consistency.",
+          "deps": [
+            2
+          ],
+          "approach": "Compare the inserted protocol block in the root and template AGENTS surfaces against the official CONSUMING.md requirements and confirm the two files remain synchronized and discoverable.",
+          "acceptance": "Review confirms that both AGENTS surfaces faithfully capture the required upgrade protocol steps and ordering from CONSUMING.md, or identifies exact wording gaps that must be corrected.",
+          "risk": "Minor wording drift from the official protocol can weaken future agent compliance even when the general intent is correct.",
+          "plan_issue": 2,
+          "owner": "reviewer",
+          "status": "pending",
+          "created_at": "2026-04-17T11:20:42.703Z"
+        },
+        {
+          "id": 4,
+          "title": "Add conformance validation command to the default check path",
+          "context": "Wire a validate:conformance entrypoint into package scripts and the default static verification lane without also forcing it into the broader runtime-test path.",
+          "deps": [
+            1
+          ],
+          "approach": "Expose a validate:conformance script that runs nexus-core conformance coverage on the upgraded 0.12.0 baseline, then include it in the existing check pipeline alongside generation and typechecking; update any directly affected tests or command expectations.",
+          "acceptance": "package.json exposes bun run validate:conformance; bun run check invokes conformance validation as part of its default path; any affected tests or command-surface expectations are updated accordingly.",
+          "risk": "The stricter 0.12.0 lifecycle fixture coverage may surface missing local conformance coverage and require follow-up script or fixture adjustments.",
+          "plan_issue": 3,
+          "owner": "engineer",
+          "status": "pending",
+          "created_at": "2026-04-17T11:20:49.663Z"
+        },
+        {
+          "id": 5,
+          "title": "Verify the 0.12.0 upgrade and conformance gate",
+          "context": "Focused verification task for the upgraded nexus-core baseline, regenerated outputs, and the new conformance-validation path.",
+          "deps": [
+            1,
+            4
+          ],
+          "approach": "Run the relevant verification commands on the upgraded baseline — including generation, validate:conformance, check, and the most relevant automated tests — and capture whether the new contract/static validation lane works end-to-end.",
+          "acceptance": "Verification produces concrete evidence that the 0.12.0 baseline, regenerated outputs, and validate:conformance-integrated check path work together, or reports exact failing commands and failure surfaces.",
+          "risk": "Broader test failures unrelated to the nexus-core upgrade may obscure whether remaining problems are introduced regressions or pre-existing issues.",
+          "plan_issue": 3,
+          "owner": "tester",
+          "status": "pending",
+          "created_at": "2026-04-17T11:20:56.398Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-17T11:29:41.924Z",
+      "branch": "default",
+      "plan": {
+        "id": 12,
+        "topic": "Align codex-nexus with @moreih29/nexus-core v0.12.0 from the current v0.10.0 baseline",
+        "issues": [
+          {
+            "id": 1,
+            "title": "Bump the consumer baseline from @moreih29/nexus-core 0.10.0 to 0.12.0 and verify generated assets remain in sync",
+            "status": "decided",
+            "decision": "Selected approach: Option C — bump @moreih29/nexus-core from 0.10.0 to 0.12.0, regenerate consumer-owned outputs, and add/execute an explicit verification gate rather than treating this as a lockfile-only update. Reason: upstream comparison shows generated skill bodies are expected to stay mostly stable, but codex-nexus is a contract-sensitive consumer and should prove that stability with regeneration and verification rather than assume it. Rejected alternative A: minimal dependency/lockfile bump only. Dismissed because it leaves no evidence that consumer-owned generated assets and contract assumptions still match the new nexus-core baseline. Rejected alternative B: dependency bump plus regeneration/diff inspection without a stronger verification gate. Dismissed because it improves confidence but still under-specifies upgrade safety for future schema/fixture drift and makes the consumer's compliance posture weaker than necessary."
+          },
+          {
+            "id": 2,
+            "title": "Add the nexus-core upgrade protocol to AGENTS surfaces so future version bumps follow the official CONSUMING.md flow",
+            "status": "decided",
+            "decision": "Selected approach: Option B — add the official @moreih29/nexus-core upgrade protocol block to both the repository root AGENTS.md and the install-time templates/AGENTS.md surface. Reason: the root AGENTS.md governs work in this repo today, while templates/AGENTS.md governs the AGENTS section written into downstream installs; keeping both in sync ensures the current consumer repo and newly installed consumer surfaces follow the same CONSUMING.md-prescribed upgrade flow. Rejected alternative A: add the protocol only to templates/AGENTS.md. Dismissed because it would fix future installed outputs but leave this repository's own active agent-memory surface behind the official protocol. Rejected alternative C: move the protocol to a different surface instead of AGENTS. Dismissed because CONSUMING.md explicitly instructs consumer repos to place the one-time setup in an agent-memory file such as AGENTS.md, so a non-AGENTS-only placement would weaken compliance and discoverability."
+          },
+          {
+            "id": 3,
+            "title": "Add a validate:conformance entrypoint and fixture coverage checks aligned with nexus-core v0.12.0 conformance expectations",
+            "status": "decided",
+            "decision": "Selected approach: Option B — add a dedicated validate:conformance entrypoint and include it in the default check path, without also forcing it into the broader test command. Reason: this makes conformance coverage part of the normal static verification loop while keeping the heavier build-and-test path focused on runtime behavior. Rejected alternative A: add only a standalone script. Dismissed because an opt-in command would be easy to forget and would not reliably protect against schema/fixture drift. Rejected alternative C: force conformance validation through both check and test. Dismissed because it increases verification surface and runtime cost without enough additional value; conformance coverage belongs in the contract/static validation lane more than in the runtime test lane."
+          }
+        ],
+        "research_summary": "Current codex-nexus is pinned to @moreih29/nexus-core ^0.10.0 in package.json and bun.lock, and node_modules currently contains 0.10.0. npm latest and the upstream GitHub tags both show 0.12.0 as the latest release on 2026-04-17. Upstream CHANGELOG and MIGRATIONS/v0_11_to_v0_12.md explicitly say codex-nexus may skip v0.11.0 and upgrade directly from v0.10.x to v0.12.0; the withdrawn v0.11.0 obligation was creating harness-content/nexus-hook-mapping.md and accepting the nexus_hook_mapping token. Local code already does not implement nexus_hook_mapping and only appends resume_invocation harness docs, so no hook-mapping dead-code removal is needed. Direct package comparison between local 0.10.0 and packed 0.12.0 shows skills/nx-run body/meta, skills/nx-plan body/meta, and vocabulary/invocations.yml are unchanged; generated skill output is therefore expected to stay stable after a version bump. The meaningful upstream diffs are docs/consumer-implementation-guide.md changes, manifest version/ordering metadata, package metadata, validate script internals, and two added lifecycle fixtures: conformance/lifecycle/session-end.json and conformance/lifecycle/memory-access-record.json. Local repo currently lacks a validate:conformance script or any explicit invocation of nexus-validate-conformance, and ripgrep found no local conformance fixture coverage checks beyond upstream files sitting in node_modules. Current AGENTS.md and templates/AGENTS.md also do not include the one-time nexus-core upgrade protocol block that CONSUMING.md instructs consumer repos to place in agent memory. Therefore the required consumer-side work is: update the devDependency/lockfile to 0.12.0, add the official upgrade-protocol memory to AGENTS surfaces, and establish a first-class conformance validation command that covers the newly added lifecycle fixtures and future schema-field drift.",
+        "created_at": "2026-04-17T11:22:43.869Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Upgrade nexus-core baseline and regenerate Nexus-derived outputs",
+          "context": "task_exception=generated_artifacts; includes package.json/bun.lock baseline changes plus any generated prompts/skills/templates that must be regenerated under the new manifest.",
+          "deps": [],
+          "approach": "Bump @moreih29/nexus-core to ^0.12.0, refresh the lockfile/install state, rerun the generation pipeline, and inspect consumer-owned generated outputs for drift while keeping the existing invocation-map semantics intact.",
+          "acceptance": "package.json and bun.lock reference @moreih29/nexus-core ^0.12.0; generation succeeds against 0.12.0; generated outputs in the repo are either intentionally updated or confirmed unchanged except for expected version metadata.",
+          "risk": "Upstream manifest and contract-document changes may expose latent assumptions in the generator or install pipeline even when skill bodies are unchanged.",
+          "plan_issue": 1,
+          "owner": "engineer",
+          "status": "completed",
+          "created_at": "2026-04-17T11:23:30.543Z"
+        },
+        {
+          "id": 2,
+          "title": "Add nexus-core upgrade protocol to AGENTS surfaces",
+          "context": "task_exception=docs_only.coherent; update the root AGENTS.md and templates/AGENTS.md as one coherent documentation unit so repo-local and install-time AGENTS surfaces stay synchronized.",
+          "deps": [],
+          "approach": "Add the official @moreih29/nexus-core upgrade protocol block from CONSUMING.md to both AGENTS surfaces with the same wording and explicit read order, keeping the surrounding Nexus orchestration guidance intact.",
+          "acceptance": "Both AGENTS.md and templates/AGENTS.md contain the same upgrade protocol guidance, and the protocol instructs agents to detect version changes and read manifest.json, CONSUMING.md, CHANGELOG, MIGRATIONS, and semver-policy in the prescribed order.",
+          "risk": "Duplicated protocol text across two AGENTS surfaces can drift unless both files are updated together.",
+          "plan_issue": 2,
+          "owner": "writer",
+          "status": "completed",
+          "created_at": "2026-04-17T11:23:30.544Z"
+        },
+        {
+          "id": 3,
+          "title": "Review AGENTS upgrade protocol against nexus-core CONSUMING.md",
+          "context": "task_exception=docs_only.coherent; paired review for the AGENTS protocol deliverable to confirm wording fidelity and cross-surface consistency.",
+          "deps": [
+            2
+          ],
+          "approach": "Compare the inserted protocol block in the root and template AGENTS surfaces against the official CONSUMING.md requirements and confirm the two files remain synchronized and discoverable.",
+          "acceptance": "Review confirms that both AGENTS surfaces faithfully capture the required upgrade protocol steps and ordering from CONSUMING.md, or identifies exact wording gaps that must be corrected.",
+          "risk": "Minor wording drift from the official protocol can weaken future agent compliance even when the general intent is correct.",
+          "plan_issue": 2,
+          "owner": "reviewer",
+          "status": "completed",
+          "created_at": "2026-04-17T11:23:30.622Z"
+        },
+        {
+          "id": 4,
+          "title": "Add conformance validation command to the default check path",
+          "context": "Wire a validate:conformance entrypoint into package scripts and the default static verification lane without also forcing it into the broader runtime-test path.",
+          "deps": [
+            1
+          ],
+          "approach": "Expose a validate:conformance script that runs nexus-core conformance coverage on the upgraded 0.12.0 baseline, then include it in the existing check pipeline alongside generation and typechecking; update any directly affected tests or command expectations.",
+          "acceptance": "package.json exposes bun run validate:conformance; bun run check invokes conformance validation as part of its default path; any affected tests or command-surface expectations are updated accordingly.",
+          "risk": "The stricter 0.12.0 lifecycle fixture coverage may surface missing local conformance coverage and require follow-up script or fixture adjustments.",
+          "plan_issue": 3,
+          "owner": "engineer",
+          "status": "completed",
+          "created_at": "2026-04-17T11:23:30.624Z"
+        },
+        {
+          "id": 5,
+          "title": "Verify the 0.12.0 upgrade and conformance gate",
+          "context": "Focused verification task for the upgraded nexus-core baseline, regenerated outputs, and the new conformance-validation path.",
+          "deps": [
+            1,
+            4
+          ],
+          "approach": "Run the relevant verification commands on the upgraded baseline — including generation, validate:conformance, check, and the most relevant automated tests — and capture whether the new contract/static validation lane works end-to-end.",
+          "acceptance": "Verification produces concrete evidence that the 0.12.0 baseline, regenerated outputs, and validate:conformance-integrated check path work together, or reports exact failing commands and failure surfaces.",
+          "risk": "Broader test failures unrelated to the nexus-core upgrade may obscure whether remaining problems are introduced regressions or pre-existing issues.",
+          "plan_issue": 3,
+          "owner": "tester",
+          "status": "completed",
+          "created_at": "2026-04-17T11:23:30.625Z"
+        }
+      ]
     }
   ]
 }

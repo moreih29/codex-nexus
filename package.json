@@ -41,7 +41,8 @@
   "scripts": {
     "generate": "bun scripts/generate-from-nexus-core.mjs",
     "build": "bun scripts/build.mjs",
-    "check": "bun run generate && bunx tsc --noEmit",
+    "validate:conformance": "bun scripts/validate-conformance.mjs",
+    "check": "bun run generate && bun run validate:conformance && bunx tsc --noEmit",
     "test": "bun run build && bun test",
     "prepack": "bun run build"
   },
@@ -52,7 +53,7 @@
     "zod": "^3.24.0"
   },
   "devDependencies": {
-    "@moreih29/nexus-core": "^0.10.0",
+    "@moreih29/nexus-core": "^0.12.0",
     "@types/bun": "^1.2.13",
     "@types/node": "^22.10.1",
     "typescript": "^5.6.3",
