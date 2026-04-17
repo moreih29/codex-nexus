@@ -659,6 +659,24 @@
           "created_at": "2026-04-17T01:26:05.795Z"
         }
       ]
+    },
+    {
+      "completed_at": "2026-04-17T02:57:08.378Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Polish README before first npm publish",
+          "context": "README currently says codex-nexus is published through npm and uses setup commands, but the package is not yet on npm. The user wants to refine the README before the initial publish.",
+          "deps": [],
+          "approach": "Review current README plus sibling repo README tone, then update README to accurately describe the current bootstrap/pre-publish state, installation expectations, and development workflow without promising unavailable npm usage.",
+          "acceptance": "README no longer claims npm publication before first release and provides clear, accurate installation and development guidance.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-17T02:55:44.618Z"
+        }
+      ]
     }
   ]
 }
