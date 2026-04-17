@@ -505,6 +505,62 @@
           "created_at": "2026-04-17T00:25:56.235Z"
         }
       ]
+    },
+    {
+      "completed_at": "2026-04-17T00:57:35.940Z",
+      "branch": "default",
+      "plan": {
+        "id": 6,
+        "topic": "Fix malformed custom agent role definitions caused by incomplete MCP server config in generated .codex/agents/*.toml",
+        "issues": [
+          {
+            "id": 1,
+            "title": "Determine the minimal generator change that makes generated custom agent files valid for Codex 0.121.0 while preserving per-agent nx tool restrictions.",
+            "status": "decided",
+            "decision": "Selected approach: update the native agent TOML generator so every emitted `[mcp_servers.nx]` block includes the same stdio transport used by project config (`command = \"bun\"` plus `args = [<packageRoot>/dist/mcp/server.js]`) and keep `disabled_tools` in that same block. Reason: this matches the Codex config schema for MCP server definitions and directly addresses the observed `invalid transport` parse failure for standalone agent files. Rejected alternative: remove the `mcp_servers.nx` block entirely from custom agent files. Reason dismissed: it would avoid the parse error but would also silently drop per-agent nx tool restrictions that this project intentionally relies on. Rejected alternative: keep emitting only `disabled_tools` and treat the error as a Codex-only bug. Reason dismissed: even if Codex has a parser inconsistency, generating a complete MCP definition is valid per current docs and gives a robust workaround without waiting on upstream fixes."
+          }
+        ],
+        "research_summary": "Investigated the local repository generator, local Codex CLI 0.121.0, and current OpenAI Codex docs on 2026-04-17. Generated custom agent files currently emit `[mcp_servers.nx]` with only `disabled_tools`, for example `.codex/agents/architect.toml`. OpenAI docs say custom agent files may include `mcp_servers`, and the config reference/schema define `mcp_servers.<id>` with transport fields such as `command` or `url` plus optional `disabled_tools`. The local Codex runtime reports `Ignoring malformed agent role definition ... invalid transport`, which indicates the standalone agent-role parser is requiring a valid MCP transport when an `mcp_servers.<id>` block is present. Therefore the likely fix is to generate a complete `mcp_servers.nx` definition including the existing stdio transport (`command = \"bun\"`, `args = [<dist/mcp/server.js>]`) alongside `disabled_tools`, then update tests accordingly.",
+        "created_at": "2026-04-17T00:54:15.788Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Update native agent TOML generation to emit complete nx MCP server definitions",
+          "context": "`src/agents/native-config.ts` currently emits `[mcp_servers.nx]` with only `disabled_tools`, which produces `invalid transport` when Codex deserializes standalone agent role files.",
+          "deps": [],
+          "approach": "Thread the package root into TOML generation so the nx MCP block can include `command = \"bun\"`, `args = [<packageRoot>/dist/mcp/server.js]`, and existing `disabled_tools` in one block.",
+          "acceptance": "Generated native agent TOML includes a complete `[mcp_servers.nx]` block with transport and disabled tool restrictions.",
+          "plan_issue": 1,
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-17T00:54:32.203Z"
+        },
+        {
+          "id": 2,
+          "title": "Adjust tests for complete nx MCP server config emission",
+          "context": "Current tests only inspect `disabled_tools` and do not require emitted MCP transport fields.",
+          "deps": [],
+          "approach": "Extend `test/native-config.test.ts` to assert `command`, `args`, and `disabled_tools` for generated agent TOML.",
+          "acceptance": "Tests fail if generated custom agent TOML omits nx transport or changes disabled tool restrictions unexpectedly.",
+          "plan_issue": 1,
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-17T00:54:32.205Z"
+        },
+        {
+          "id": 3,
+          "title": "Verify the generator change by running targeted tests",
+          "context": "The change affects generated custom agent configuration and related tests.",
+          "deps": [],
+          "approach": "Run the relevant test file or the narrowest test command that covers native config generation after editing.",
+          "acceptance": "Targeted tests pass after the patch.",
+          "plan_issue": 1,
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-17T00:54:32.206Z"
+        }
+      ]
     }
   ]
 }

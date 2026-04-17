@@ -50,6 +50,20 @@ function runtimeRestrictions(agent: AgentDefinition): {
   };
 }
 
+function nxMcpServerConfig(packageRoot: string, disabledTools: readonly string[]): {
+  command: string;
+  args: string[];
+  disabledTools: readonly string[];
+} | undefined {
+  if (disabledTools.length === 0) return undefined;
+
+  return {
+    command: "bun",
+    args: [path.join(packageRoot, "dist", "mcp", "server.js")],
+    disabledTools
+  };
+}
+
 export function generateStandaloneAgentToml(config: {
   name: string;
   description: string;
@@ -57,7 +71,11 @@ export function generateStandaloneAgentToml(config: {
   model: string;
   sandboxMode?: "read-only";
   includeApplyPatchTool?: boolean;
-  nxDisabledTools?: string[];
+  nxMcpServer?: {
+    command: string;
+    args: readonly string[];
+    disabledTools: readonly string[];
+  };
 }): string {
   const lines = [
     `name = "${escapeTomlBasicString(config.name)}"`,
@@ -70,11 +88,13 @@ export function generateStandaloneAgentToml(config: {
     'developer_instructions = """',
     escapeTomlMultiline(config.developerInstructions),
     '"""',
-    ...(config.nxDisabledTools && config.nxDisabledTools.length > 0
+    ...(config.nxMcpServer
       ? [
           "",
           "[mcp_servers.nx]",
-          `disabled_tools = ${formatTomlStringArray(config.nxDisabledTools)}`
+          `command = "${escapeTomlBasicString(config.nxMcpServer.command)}"`,
+          `args = ${formatTomlStringArray(config.nxMcpServer.args)}`,
+          `disabled_tools = ${formatTomlStringArray(config.nxMcpServer.disabledTools)}`
         ]
       : []),
     ""
@@ -82,7 +102,7 @@ export function generateStandaloneAgentToml(config: {
   return lines.join("\n");
 }
 
-export function generateAgentToml(agent: AgentDefinition, promptContent: string): string {
+export function generateAgentToml(agent: AgentDefinition, promptContent: string, packageRoot: string): string {
   const promptMetadata = parseAgentPromptMetadata(promptContent);
   const resolvedAgent = {
     ...agent,
@@ -98,7 +118,7 @@ export function generateAgentToml(agent: AgentDefinition, promptContent: string)
     model: AGENT_MODEL_BY_CATEGORY[resolvedAgent.category],
     sandboxMode: restrictions.sandboxMode,
     includeApplyPatchTool: restrictions.includeApplyPatchTool,
-    nxDisabledTools: restrictions.nxDisabledTools
+    nxMcpServer: nxMcpServerConfig(packageRoot, restrictions.nxDisabledTools)
   });
 }
 
@@ -140,7 +160,7 @@ export async function installNativeAgentConfigs(
     if (!existsSync(promptPath)) continue;
 
     const promptContent = await readFile(promptPath, "utf8");
-    const toml = generateAgentToml(agent, promptContent);
+    const toml = generateAgentToml(agent, promptContent, packageRoot);
     await writeFile(path.join(agentsDir, `${name}.toml`), toml, "utf8");
     installed.push(name);
   }

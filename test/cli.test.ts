@@ -149,6 +149,9 @@ describe("CLI integration", () => {
       expect(architectToml).toContain('model = "gpt-5.4"');
       expect(engineerToml).toContain('model = "gpt-5.3-codex"');
       expect(reviewerToml).toContain('model = "gpt-5.3-codex"');
+      expect(architectToml).toContain('[mcp_servers.nx]');
+      expect(architectToml).toContain('command = "bun"');
+      expect(architectToml).toContain(`args = ["${path.join(process.cwd(), "dist", "mcp", "server.js")}"]`);
       expect(architectToml).not.toContain("model_reasoning_effort");
       expect(engineerToml).not.toContain("model_reasoning_effort");
       expect(reviewerToml).not.toContain("model_reasoning_effort");
