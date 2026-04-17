@@ -4,26 +4,16 @@ Nexus orchestration plugin for OpenAI Codex CLI.
 
 `codex-nexus` packages Nexus planning, task-based run cycles, context sync, Codex-native agents, and an `nx` MCP server into a Codex install surface.
 
-## Status
-
-`codex-nexus` is still in pre-release bootstrap. The first public npm release has not been published yet.
-
-Until that first release lands:
-
-- use this repository for development and local verification
-- expect the install/update CLI surface to keep tightening
-- treat the npm install commands below as the intended release flow, not something available from npm today
-
 ## Requirements
 
 - OpenAI Codex CLI
 - `bun` available on `PATH`
 
-`codex-nexus` is intended to be distributed through npm, but the installed hooks and MCP server execute with `bun`.
+`codex-nexus` is distributed through npm, but the installed hooks and MCP server execute with `bun`.
 
-## Planned Install Flow
+## Install
 
-After the first npm release, the intended global install flow is:
+Global install:
 
 ```bash
 npm install -g codex-nexus
@@ -42,7 +32,7 @@ Refresh managed Codex Nexus assets from the currently installed package version:
 codex-nexus update --scope user
 ```
 
-Current bootstrap builds still accept `setup` as a legacy alias, but `install` / `update` are the intended public commands.
+`setup` is still accepted as a legacy alias, but `install` / `update` are the intended public commands.
 
 ## Scope
 
@@ -69,15 +59,13 @@ Current bootstrap builds still accept `setup` as a legacy alias, but `install` /
 
 ## Local Development
 
-Bootstrap and verify from this checkout:
-
 ```bash
 bun install
 bun run build
 bun test
 ```
 
-Run the built CLI directly before the first npm publish:
+Run the built CLI directly from this checkout:
 
 ```bash
 bun ./dist/cli/index.js install --scope project --verbose

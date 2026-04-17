@@ -677,6 +677,24 @@
           "created_at": "2026-04-17T02:55:44.618Z"
         }
       ]
+    },
+    {
+      "completed_at": "2026-04-17T03:18:39.003Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Finalize post-publish README and publish workflow",
+          "context": "codex-nexus 0.1.0 is now published to npm. README still describes pre-release bootstrap status. A trusted publishing workflow file has been added locally but not committed yet.",
+          "deps": [],
+          "approach": "Revise README to reflect the published install/update story, verify relevant package/workflow artifacts, commit README + workflow + nexus history, and push main to origin.",
+          "acceptance": "README accurately describes the published package and intended install/update commands, the workflow is committed, and main is pushed to origin.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-17T03:17:55.024Z"
+        }
+      ]
     }
   ]
 }
