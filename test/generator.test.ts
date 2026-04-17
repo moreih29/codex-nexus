@@ -30,4 +30,14 @@ describe("generator invocation mapping", () => {
     expect(skill).toContain("use update_plan to keep the existing plan items in sync");
     expect(skill).toContain("Do not use nx_task_add or nx_task_update for this primitive");
   });
+
+  test("generated nx-plan and nx-run skills include Codex resume invocation guidance", () => {
+    const planSkill = readFileSync(path.join(process.cwd(), "skills", "nx-plan", "SKILL.md"), "utf8");
+    const runSkill = readFileSync(path.join(process.cwd(), "skills", "nx-run", "SKILL.md"), "utf8");
+
+    expect(planSkill).toContain("Harness-Specific: resume_invocation");
+    expect(planSkill).toContain("resume_agent(id)");
+    expect(runSkill).toContain("Harness-Specific: resume_invocation");
+    expect(runSkill).toContain("nx_task_resume");
+  });
 });

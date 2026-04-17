@@ -17,3 +17,8 @@ invocation_map:
     tool: request_user_input
     header: Question
     fallback: prose
+skill_harness_docs:
+  nx-plan:
+    - resume_invocation
+  nx-run:
+    - resume_invocation

@@ -5,10 +5,10 @@
 - Docs: AGENTS.md, README.md
 
 ## Recent Activity
-- fix: emit valid nx mcp config for agent roles
-- fix: align agent role definition sources
-- chore: archive nexus merge cycle
-- fix: align nexus tool-log and tracker hooks
-- fix: align nexus session state and subagent guards
+- feat: unify CLI around install
+- docs: add publish workflow and update install docs
+- docs: clarify pre-release install flow
+- chore: archive codex hook guidance issue cycle
+- fix: map task register to update_plan
 
 > Refreshed by nx_sync.

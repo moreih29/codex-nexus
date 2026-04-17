@@ -149,15 +149,15 @@ export async function upsertAgentTrackerEntry(
     started_at: now
   };
   const tracker = await readAgentTracker(filePath);
-  const existing = tracker.invocations.find(
-    (item) =>
-      (normalizedEntry.agent_id && item.agent_id === normalizedEntry.agent_id) ||
-      (
-        normalizedEntry.harness_id === item.harness_id &&
-        normalizedEntry.agent_name &&
-        item.agent_name === normalizedEntry.agent_name
-      )
-  );
+  const existing = normalizedEntry.agent_id
+    ? tracker.invocations.find((item) => item.agent_id === normalizedEntry.agent_id)
+    : tracker.invocations.find(
+        (item) =>
+          normalizedEntry.harness_id === item.harness_id &&
+          normalizedEntry.agent_name &&
+          item.agent_name === normalizedEntry.agent_name &&
+          !item.agent_id
+      );
 
   if (existing) {
     const wasCompleted = existing.status === "completed";

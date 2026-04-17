@@ -4,8 +4,10 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { agentHasCapability } from "../../agents/definitions.js";
 import { readSubagentSessionInfo, readTurnMetadataFromRequestMeta } from "../../shared/codex-session.js";
+import { resolveRunTaskContinuity } from "../../shared/continuity.js";
 import { textErrorResult, textResult } from "../../shared/mcp-utils.js";
 import { createNexusPaths, ensureDir, findProjectRoot } from "../../shared/paths.js";
+import { readAgentTracker } from "../../shared/state.js";
 import { readPlan, type PlanFile } from "./plan.js";
 import type { TaskRecord, TasksFile } from "../../shared/tasks.js";
 
@@ -99,6 +101,45 @@ function taskMutationDeniedError(requestMeta: unknown, deniedReason: string, sub
   });
 }
 
+function buildTaskDelegation(task: TaskRecord, prompt: string, continuity: ReturnType<typeof resolveRunTaskContinuity>) {
+  const message = continuity.requires_reread
+    ? `Re-read target files before any modification.\n\n${prompt}`
+    : prompt;
+
+  if (!continuity.resumable || !continuity.resume_agent_id) {
+    return {
+      mode: "spawn",
+      subagent_type: task.owner ?? null,
+      prompt: message,
+      codex_invocation: {
+        step_1: {
+          tool: "spawn_agent",
+          agent_type: task.owner ?? null,
+          message
+        }
+      }
+    };
+  }
+
+  return {
+    mode: "resume",
+    subagent_type: task.owner ?? null,
+    resume_agent_id: continuity.resume_agent_id,
+    prompt: message,
+    codex_invocation: {
+      step_1: {
+        tool: "resume_agent",
+        id: continuity.resume_agent_id
+      },
+      step_2: {
+        tool: "send_input",
+        target: continuity.resume_agent_id,
+        message
+      }
+    }
+  };
+}
+
 export function registerTaskTools(server: McpServer): void {
   server.tool(
     "nx_task_list",
@@ -168,12 +209,14 @@ export function registerTaskTools(server: McpServer): void {
 
   server.tool(
     "nx_task_update",
-    "Update task status",
+    "Update task status or continuity metadata",
     {
       id: z.number(),
-      status: z.enum(["pending", "in_progress", "completed"])
+      status: z.enum(["pending", "in_progress", "completed"]).optional(),
+      owner_agent_id: z.string().nullable().optional(),
+      owner_reuse_policy: z.enum(["fresh", "resume_if_same_artifact", "resume"]).optional()
     },
-    async ({ id, status }, extra) => {
+    async ({ id, status, owner_agent_id, owner_reuse_policy }, extra) => {
       const subagentRole = await readSubagentRoleFromRequestMeta(extra._meta);
       const deniedReason = getTaskUpdateDeniedReason(extra._meta, subagentRole);
       if (deniedReason) {
@@ -184,9 +227,70 @@ export function registerTaskTools(server: McpServer): void {
       if (!data) return textResult({ error: "tasks.json not found" });
       const task = data.tasks.find((entry) => entry.id === id);
       if (!task) return textResult({ error: `Task ${id} not found` });
-      task.status = status;
+
+      if (status !== undefined) {
+        task.status = status;
+      }
+      if (owner_agent_id !== undefined) {
+        if (owner_agent_id && owner_agent_id.trim().length > 0) {
+          task.owner_agent_id = owner_agent_id.trim();
+        } else {
+          delete task.owner_agent_id;
+        }
+      }
+      if (owner_reuse_policy !== undefined) {
+        task.owner_reuse_policy = owner_reuse_policy;
+      }
+
       await writeTasks(data);
       return textResult({ task });
+    }
+  );
+
+  server.tool(
+    "nx_task_resume",
+    "Resolve run-task resume routing info",
+    {
+      id: z.number(),
+      prompt: z.string().optional()
+    },
+    async ({ id, prompt }) => {
+      const data = await readTasks();
+      if (!data) return textResult({ error: "tasks.json not found" });
+
+      const task = data.tasks.find((entry) => entry.id === id);
+      if (!task) return textResult({ error: `Task ${id} not found` });
+
+      const paths = createNexusPaths(findProjectRoot());
+      const tracker = await readAgentTracker(paths.AGENT_TRACKER_FILE);
+      const continuity = resolveRunTaskContinuity({ task, tracker });
+      const taskPrompt = (prompt?.trim() || task.approach?.trim() || task.context.trim() || task.title).trim();
+
+      return textResult({
+        task: {
+          id: task.id,
+          title: task.title,
+          owner: task.owner ?? null,
+          owner_agent_id: task.owner_agent_id ?? null,
+          owner_reuse_policy: task.owner_reuse_policy ?? null,
+          status: task.status
+        },
+        continuity: {
+          resume_tier: continuity.resume_tier,
+          reuse_policy: continuity.reuse_policy,
+          resumable: continuity.resumable,
+          agent_id: continuity.resume_agent_id,
+          source: continuity.source,
+          last_summary: continuity.last_summary,
+          tracker_status: continuity.tracker_status,
+          requires_reread: continuity.requires_reread,
+          reason: continuity.reason
+        },
+        delegation: buildTaskDelegation(task, taskPrompt, continuity),
+        task_update_hint: continuity.resumable
+          ? "Keep owner_agent_id on the task while continuity is still desired."
+          : "After the first spawn, persist the returned agent id with nx_task_update(id, owner_agent_id=..., status=...) if you want future resume continuity."
+      });
     }
   );
 

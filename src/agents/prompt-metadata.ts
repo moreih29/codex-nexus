@@ -1,9 +1,10 @@
-import type { AgentDefinition } from "./definitions.js";
+import type { AgentDefinition, ResumeTier } from "./definitions.js";
 
 export interface AgentPromptMetadata {
   name: string;
   description: string;
   category: AgentDefinition["category"];
+  resume_tier: ResumeTier;
 }
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
@@ -42,6 +43,8 @@ export function parseAgentPromptMetadata(content: string): Partial<AgentPromptMe
       metadata.description = value;
     } else if (key === "category" && (value === "how" || value === "do" || value === "check")) {
       metadata.category = value;
+    } else if (key === "resume_tier" && (value === "persistent" || value === "bounded" || value === "ephemeral")) {
+      metadata.resume_tier = value;
     }
   }
 

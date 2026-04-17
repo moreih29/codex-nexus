@@ -12,6 +12,7 @@ OpenAI Codex CLI를 위한 Nexus 오케스트레이션 플러그인.
 
 - 구현 전에 `[plan]`으로 먼저 정리
 - `[run]`에서 태스크 기반으로 실행
+- 완료된 specialist subagent를 Codex native resume로 이어서 호출 가능
 - `.nexus/`에 프로젝트 지식과 결정 기록 유지
 - 역할이 분리된 Codex-native 에이전트 카탈로그 제공
 - `nx` MCP 도구로 plan/task/history/context 흐름 사용
@@ -121,6 +122,22 @@ $nx-init
 | `[run]` | 태스크 기반 실행 |
 | `[sync]` | `.nexus/context/` 동기화 |
 
+## Subagent Resume
+
+완료된 subagent는 Codex native resume 흐름으로 다시 이어서 호출할 수 있습니다.
+
+- plan mode: `nx_plan_resume`, `nx_plan_followup`가 `resume_agent -> send_input` 순서의 follow-up guidance를 반환합니다.
+- run mode: `nx_task_resume`가 task의 `owner_agent_id`, `owner_reuse_policy`, `agent-tracker.json`을 기준으로 resume 가능 여부를 계산합니다.
+- `persistent` tier: 이전 완료 세션이 있으면 기본적으로 resume
+- `bounded` tier: task에 `owner_agent_id`가 저장되어 있어야 하며, follow-up prompt 앞에 `Re-read target files before any modification.`가 붙습니다.
+- `ephemeral` tier: 항상 fresh spawn
+
+run mode에서 continuity를 유지하려면 첫 spawn 뒤 returned agent id를 task에 저장하세요.
+
+```text
+nx_task_update(id=<task id>, owner_agent_id=<returned agent id>, status="in_progress")
+```
+
 ## What Install Writes
 
 설치가 완료되면 선택한 scope 아래에 다음이 생성되거나 갱신됩니다.
@@ -155,6 +172,11 @@ Scope 의미:
 
 - `memory/`, `context/`, `rules/`, `history.json`은 프로젝트 지식입니다.
 - `state/`는 런타임 상태이며 git에서 제외됩니다.
+
+resume 관련 런타임 상태는 주로 여기에 저장됩니다.
+
+- `.nexus/state/codex-nexus/agent-tracker.json`
+- `.nexus/state/codex-nexus/tool-log.jsonl`
 
 ## CLI
 

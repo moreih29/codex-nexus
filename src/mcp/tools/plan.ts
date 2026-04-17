@@ -1,9 +1,9 @@
 import { existsSync, unlinkSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { textResult } from "../../shared/mcp-utils.js";
+import { resolvePlanContinuity } from "../../shared/continuity.js";
 import { createNexusPaths, findProjectRoot, ensureDir } from "../../shared/paths.js";
 import { readAgentTracker } from "../../shared/state.js";
 
@@ -77,6 +77,48 @@ function currentIssue(plan: PlanFile): PlanIssue | null {
   return plan.issues.find((issue) => issue.status === "pending") ?? null;
 }
 
+const HOW_ROLES = ["architect", "designer", "postdoc", "strategist"] as const;
+
+function buildFollowupPrompt(role: string, question: string, issue: PlanIssue | null): string {
+  const issuePrefix = issue ? `Issue #${issue.id} (${issue.title})` : "Current plan issue";
+  return `${issuePrefix}: continue the ${role} follow-up. ${question}`;
+}
+
+function buildCodexDelegation(role: string, prompt: string, continuity: ReturnType<typeof resolvePlanContinuity>) {
+  if (!continuity.resumable || !continuity.resume_agent_id) {
+    return {
+      mode: "spawn",
+      subagent_type: role,
+      prompt,
+      codex_invocation: {
+        step_1: {
+          tool: "spawn_agent",
+          agent_type: role,
+          message: prompt
+        }
+      }
+    };
+  }
+
+  return {
+    mode: "resume",
+    subagent_type: role,
+    resume_agent_id: continuity.resume_agent_id,
+    prompt,
+    codex_invocation: {
+      step_1: {
+        tool: "resume_agent",
+        id: continuity.resume_agent_id
+      },
+      step_2: {
+        tool: "send_input",
+        target: continuity.resume_agent_id,
+        message: prompt
+      }
+    }
+  };
+}
+
 export function registerPlanTools(server: McpServer): void {
   server.tool(
     "nx_plan_start",
@@ -135,18 +177,9 @@ export function registerPlanTools(server: McpServer): void {
       }
 
       const tracker = await readAgentTracker(paths.AGENT_TRACKER_FILE);
-      const followupReady = tracker.invocations
-        .filter(
-          (entry): entry is typeof entry & { agent_name: string } =>
-            typeof entry.agent_name === "string" &&
-            ["architect", "designer", "postdoc", "strategist"].includes(entry.agent_name)
-        )
-        .map((entry) => ({
-          role: entry.agent_name,
-          task_id: null,
-          session_id: entry.agent_id ?? null,
-          last_summary: entry.last_message ?? null
-        }));
+      const followupReady = HOW_ROLES
+        .map((role) => resolvePlanContinuity({ plan, tracker, role }))
+        .filter((entry) => entry.resumable || entry.last_summary);
 
       return textResult({
         active: true,
@@ -156,7 +189,15 @@ export function registerPlanTools(server: McpServer): void {
         research_summary: plan.research_summary,
         summary: summarize(plan),
         current_issue: currentIssue(plan),
-        followup_ready_roles: followupReady.filter((entry) => entry.session_id || entry.last_summary)
+        followup_ready_roles: followupReady.map((entry) => ({
+          role: entry.role,
+          resume_tier: entry.resume_tier,
+          resumable: entry.resumable,
+          agent_id: entry.resume_agent_id,
+          source: entry.source,
+          last_summary: entry.last_summary,
+          reason: entry.reason
+        }))
       });
     }
   );
@@ -170,25 +211,22 @@ export function registerPlanTools(server: McpServer): void {
     },
     async ({ role, question }) => {
       const paths = createNexusPaths(findProjectRoot());
+      const plan = await readPlan();
       const tracker = await readAgentTracker(paths.AGENT_TRACKER_FILE);
-      const participant = tracker.invocations.find((entry) => entry.agent_name === role) ?? null;
-      if (!participant) {
-        return textResult({
-          role,
-          resumable: false,
-          recommendation: `No existing ${role} continuity found. Spawn a fresh ${role} participant if needed.`
-        });
-      }
+      const continuity = resolvePlanContinuity({ plan, tracker, role });
 
       return textResult({
-        role,
-        resumable: Boolean(participant.agent_id),
-        task_id: null,
-        session_id: participant.agent_id ?? null,
-        last_summary: participant.last_message ?? null,
-        recommendation: participant.agent_id
-          ? `Resume the existing ${role} participant and continue: ${question ?? "follow up on the current issue."}`
-          : `Rehydrate a fresh ${role} participant from the last summary and continue: ${question ?? "follow up on the current issue."}`
+        role: continuity.role,
+        resume_tier: continuity.resume_tier,
+        resumable: continuity.resumable,
+        agent_id: continuity.resume_agent_id,
+        source: continuity.source,
+        issue_id: continuity.issue_id,
+        last_summary: continuity.last_summary,
+        reason: continuity.reason,
+        recommendation: continuity.resumable && continuity.resume_agent_id
+          ? `Resume the existing ${continuity.role} participant with resume_agent(${continuity.resume_agent_id}), then continue via send_input: ${question ?? "follow up on the current issue."}`
+          : `No resumable ${continuity.role} participant is available. Spawn a fresh ${continuity.role} participant if needed.`
       });
     }
   );
@@ -205,23 +243,27 @@ export function registerPlanTools(server: McpServer): void {
       const paths = createNexusPaths(findProjectRoot());
       const tracker = await readAgentTracker(paths.AGENT_TRACKER_FILE);
       const plan = await readPlan();
-      const participant = tracker.invocations.find((entry) => entry.agent_name === role) ?? null;
       const issue = issue_id && plan
         ? plan.issues.find((entry) => entry.id === issue_id) ?? null
         : plan ? currentIssue(plan) : null;
+      const continuity = resolvePlanContinuity({ plan, tracker, role, issueId: issue?.id });
+      const prompt = buildFollowupPrompt(role, question, issue);
 
       return textResult({
         role,
         question,
         issue,
+        continuity: {
+          resume_tier: continuity.resume_tier,
+          resumable: continuity.resumable,
+          agent_id: continuity.resume_agent_id,
+          source: continuity.source,
+          last_summary: continuity.last_summary,
+          reason: continuity.reason
+        },
         delegation: {
-          subagent_type: role,
-          resume_task_id: null,
-          resume_session_id: participant?.agent_id ?? null,
-          prompt: participant?.agent_id
-            ? `Resume the existing ${role} participant and continue this follow-up: ${question}`
-            : `Spawn a ${role} participant and continue this follow-up: ${question}`,
-          briefing_seed: participant?.last_message ?? null
+          ...buildCodexDelegation(role, prompt, continuity),
+          briefing_seed: continuity.last_summary
         }
       });
     }

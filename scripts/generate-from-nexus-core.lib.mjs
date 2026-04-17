@@ -111,7 +111,24 @@ export function transformSkill(meta, body, invocationMap, invocationsEnum) {
   fm.set("description", collapseDescription(meta.description));
   fm.set("trigger_display", deriveSkillTriggerDisplay(meta));
   fm.set("purpose", meta.summary ?? collapseDescription(meta.description));
-  return emitFrontmatter(fm, SKILL_FIELD_ORDER) + `\n${expandMacros(body, invocationMap, invocationsEnum)}\n`;
+  let prompt = expandMacros(body, invocationMap, invocationsEnum);
+  const harnessDocRefs = invocationMap?.skill_harness_docs?.[meta.id];
+
+  if (Array.isArray(harnessDocRefs)) {
+    for (const ref of harnessDocRefs) {
+      const docPath = join(CODEX_NEXUS_ROOT, "harness-content", `${ref}.md`);
+      if (!existsSync(docPath)) {
+        console.warn(
+          `[generate-from-nexus-core] skill_harness_docs: "${ref}.md" not found at ${docPath} — skipping`
+        );
+        continue;
+      }
+      const content = readFileSync(docPath, "utf8").trim();
+      prompt += `\n\n---\n\n## Harness-Specific: ${ref}\n\n${content}`;
+    }
+  }
+
+  return emitFrontmatter(fm, SKILL_FIELD_ORDER) + `\n${prompt}\n`;
 }
 
 export function writeGenerated(dst, content) {

@@ -28,7 +28,7 @@ Use the `nx` MCP server for stateful workflows:
 
 - `nx_context`
 - `nx_plan_start`, `nx_plan_status`, `nx_plan_resume`, `nx_plan_followup`, `nx_plan_update`, `nx_plan_decide`
-- `nx_task_add`, `nx_task_list`, `nx_task_update`, `nx_task_close`, `nx_history_search`
+- `nx_task_add`, `nx_task_list`, `nx_task_update`, `nx_task_resume`, `nx_task_close`, `nx_history_search`
 - `nx_artifact_write`
 - `nx_init`, `nx_sync`
 
@@ -51,6 +51,7 @@ Use the installed native agents for specialization:
 - For significant execution, create tasks with `nx_task_add` before non-trivial changes.
 - Keep edits scoped to active tasks.
 - Update task state as work progresses.
+- When reusing a completed subagent, prefer `nx_plan_followup` or `nx_task_resume` and follow the returned Codex `resume_agent` -> `send_input` guidance.
 - Verify before calling work complete.
 - After a completed run cycle, use `nx_sync` when useful and archive with `nx_task_close`.
 <!-- CODEX-NEXUS:END -->

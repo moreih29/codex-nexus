@@ -12,6 +12,7 @@ Nexus orchestration plugin for OpenAI Codex CLI.
 
 - plan before implementation with `[plan]`
 - execute through task-based `[run]`
+- resume completed specialist subagents through Codex-native continuation
 - keep project knowledge and decisions in `.nexus/`
 - use a Codex-native specialist agent catalog
 - access plan/task/history/context flows through `nx` MCP tools
@@ -119,6 +120,22 @@ Typical flow:
 | `[run]` | task-based execution |
 | `[sync]` | `.nexus/context/` synchronization |
 
+## Subagent Resume
+
+Completed subagents can be continued through Codex-native resume flow.
+
+- plan mode: `nx_plan_resume` and `nx_plan_followup` return follow-up guidance in `resume_agent -> send_input` form
+- run mode: `nx_task_resume` evaluates `owner_agent_id`, `owner_reuse_policy`, and `agent-tracker.json` to decide between resume and fresh spawn
+- `persistent` tier: resume by default when a prior completed participant exists
+- `bounded` tier: requires `owner_agent_id` to be persisted on the task, and prepends `Re-read target files before any modification.` to the follow-up prompt
+- `ephemeral` tier: always fresh spawn
+
+To preserve run-mode continuity, store the returned agent id on the task after the first spawn.
+
+```text
+nx_task_update(id=<task id>, owner_agent_id=<returned agent id>, status="in_progress")
+```
+
 ## What Install Writes
 
 An install updates these managed surfaces under the selected scope:
@@ -153,6 +170,11 @@ Scope meanings:
 
 - `memory/`, `context/`, `rules/`, and `history.json` hold project knowledge.
 - `state/` holds runtime state and is excluded from git.
+
+Resume-related runtime state lives primarily in:
+
+- `.nexus/state/codex-nexus/agent-tracker.json`
+- `.nexus/state/codex-nexus/tool-log.jsonl`
 
 ## CLI
 

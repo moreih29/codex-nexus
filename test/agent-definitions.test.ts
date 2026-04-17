@@ -12,7 +12,8 @@ describe("agent definition metadata", () => {
       expect(parseAgentPromptMetadata(promptContent)).toEqual({
         name: definition.name,
         description: definition.description,
-        category: definition.category
+        category: definition.category,
+        resume_tier: definition.resumeTier
       });
     }
   });

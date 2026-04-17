@@ -731,6 +731,82 @@
           "created_at": "2026-04-17T03:41:02.043Z"
         }
       ]
+    },
+    {
+      "completed_at": "2026-04-17T04:09:22.510Z",
+      "branch": "default",
+      "plan": {
+        "id": 7,
+        "topic": "Implement Codex subagent resume continuity",
+        "issues": [
+          {
+            "id": 1,
+            "title": "Define Codex-native resume routing and fallback behavior",
+            "status": "decided",
+            "decision": "Use Codex session/agent id as the canonical resume handle. Resume completed subagents through resume_agent(id) followed by send_input(target=id,...), and silently fall back to fresh spawn when the resume mechanism is unavailable or rejected. Plan continuity should prefer how_agent_ids recorded in plan.json, then tracker continuity; run continuity should prefer explicit owner_agent_id / owner_reuse_policy from tasks, then tracker-based reuse checks using files_touched for bounded tiers."
+          },
+          {
+            "id": 2,
+            "title": "Wire plan/run continuity to real Codex resume primitives",
+            "status": "decided",
+            "decision": "Add shared continuity helpers that resolve resume eligibility and build delegation guidance for both plan and run flows. Update MCP outputs and skill/docs so generated guidance refers to Codex-native resume invocation instead of placeholder session hints."
+          },
+          {
+            "id": 3,
+            "title": "Add regression tests and user-facing documentation for resume behavior",
+            "status": "decided",
+            "decision": "Cover the new continuity logic with unit tests for plan and run selection/injection behavior, plus documentation updates that describe supported resume tiers and fallback semantics."
+          }
+        ],
+        "research_summary": "Codex exposes native completed-agent continuation primitives via resume_agent(id) and send_input(target,...). codex-nexus currently defines resume_tier metadata, tracks subagent lifecycle in agent-tracker.json, and exposes nx_plan_resume/nx_plan_followup hints, but does not actually dispatch follow-up work through resume_agent/send_input or consume owner_agent_id/owner_reuse_policy for run continuity. sibling repos already implement harness-specific continuity adapters and documentation.",
+        "created_at": "2026-04-17T03:57:51.914Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Implement shared Codex resume continuity resolution",
+          "context": "Add shared helpers that decide when a previous subagent session is resumable for plan and run flows. Use explicit agent ids when present, apply resume_tier and owner_reuse_policy, and fall back safely when resume is unavailable.",
+          "deps": [],
+          "approach": "Introduce shared continuity utilities that read plan/task state plus agent-tracker entries, resolve canonical Codex resume handles, and return delegation-ready guidance for fresh vs resumed invocations.",
+          "acceptance": "Plan and run continuity logic can resolve resume candidates from persisted state and distinguish persistent/bounded/ephemeral behavior without duplicating selection logic.",
+          "risk": "Incorrect eligibility logic could resume the wrong subagent or over-resume bounded agents after intervening edits.",
+          "plan_issue": 2,
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-17T03:58:05.642Z"
+        },
+        {
+          "id": 2,
+          "title": "Wire Codex-native resume guidance through MCP and generated skill surfaces",
+          "context": "Replace placeholder session-hint behavior with guidance that explicitly uses Codex resume_agent/send_input semantics. Prefer how_agent_ids in plan continuity and surface concrete resume guidance for run mode too.",
+          "deps": [
+            1
+          ],
+          "approach": "Update MCP plan outputs, any continuity adapters/docs, and generated skill/README text so they describe and emit Codex-native resume instructions.",
+          "acceptance": "Plan follow-up guidance and run-oriented continuity outputs expose Codex-native resume routing with clear fallback semantics.",
+          "risk": "Docs and skill text can drift from implementation if not updated together.",
+          "plan_issue": 2,
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-17T03:58:05.648Z"
+        },
+        {
+          "id": 3,
+          "title": "Add regression tests for Codex resume continuity",
+          "context": "Protect plan/run continuity selection, bounded artifact checks, and Codex-native resume guidance against regressions.",
+          "deps": [
+            1,
+            2
+          ],
+          "approach": "Add focused unit tests around continuity helpers and MCP outputs, then run the test suite.",
+          "acceptance": "New tests cover plan continuity, run continuity, and fallback behavior; full relevant test suite passes.",
+          "risk": "Test fixtures may overfit implementation details unless assertions stay at behavior level.",
+          "plan_issue": 3,
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-17T03:58:05.656Z"
+        }
+      ]
     }
   ]
 }
