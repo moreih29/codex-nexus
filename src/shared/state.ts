@@ -261,9 +261,28 @@ export async function resetSessionScopedState(paths: NexusPaths): Promise<void> 
   await writeJsonFile(paths.AGENT_TRACKER_FILE, []);
   await ensureDir(path.dirname(paths.TOOL_LOG_FILE));
   await writeFile(paths.TOOL_LOG_FILE, "", "utf8");
+  await clearRunSessionMarker(paths.RUN_SESSION_FILE);
 }
 
 export async function removeAgentTracker(filePath: string): Promise<void> {
+  if (!existsSync(filePath)) return;
+  await rm(filePath, { force: true });
+}
+
+export async function markRunSessionActive(filePath: string): Promise<void> {
+  await ensureDir(path.dirname(filePath));
+  await writeFile(
+    filePath,
+    JSON.stringify({ active: true, updated_at: new Date().toISOString() }, null, 2) + "\n",
+    "utf8"
+  );
+}
+
+export function hasRunSessionMarker(filePath: string): boolean {
+  return existsSync(filePath);
+}
+
+export async function clearRunSessionMarker(filePath: string): Promise<void> {
   if (!existsSync(filePath)) return;
   await rm(filePath, { force: true });
 }

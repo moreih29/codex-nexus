@@ -1165,6 +1165,25 @@
           "created_at": "2026-04-17T11:23:30.625Z"
         }
       ]
+    },
+    {
+      "completed_at": "2026-04-17T11:36:27.382Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Restrict stop hook gating to run mode and clear run marker on cycle close",
+          "context": "Update hook lifecycle so plan-only sessions do not trigger stop blocking. Use a run-mode marker set by [run], consulted by Stop, and cleared on SessionStart/task_close. Cover with focused hook/task tests.",
+          "deps": [],
+          "approach": "Introduce a harness state file representing an active run cycle, set it from the UserPromptSubmit [run] path, gate Stop only when that file exists, and clear it on session reset and nx_task_close. Add regression tests for plan-vs-run stop behavior.",
+          "acceptance": "Stop does not block during plan-only state that has tasks.json but no active run marker. Stop blocks during run-mode sessions with pending/in-progress tasks or all-complete-but-not-archived tasks. nx_task_close clears the run marker so a clean stop no longer blocks.",
+          "risk": "If the run marker is not consistently cleared, stop could remain sticky across sessions or fail to protect active run cycles.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-17T11:33:30.388Z"
+        }
+      ]
     }
   ]
 }

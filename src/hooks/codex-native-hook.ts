@@ -8,7 +8,10 @@ import {
 import {
   appendToolLogEntries,
   collectFilesTouchedFromToolLog,
+  clearRunSessionMarker,
   ensureNexusStructure,
+  hasRunSessionMarker,
+  markRunSessionActive,
   removeAgentTracker,
   resetSessionScopedState,
   upsertAgentTrackerEntry
@@ -223,8 +226,12 @@ async function handleSessionStart(cwd: string, payload: HookPayload): Promise<Re
   );
 }
 
-async function handleUserPromptSubmit(payload: HookPayload): Promise<Record<string, unknown> | null> {
+async function handleUserPromptSubmit(cwd: string, payload: HookPayload): Promise<Record<string, unknown> | null> {
   const prompt = readPrompt(payload);
+  if (detectTag(prompt) === "run") {
+    const paths = createNexusPaths(cwd);
+    await markRunSessionActive(paths.RUN_SESSION_FILE);
+  }
   const message = buildUserPromptContext(prompt);
   if (!message) return null;
   return buildAdditionalContext("UserPromptSubmit", message);
@@ -288,6 +295,12 @@ async function handleStop(cwd: string, payload: HookPayload): Promise<Record<str
     return null;
   }
 
+  if (!hasRunSessionMarker(paths.RUN_SESSION_FILE)) {
+    await syncTranscriptToolLog(paths, payload);
+    await removeAgentTracker(paths.AGENT_TRACKER_FILE);
+    return null;
+  }
+
   const summary = await readTasksSummary(paths);
   if (summary.exists && (summary.pending > 0 || summary.in_progress > 0)) {
     return {
@@ -303,6 +316,7 @@ async function handleStop(cwd: string, payload: HookPayload): Promise<Record<str
   }
 
   await syncTranscriptToolLog(paths, payload);
+  await clearRunSessionMarker(paths.RUN_SESSION_FILE);
   await removeAgentTracker(paths.AGENT_TRACKER_FILE);
   return null;
 }
@@ -313,7 +327,7 @@ async function dispatch(payload: HookPayload): Promise<Record<string, unknown> |
   if (!event) return null;
 
   if (event === "SessionStart") return handleSessionStart(cwd, payload);
-  if (event === "UserPromptSubmit") return handleUserPromptSubmit(payload);
+  if (event === "UserPromptSubmit") return handleUserPromptSubmit(cwd, payload);
   if (event === "PreToolUse") return handlePreToolUse(cwd, payload);
   if (event === "PostToolUse") return handlePostToolUse(cwd, payload);
   if (event === "Stop") return handleStop(cwd, payload);

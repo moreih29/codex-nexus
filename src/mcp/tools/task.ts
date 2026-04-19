@@ -7,6 +7,7 @@ import { readSubagentSessionInfo, readTurnMetadataFromRequestMeta } from "../../
 import { resolveRunTaskContinuity } from "../../shared/continuity.js";
 import { textErrorResult, textResult } from "../../shared/mcp-utils.js";
 import { createNexusPaths, ensureDir, findProjectRoot } from "../../shared/paths.js";
+import { clearRunSessionMarker } from "../../shared/state.js";
 import { readAgentTracker } from "../../shared/state.js";
 import { readPlan, type PlanFile } from "./plan.js";
 import type { TaskRecord, TasksFile } from "../../shared/tasks.js";
@@ -51,6 +52,12 @@ async function appendHistoryCycle(plan: PlanFile | null, tasks: TaskRecord[]): P
 
   await writeFile(paths.HISTORY_FILE, JSON.stringify(history, null, 2) + "\n", "utf8");
   return history.cycles.length;
+}
+
+export async function closeCycleFiles(paths = createNexusPaths(findProjectRoot())): Promise<void> {
+  if (existsSync(paths.PLAN_FILE)) unlinkSync(paths.PLAN_FILE);
+  if (existsSync(paths.TASKS_FILE)) unlinkSync(paths.TASKS_FILE);
+  await clearRunSessionMarker(paths.RUN_SESSION_FILE);
 }
 
 export function getTaskCloseDeniedReason(requestMeta: unknown): string | null {
@@ -309,8 +316,7 @@ export function registerTaskTools(server: McpServer): void {
       const tasks = await readTasks();
       const count = await appendHistoryCycle(plan, tasks?.tasks ?? []);
 
-      if (existsSync(paths.PLAN_FILE)) unlinkSync(paths.PLAN_FILE);
-      if (existsSync(paths.TASKS_FILE)) unlinkSync(paths.TASKS_FILE);
+      await closeCycleFiles();
 
       return textResult({
         closed: true,

@@ -5,10 +5,10 @@
 - Docs: AGENTS.md, README.md
 
 ## Recent Activity
+- chore: align codex-nexus with nexus-core v0.12.0
 - chore: archive merge to main cycle
 - refactor: rename install core-only flag
 - feat: enable hosted context7 during install
 - chore: archive merge to main cycle
-- feat: implement codex subagent resume continuity
 
 > Refreshed by nx_sync.

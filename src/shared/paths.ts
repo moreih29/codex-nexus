@@ -31,6 +31,7 @@ export interface NexusPaths {
   HISTORY_FILE: string;
   PLAN_FILE: string;
   TASKS_FILE: string;
+  RUN_SESSION_FILE: string;
   AGENT_TRACKER_FILE: string;
   TOOL_LOG_FILE: string;
   ARTIFACTS_ROOT: string;
@@ -93,6 +94,7 @@ export function createNexusPaths(projectRoot: string): NexusPaths {
     HISTORY_FILE: path.join(NEXUS_ROOT, "history.json"),
     PLAN_FILE: path.join(STATE_ROOT, "plan.json"),
     TASKS_FILE: path.join(STATE_ROOT, "tasks.json"),
+    RUN_SESSION_FILE: path.join(HARNESS_STATE_ROOT, "run-session.json"),
     AGENT_TRACKER_FILE: path.join(HARNESS_STATE_ROOT, "agent-tracker.json"),
     TOOL_LOG_FILE: path.join(HARNESS_STATE_ROOT, "tool-log.jsonl"),
     ARTIFACTS_ROOT: path.join(HARNESS_STATE_ROOT, "artifacts")

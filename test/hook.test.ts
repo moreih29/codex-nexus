@@ -405,6 +405,136 @@ describe("codex-native-hook", () => {
     }
   });
 
+  test("lead Stop ignores plan-only tasks when run mode was never activated", async () => {
+    const tempDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-hook-plan-stop-"));
+    try {
+      await runHook({
+        hook_event_name: "SessionStart",
+        cwd: tempDir
+      });
+
+      const tasksPath = path.join(tempDir, ".nexus", "state", "tasks.json");
+      await Bun.write(tasksPath, JSON.stringify({
+        goal: "plan only",
+        decisions: [],
+        tasks: [
+          {
+            id: 1,
+            title: "draft task",
+            context: "",
+            deps: [],
+            status: "pending",
+            created_at: "2026-04-17T00:00:00.000Z"
+          }
+        ]
+      }, null, 2) + "\n");
+
+      const result = await runHookProcess(JSON.stringify({
+        hook_event_name: "Stop",
+        cwd: tempDir
+      }));
+
+      expect(result.code).toBe(0);
+      expect(result.stdout).toBe("");
+      expect(existsSync(path.join(tempDir, ".nexus", "state", "codex-nexus", "agent-tracker.json"))).toBe(false);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("lead Stop blocks active run cycles with pending tasks", async () => {
+    const tempDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-hook-run-stop-"));
+    try {
+      await runHook({
+        hook_event_name: "SessionStart",
+        cwd: tempDir
+      });
+
+      await runHook({
+        hook_event_name: "UserPromptSubmit",
+        cwd: tempDir,
+        prompt: "[run] implement it"
+      });
+
+      const tasksPath = path.join(tempDir, ".nexus", "state", "tasks.json");
+      const runSessionPath = path.join(tempDir, ".nexus", "state", "codex-nexus", "run-session.json");
+      await Bun.write(tasksPath, JSON.stringify({
+        goal: "run cycle",
+        decisions: [],
+        tasks: [
+          {
+            id: 1,
+            title: "active task",
+            context: "",
+            deps: [],
+            status: "pending",
+            created_at: "2026-04-17T00:00:00.000Z"
+          }
+        ]
+      }, null, 2) + "\n");
+
+      const result = await runHookProcess(JSON.stringify({
+        hook_event_name: "Stop",
+        cwd: tempDir
+      }));
+
+      expect(result.code).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        decision: "block",
+        reason: "Nexus cycle still active: 1 pending, 0 in progress. Finish work or update task state before stopping."
+      });
+      expect(existsSync(runSessionPath)).toBe(true);
+      expect(existsSync(path.join(tempDir, ".nexus", "state", "codex-nexus", "agent-tracker.json"))).toBe(true);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("lead Stop blocks completed run cycles until task_close archives them", async () => {
+    const tempDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-hook-run-complete-stop-"));
+    try {
+      await runHook({
+        hook_event_name: "SessionStart",
+        cwd: tempDir
+      });
+
+      await runHook({
+        hook_event_name: "UserPromptSubmit",
+        cwd: tempDir,
+        prompt: "[run] finish it"
+      });
+
+      const tasksPath = path.join(tempDir, ".nexus", "state", "tasks.json");
+      await Bun.write(tasksPath, JSON.stringify({
+        goal: "run cycle",
+        decisions: [],
+        tasks: [
+          {
+            id: 1,
+            title: "completed task",
+            context: "",
+            deps: [],
+            status: "completed",
+            created_at: "2026-04-17T00:00:00.000Z"
+          }
+        ]
+      }, null, 2) + "\n");
+
+      const result = await runHookProcess(JSON.stringify({
+        hook_event_name: "Stop",
+        cwd: tempDir
+      }));
+
+      expect(result.code).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        decision: "block",
+        reason: "All tasks are complete but the cycle is not archived. Run nx_task_close before stopping."
+      });
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   test("does not log plain Bash activity to tool-log", async () => {
     const tempDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-hook-bash-log-"));
     try {
