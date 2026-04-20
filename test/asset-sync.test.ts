@@ -4,6 +4,11 @@ import path from "node:path";
 import { getCurrentVersion } from "../src/shared/version.js";
 
 describe("synced nexus-core Codex assets", () => {
+  test("build no longer emits wrapper-owned MCP or hook runtimes", () => {
+    expect(existsSync(path.join(process.cwd(), "dist", "mcp", "server.js"))).toBe(false);
+    expect(existsSync(path.join(process.cwd(), "dist", "hooks", "codex-native-hook.js"))).toBe(false);
+  });
+
   test("ships core-generated skills under plugin/skills", () => {
     const skillPath = path.join(process.cwd(), "plugin", "skills", "nx-run", "SKILL.md");
     const pluginManifestPath = path.join(process.cwd(), "plugin", ".codex-plugin", "plugin.json");

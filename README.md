@@ -6,7 +6,7 @@
 
 OpenAI Codex CLI를 위한 Nexus wrapper 플러그인.
 
-`codex-nexus`는 `@moreih29/nexus-core`가 제공하는 Codex `sync` 산출물을 source of truth로 삼고, 그 위에 Codex 전용 install, config merge, hook, MCP adapter를 얹는 래퍼입니다. 즉 공통 Nexus 정의와 generated Codex outputs는 `nexus-core`에서 가져오고, `codex-nexus`는 그것을 Codex CLI에 맞게 설치하고 연결합니다.
+`codex-nexus`는 `@moreih29/nexus-core`가 제공하는 Codex `sync` 산출물과 runtime exports를 source of truth로 삼고, 그 위에 Codex 전용 install, config merge, 경로 해석을 얹는 얇은 래퍼입니다. 공통 Nexus 정의, generated Codex outputs, hook/MCP runtime 구현은 `nexus-core`에서 가져오고, `codex-nexus`는 그것을 Codex CLI에 맞게 설치하고 연결합니다.
 
 ## Why
 
@@ -15,19 +15,19 @@ OpenAI Codex CLI를 위한 Nexus wrapper 플러그인.
 - 완료된 specialist subagent를 Codex native resume로 이어서 호출 가능
 - `.nexus/`에 프로젝트 지식과 결정 기록 유지
 - 역할이 분리된 Codex-native 에이전트 카탈로그 제공
-- `nx` MCP 도구로 plan/task/history/context 흐름 사용
+- `nx` MCP 도구로 plan/task/history/artifact 흐름 사용
 
 ## Architecture
 
 - `nexus-core` — 공통 Codex 자산과 generated output contract의 source of truth
-- `codex-nexus` — Codex-specific wrapper (`install`, config merge, hooks, MCP adapter)
+- `codex-nexus` — Codex-specific wrapper (`install`, config merge, runtime path adaptation)
 - `bun run sync:core` — upstream `nexus-core sync --harness=codex`를 staging 경로에 실행한 뒤 managed outputs를 이 repo의 `agents/`, `plugin/`, `prompts/`, `install/`로 반영
 
 ## Quick Start
 
 ### 1. Install
 
-`codex-nexus`는 npm으로 배포되지만, 설치된 hooks와 MCP adapter는 `bun`으로 실행됩니다.
+`codex-nexus`는 npm으로 배포됩니다. CLI entrypoint는 `bun`으로 실행되고, 설치 후 hook/MCP runtime은 `@moreih29/nexus-core` dependency의 prebuilt JS를 사용합니다.
 
 Requirements:
 
@@ -46,7 +46,7 @@ codex-nexus install
 
 를 순서대로 선택할 수 있습니다.
 
-`install`은 core-generated skills/agents를 scope에 맞는 `.codex/` 아래에 배치하고, `.codex/config.toml`에 Codex-adapted `nx` MCP 서버와 optional MCP 통합을 설정합니다. 현재 기본 통합은 hosted `Context7`이고, Context7 인증과 더 높은 rate limit을 쓰려면 셸에 `CONTEXT7_API_KEY`를 export 해두세요.
+`install`은 core-generated skills/agents를 scope에 맞는 `.codex/` 아래에 배치하고, `.codex/config.toml`에 Codex-adapted `nx` MCP 서버와 optional MCP 통합을 설정합니다. 현재 기본 통합은 hosted `Context7`이고, 기본 설치는 startup failure를 피하기 위해 `url` only remote MCP로 구성됩니다. 더 높은 rate limit이나 인증이 필요하면 Context7 문서에 맞춰 API key 기반 header를 수동으로 추가하세요.
 
 `nexus-core@0.16.0`부터 `.codex/agents/*.toml`은 Codex가 바로 읽는 standalone role file 스키마입니다. 이어서 `nexus-core@0.16.2`는 `disabled_tools`를 Codex가 허용하는 `[mcp_servers.nx]` 블록 아래로 옮겨 malformed role rejection을 해결했습니다. `0.16.0` 또는 `0.16.1` 기반 agent TOML이 설치돼 있었다면 upgrade 뒤에 `codex-nexus install --scope user` 또는 `codex-nexus install --scope project`를 다시 실행해 agent 파일을 교체하세요.
 
@@ -198,10 +198,12 @@ Scope 의미:
 - `memory/`, `context/`, `rules/`, `history.json`은 프로젝트 지식입니다.
 - `state/`는 런타임 상태이며 git에서 제외됩니다.
 
-resume 관련 런타임 상태는 주로 여기에 저장됩니다.
+runtime state는 core session root `.nexus/state/<session_id>/` 아래에 저장됩니다. 예:
 
-- `.nexus/state/codex-nexus/agent-tracker.json`
-- `.nexus/state/codex-nexus/tool-log.jsonl`
+- `.nexus/state/<session_id>/agent-tracker.json`
+- `.nexus/state/<session_id>/tool-log.jsonl`
+- `.nexus/state/<session_id>/plan.json`
+- `.nexus/state/<session_id>/tasks.json`
 
 ## CLI
 

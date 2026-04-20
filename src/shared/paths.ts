@@ -20,23 +20,6 @@ export interface ScopePaths {
   agentsMdPath: string;
 }
 
-export interface NexusPaths {
-  PROJECT_ROOT: string;
-  NEXUS_ROOT: string;
-  CONTEXT_ROOT: string;
-  MEMORY_ROOT: string;
-  RULES_ROOT: string;
-  STATE_ROOT: string;
-  HARNESS_STATE_ROOT: string;
-  HISTORY_FILE: string;
-  PLAN_FILE: string;
-  TASKS_FILE: string;
-  RUN_SESSION_FILE: string;
-  AGENT_TRACKER_FILE: string;
-  TOOL_LOG_FILE: string;
-  ARTIFACTS_ROOT: string;
-}
-
 export function findProjectRoot(startDir = process.cwd()): string {
   let current = path.resolve(startDir);
   while (true) {
@@ -75,32 +58,6 @@ export function resolveScopePaths(scope: SetupScope, cwd = process.cwd()): Scope
     skillsDir: path.join(codexHomeDir, "skills"),
     agentsDir: path.join(codexHomeDir, "agents"),
     agentsMdPath
-  };
-}
-
-export function createNexusPaths(projectRoot: string): NexusPaths {
-  const NEXUS_ROOT = path.join(projectRoot, ".nexus");
-  const CONTEXT_ROOT = path.join(NEXUS_ROOT, "context");
-  const MEMORY_ROOT = path.join(NEXUS_ROOT, "memory");
-  const RULES_ROOT = path.join(NEXUS_ROOT, "rules");
-  const STATE_ROOT = path.join(NEXUS_ROOT, "state");
-  const HARNESS_STATE_ROOT = path.join(STATE_ROOT, HARNESS_ID);
-
-  return {
-    PROJECT_ROOT: projectRoot,
-    NEXUS_ROOT,
-    CONTEXT_ROOT,
-    MEMORY_ROOT,
-    RULES_ROOT,
-    STATE_ROOT,
-    HARNESS_STATE_ROOT,
-    HISTORY_FILE: path.join(NEXUS_ROOT, "history.json"),
-    PLAN_FILE: path.join(STATE_ROOT, "plan.json"),
-    TASKS_FILE: path.join(STATE_ROOT, "tasks.json"),
-    RUN_SESSION_FILE: path.join(HARNESS_STATE_ROOT, "run-session.json"),
-    AGENT_TRACKER_FILE: path.join(HARNESS_STATE_ROOT, "agent-tracker.json"),
-    TOOL_LOG_FILE: path.join(HARNESS_STATE_ROOT, "tool-log.jsonl"),
-    ARTIFACTS_ROOT: path.join(HARNESS_STATE_ROOT, "artifacts")
   };
 }
 

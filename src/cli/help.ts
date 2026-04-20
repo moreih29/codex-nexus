@@ -75,8 +75,8 @@ function installHelp(): string {
     {
       title: "Defaults",
       lines: [
-        "Install writes the nx MCP server and, by default, optional MCP integrations such as hosted Context7.",
-        "Context7 uses bearer_token_env_var = CONTEXT7_API_KEY in .codex/config.toml."
+        "Install writes the core nexus-mcp runtime path and, by default, optional MCP integrations such as hosted Context7.",
+        "Context7 installs as a url-only remote MCP entry in .codex/config.toml."
       ]
     },
     {

@@ -1,5 +1,5 @@
 import TOML from "@iarna/toml";
-import path from "node:path";
+import { nexusCoreMcpServerPath } from "./nexus-core.js";
 
 const CONTEXT7_URL = "https://mcp.context7.com/mcp";
 const CONTEXT7_BEARER_TOKEN_ENV_VAR = "CONTEXT7_API_KEY";
@@ -21,8 +21,8 @@ function isStringArray(value: unknown): value is string[] {
 
 function managedNxMcpServerConfig(packageRoot: string, disabledTools?: unknown): Record<string, unknown> {
   const server: Record<string, unknown> = {
-    command: "bun",
-    args: [path.join(packageRoot, "dist", "mcp", "server.js")]
+    command: "node",
+    args: [nexusCoreMcpServerPath(packageRoot)]
   };
 
   if (isStringArray(disabledTools) && disabledTools.length > 0) {
@@ -32,14 +32,18 @@ function managedNxMcpServerConfig(packageRoot: string, disabledTools?: unknown):
   return server;
 }
 
+function managedContext7ServerConfig(): Record<string, unknown> {
+  return {
+    url: CONTEXT7_URL
+  };
+}
+
 function isManagedContext7Server(value: unknown): boolean {
   const record = safeObject(value);
   const keys = Object.keys(record);
-  return keys.length === 2 &&
-    keys.includes("url") &&
-    keys.includes("bearer_token_env_var") &&
-    record.url === CONTEXT7_URL &&
-    record.bearer_token_env_var === CONTEXT7_BEARER_TOKEN_ENV_VAR;
+  return record.url === CONTEXT7_URL &&
+    keys.every((key) => key === "url" || key === "bearer_token_env_var") &&
+    (!("bearer_token_env_var" in record) || record.bearer_token_env_var === CONTEXT7_BEARER_TOKEN_ENV_VAR);
 }
 
 export function mergeConfigToml(
@@ -62,11 +66,8 @@ export function mergeConfigToml(
   mcpServers[MANAGED_NX_MCP_SERVER] = managedNxMcpServerConfig(packageRoot);
 
   if (!coreOnly) {
-    if (!("context7" in mcpServers)) {
-      mcpServers.context7 = {
-        url: CONTEXT7_URL,
-        bearer_token_env_var: CONTEXT7_BEARER_TOKEN_ENV_VAR
-      };
+    if (!("context7" in mcpServers) || isManagedContext7Server(mcpServers.context7)) {
+      mcpServers.context7 = managedContext7ServerConfig();
     }
   } else if (isManagedContext7Server(mcpServers.context7)) {
     delete mcpServers.context7;
@@ -79,7 +80,7 @@ export function mergeConfigToml(
     "Core Codex agents and skills are sourced from @moreih29/nexus-core.",
     "Use AGENTS.md as the primary orchestration surface.",
     "Use workflow skills via $nx-plan, $nx-run, $nx-init, and $nx-sync when routed by tags or user request.",
-    "Use the nx MCP server for Codex-adapted stateful plan, task, onboarding, and sync workflows.",
+    "Use the nx MCP server for core plan, task, history, artifact, and related runtime workflows.",
     ...(hasContext7 ? ["Use optional MCP integrations such as context7 for up-to-date library and API documentation when they are available."] : []),
     "Installed native subagents live under .codex/agents and are core-generated Codex wrappers."
   ].join(" ");

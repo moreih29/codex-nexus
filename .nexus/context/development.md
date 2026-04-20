@@ -5,10 +5,10 @@
 - Docs: AGENTS.md, README.md
 
 ## Recent Activity
-- chore: upgrade codex-nexus to nexus-core v0.16.2
-- fix: adapt installed agent role TOMLs to the wrapper-local nx MCP runtime path
-- fix: have doctor reject malformed standalone agent TOMLs with root-level disabled_tools
-- test: cover Codex [mcp_servers.nx] disabled_tools sync and install flows
-- docs: instruct reinstall after malformed 0.16.0 and 0.16.1 agent outputs
+- chore: upgrade codex-nexus to nexus-core v0.17.0
+- refactor: consume nexus-core hook and MCP runtimes instead of wrapper-built runtimes
+- chore: delete obsolete wrapper runtime sources and runtime-specific tests
+- docs: align wrapper ownership docs with core runtime exports
+- fix: make default Context7 install url-only to avoid startup failure
 
 > Refreshed by nx_sync.

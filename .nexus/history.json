@@ -1620,6 +1620,124 @@
           "created_at": "2026-04-20T12:21:14.010Z"
         }
       ]
+    },
+    {
+      "completed_at": "2026-04-20T12:44:04.416Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Commit and publish nexus-core v0.16.2 wrapper update",
+          "context": "",
+          "deps": [],
+          "acceptance": "working tree committed with release changes; package version selected appropriately for npm publish; build/test checks pass before publish; npm publish succeeds or a concrete blocker is documented.",
+          "owner": "codex",
+          "owner_reuse_policy": "fresh",
+          "status": "completed",
+          "created_at": "2026-04-20T12:38:05.499Z"
+        },
+        {
+          "id": 2,
+          "title": "Push PR, merge, and tag v0.2.1 release",
+          "context": "",
+          "deps": [],
+          "acceptance": "branch pushed; PR created; merge completed or exact blocker recorded; v0.2.1 tag pushed on main or blocker recorded.",
+          "owner": "codex",
+          "owner_reuse_policy": "fresh",
+          "status": "completed",
+          "created_at": "2026-04-20T12:42:43.700Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-20T13:11:07.360Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Make default Context7 install url-only",
+          "context": "",
+          "deps": [],
+          "acceptance": "install-generated config writes url-only Context7 by default; managed core-only removal still works; tests/docs updated; check/test pass.",
+          "owner": "codex",
+          "owner_reuse_policy": "fresh",
+          "status": "completed",
+          "created_at": "2026-04-20T13:09:18.886Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-20T13:26:47.669Z",
+      "branch": "default",
+      "plan": {
+        "id": 14,
+        "topic": "Consume nexus-core v0.17.0 runtimes in codex-nexus",
+        "issues": [
+          {
+            "id": 1,
+            "title": "Upgrade codex-nexus to nexus-core v0.17.0 and resync managed Codex outputs",
+            "status": "decided",
+            "decision": "Selected: upgrade codex-nexus to @moreih29/nexus-core v0.17.0 and resync all managed Codex assets before changing wrapper runtime wiring. Rejected alternative: refactor wrapper runtime first on top of 0.16.2 because the ownership contract and shipped Codex hook outputs changed in 0.17.0, so delaying the upgrade would force work against an obsolete package layout."
+          },
+          {
+            "id": 2,
+            "title": "Switch Codex install/runtime wiring from wrapper-built MCP/hooks to nexus-core-provided runtimes",
+            "status": "decided",
+            "decision": "Selected: stop building wrapper-local MCP and hook runtimes, and instead point install/runtime wiring at nexus-core-provided runtimes from the installed dependency tree. Rejected alternative: keep wrapper-built runtimes and only sync more core files, because that preserves duplicate ownership and contradicts the v0.17.0 contract that core owns runtime exports while the wrapper owns merge and distribution seams."
+          },
+          {
+            "id": 3,
+            "title": "Delete obsolete wrapper runtime code and align tests/docs with the reduced ownership model",
+            "status": "decided",
+            "decision": "Selected: remove obsolete wrapper runtime source/tests after runtime consumers are switched, then rewrite docs/tests around integration expectations. Rejected alternative: leave dead wrapper runtime files in place for compatibility because the user explicitly requested wrapper reduction and stale runtime code would continue to confuse ownership boundaries and future upgrades."
+          }
+        ],
+        "research_summary": "Current codex-nexus publishes its own runtime artifacts: package.json ships dist/, scripts/build.mjs bundles src/mcp/server.ts and src/hooks/codex-native-hook.ts, and install writes config/hooks that point to wrapper dist paths. sync-from-nexus-core only copies agents/plugin/prompts/install fragments, not core hook bundles or runtime JS. npm package dry-run confirms the tarball contains dist/mcp/server.js and dist/hooks/codex-native-hook.js but no core Codex hook files. nexus-core v0.17.0 package exposes runtime bin nexus-mcp at dist/src/mcp/server.js and ships Codex prebuilt outputs under dist/codex including hooks/hooks.json, dist/codex/dist/hooks/*.js, install fragments, agents, prompts, and plugin skills. The harness contract states core owns runtime exports (hooks manifests and mcp server) while the wrapper owns install-time merge logic, OS path resolution, and distribution. Therefore the wrapper should upgrade to v0.17.0, consume core runtime files or dependency paths at install/build time, delete wrapper-owned MCP/hook runtime implementations that duplicate core, and reduce tests/docs to verify integration rather than custom runtime behavior.",
+        "created_at": "2026-04-20T13:17:03.714Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Upgrade dependency and resync managed Codex outputs",
+          "context": "",
+          "deps": [],
+          "approach": "Bump @moreih29/nexus-core to ^0.17.0, inspect the resynced Codex outputs, and update wrapper packaging assumptions to match the new upstream layout before touching runtime wiring.",
+          "acceptance": "package.json and lockfile resolve to nexus-core v0.17.0; sync:core succeeds; repo-managed agents/plugin/prompts/install assets reflect v0.17.0 outputs; no wrapper code still assumes the old upstream layout.",
+          "plan_issue": 1,
+          "owner": "lead",
+          "owner_reuse_policy": "fresh",
+          "status": "completed",
+          "created_at": "2026-04-20T13:17:18.767Z"
+        },
+        {
+          "id": 2,
+          "title": "Consume core MCP and hook runtimes in install/build paths",
+          "context": "",
+          "deps": [],
+          "approach": "Replace wrapper MCP/hook build outputs and install merge logic with core runtime references or copied core-managed files, keeping wrapper ownership limited to install-time path resolution and merge behavior.",
+          "acceptance": "generated config.toml and hooks.json reference nexus-core-provided runtimes; wrapper packaging/build no longer ships or depends on local MCP/hook runtime implementations; install behavior remains functional for user and project scopes.",
+          "plan_issue": 2,
+          "owner": "lead",
+          "owner_reuse_policy": "fresh",
+          "status": "completed",
+          "created_at": "2026-04-20T13:17:18.821Z"
+        },
+        {
+          "id": 3,
+          "title": "Delete obsolete wrapper runtime code and realign tests/docs",
+          "context": "",
+          "deps": [],
+          "approach": "Delete superseded src/mcp, src/hooks, and related state/runtime tests only after new integration paths are in place; then rewrite tests and docs around install/runtime consumption of nexus-core exports.",
+          "acceptance": "obsolete wrapper runtime files are removed; tests cover integration with core runtimes rather than local implementations; docs explain the new ownership boundary; check/test pass.",
+          "plan_issue": 3,
+          "owner": "lead",
+          "owner_reuse_policy": "fresh",
+          "status": "completed",
+          "created_at": "2026-04-20T13:17:18.822Z"
+        }
+      ]
     }
   ]
 }
