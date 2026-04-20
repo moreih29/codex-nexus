@@ -1,6 +1,6 @@
 {
   "name": "codex-nexus",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Codex wrapper plugin for nexus-core",
   "agents": [
     {
