@@ -46,6 +46,8 @@ When `codex-nexus install` runs in a TTY, it prompts for:
 
 `install` copies the core-generated skills and agents into the scope-appropriate `.codex/`, then configures the Codex-adapted `nx` MCP server and default optional integrations in `.codex/config.toml`. The current default optional integration is hosted `Context7`. Export `CONTEXT7_API_KEY` in your shell if you want authenticated Context7 access and higher rate limits.
 
+Starting with `nexus-core@0.16.0`, `.codex/agents/*.toml` uses the standalone role-file schema that current Codex loads directly. If you were installed on the older nested agent TOML format, rerun `codex-nexus install --scope user` or `codex-nexus install --scope project` after upgrading so the agent files are refreshed.
+
 AGENTS behavior differs by scope:
 
 - `--scope user` updates `~/.codex/AGENTS.md` and leaves the current repository's `./AGENTS.md` untouched
@@ -55,7 +57,7 @@ To install explicitly:
 
 ```bash
 codex-nexus install --scope user --version latest
-codex-nexus install --scope project --version 0.1.0
+codex-nexus install --scope project --version 0.2.0
 ```
 
 To install only the core Nexus setup without optional MCP integrations:
@@ -165,7 +167,7 @@ An install updates these managed surfaces under the selected scope:
 - `.codex/config.toml` (`nx` MCP plus hosted `context7` MCP by default)
 - `.codex/hooks.json`
 - `.codex/skills/*` (copied from `plugin/skills/`)
-- `.codex/agents/*.toml` (Codex agent TOML generated from `nexus-core` assets)
+- `.codex/agents/*.toml` (standalone Codex role files generated from `nexus-core` assets)
 - the lead fragment in the scope-specific AGENTS target (`install/AGENTS.fragment.md`)
 
 AGENTS target:
@@ -206,7 +208,7 @@ bun run sync:core
 codex-nexus install
 codex-nexus install --core-only
 codex-nexus install --scope user --version latest
-codex-nexus install --scope project --version 0.1.0
+codex-nexus install --scope project --version 0.2.0
 codex-nexus doctor --scope project
 codex-nexus version
 ```
