@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import TOML from "@iarna/toml";
 import { describe, expect, test } from "bun:test";
 import { parseCliArgs } from "../src/cli/args.js";
 import { renderCommandHelp } from "../src/cli/help.js";
@@ -158,21 +159,43 @@ describe("CLI integration", () => {
       const reviewerToml = await readFile(path.join(repoRoot, ".codex", "agents", "reviewer.toml"), "utf8");
       const configToml = await readFile(path.join(repoRoot, ".codex", "config.toml"), "utf8");
       const agentsMd = await readFile(path.join(repoRoot, "AGENTS.md"), "utf8");
+      const architectRole = TOML.parse(architectToml) as {
+        mcp_servers?: {
+          nx?: {
+            command?: string;
+            args?: string[];
+            disabled_tools?: string[];
+          };
+        };
+      };
+      const engineerRole = TOML.parse(engineerToml) as {
+        mcp_servers?: {
+          nx?: {
+            disabled_tools?: string[];
+          };
+        };
+      };
       expect(leadToml).toContain('name = "lead"');
       expect(leadToml).toContain('developer_instructions = """');
       expect(leadToml).toContain('model = "gpt-5.4"');
       expect(leadToml).not.toContain("[agents.");
+      expect(leadToml).not.toContain("[mcp_servers.nx]");
       expect(architectToml).toContain('name = "architect"');
       expect(architectToml).toContain('developer_instructions = """');
       expect(architectToml).toContain('model = "gpt-5.4"');
       expect(architectToml).toContain('sandbox_mode = "read-only"');
+      expect(architectToml).toContain("[mcp_servers.nx]");
+      expect(architectRole.mcp_servers?.nx?.command).toBe("bun");
+      expect(architectRole.mcp_servers?.nx?.args).toEqual([path.join(process.cwd(), "dist", "mcp", "server.js")]);
+      expect(architectRole.mcp_servers?.nx?.disabled_tools).toEqual(["nx_task_add", "nx_task_update"]);
       expect(engineerToml).toContain('name = "engineer"');
       expect(engineerToml).toContain('developer_instructions = """');
       expect(engineerToml).toContain('model = "gpt-5.3-codex"');
+      expect(engineerToml).toContain("[mcp_servers.nx]");
+      expect(engineerRole.mcp_servers?.nx?.disabled_tools).toEqual(["nx_task_add"]);
       expect(reviewerToml).toContain('name = "reviewer"');
       expect(reviewerToml).toContain('developer_instructions = """');
       expect(reviewerToml).toContain('model = "gpt-5.3-codex"');
-      expect(architectToml).not.toContain("[mcp_servers.nx]");
       expect(configToml).toContain("[mcp_servers.context7]");
       expect(configToml).toContain(path.join(process.cwd(), "dist", "mcp", "server.js"));
       expect(configToml).toContain('url = "https://mcp.context7.com/mcp"');
@@ -214,6 +237,34 @@ describe("CLI integration", () => {
       const doctor = await runCli(["doctor", "--scope", "project"], repoRoot);
       expect(doctor.code).toBe(1);
       expect(doctor.stdout).toContain("[xx] agents/lead.toml");
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("doctor flags standalone agent TOML installs with root-level disabled_tools", async () => {
+    const repoRoot = await mkdtemp(path.join(os.tmpdir(), "codex-nexus-cli-"));
+    try {
+      await mkdir(path.join(repoRoot, ".git"));
+
+      const install = await runCli(["install", "--scope", "project", "--version", getCurrentVersion()], repoRoot);
+      expect(install.code).toBe(0);
+
+      await writeFile(
+        path.join(repoRoot, ".codex", "agents", "architect.toml"),
+        [
+          'name = "architect"',
+          'description = "Malformed standalone schema"',
+          'developer_instructions = """old"""',
+          'disabled_tools = ["nx_task_add"]',
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+
+      const doctor = await runCli(["doctor", "--scope", "project"], repoRoot);
+      expect(doctor.code).toBe(1);
+      expect(doctor.stdout).toContain("[xx] agents/architect.toml");
     } finally {
       await rm(repoRoot, { recursive: true, force: true });
     }

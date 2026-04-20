@@ -1,6 +1,6 @@
 {
   "name": "codex-nexus",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": false,
   "type": "module",
   "description": "Codex wrapper plugin for nexus-core",
@@ -47,7 +47,7 @@
     "@clack/prompts": "^0.11.0",
     "@iarna/toml": "^2.2.5",
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "@moreih29/nexus-core": "^0.16.0",
+    "@moreih29/nexus-core": "^0.16.2",
     "zod": "^3.24.0"
   },
   "devDependencies": {

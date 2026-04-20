@@ -46,7 +46,7 @@ When `codex-nexus install` runs in a TTY, it prompts for:
 
 `install` copies the core-generated skills and agents into the scope-appropriate `.codex/`, then configures the Codex-adapted `nx` MCP server and default optional integrations in `.codex/config.toml`. The current default optional integration is hosted `Context7`. Export `CONTEXT7_API_KEY` in your shell if you want authenticated Context7 access and higher rate limits.
 
-Starting with `nexus-core@0.16.0`, `.codex/agents/*.toml` uses the standalone role-file schema that current Codex loads directly. If you were installed on the older nested agent TOML format, rerun `codex-nexus install --scope user` or `codex-nexus install --scope project` after upgrading so the agent files are refreshed.
+Starting with `nexus-core@0.16.0`, `.codex/agents/*.toml` uses the standalone role-file schema that current Codex loads directly. `nexus-core@0.16.2` then fixes the remaining Codex compatibility issue by moving `disabled_tools` under the supported `[mcp_servers.nx]` block. If you upgraded from `0.16.0` or `0.16.1`, rerun `codex-nexus install --scope user` or `codex-nexus install --scope project` so the malformed agent files are replaced.
 
 AGENTS behavior differs by scope:
 

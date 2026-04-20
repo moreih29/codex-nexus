@@ -114,4 +114,7 @@ Do not guess or force a synthesis when the evidence does not support one. Escala
 """
 model = "gpt-5.4"
 sandbox_mode = "read-only"
+
+[mcp_servers.nx]
+command = "nexus-mcp"
 disabled_tools = ["nx_task_add", "nx_task_update"]

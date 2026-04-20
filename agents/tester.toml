@@ -188,4 +188,7 @@ When writing verification reports or other deliverables to a file, use `nx_artif
 """
 model = "gpt-5.3-codex"
 sandbox_mode = "read-only"
+
+[mcp_servers.nx]
+command = "nexus-mcp"
 disabled_tools = ["nx_task_add"]

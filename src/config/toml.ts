@@ -3,6 +3,7 @@ import path from "node:path";
 
 const CONTEXT7_URL = "https://mcp.context7.com/mcp";
 const CONTEXT7_BEARER_TOKEN_ENV_VAR = "CONTEXT7_API_KEY";
+const MANAGED_NX_MCP_SERVER = "nx";
 
 export interface ManagedConfigOptions {
   coreOnly?: boolean;
@@ -12,6 +13,23 @@ function safeObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function managedNxMcpServerConfig(packageRoot: string, disabledTools?: unknown): Record<string, unknown> {
+  const server: Record<string, unknown> = {
+    command: "bun",
+    args: [path.join(packageRoot, "dist", "mcp", "server.js")]
+  };
+
+  if (isStringArray(disabledTools) && disabledTools.length > 0) {
+    server.disabled_tools = disabledTools;
+  }
+
+  return server;
 }
 
 function isManagedContext7Server(value: unknown): boolean {
@@ -41,10 +59,7 @@ export function mergeConfigToml(
     codex_hooks: true
   };
 
-  mcpServers.nx = {
-    command: "bun",
-    args: [path.join(packageRoot, "dist", "mcp", "server.js")]
-  };
+  mcpServers[MANAGED_NX_MCP_SERVER] = managedNxMcpServerConfig(packageRoot);
 
   if (!coreOnly) {
     if (!("context7" in mcpServers)) {
@@ -72,4 +87,63 @@ export function mergeConfigToml(
   parsed.mcp_servers = mcpServers;
 
   return TOML.stringify(parsed as TOML.JsonMap);
+}
+
+export function adaptAgentRoleToml(existingContent: string, packageRoot: string): string {
+  const parsed = TOML.parse(existingContent) as Record<string, unknown>;
+  const mcpServers = safeObject(parsed.mcp_servers);
+  const existingNxServer = safeObject(mcpServers[MANAGED_NX_MCP_SERVER]);
+  const rootDisabledTools = parsed.disabled_tools;
+  const hasNxServer = MANAGED_NX_MCP_SERVER in mcpServers;
+
+  delete parsed.disabled_tools;
+
+  if (rootDisabledTools !== undefined || hasNxServer) {
+    mcpServers[MANAGED_NX_MCP_SERVER] = managedNxMcpServerConfig(
+      packageRoot,
+      existingNxServer.disabled_tools ?? rootDisabledTools
+    );
+    parsed.mcp_servers = mcpServers;
+  }
+
+  return TOML.stringify(parsed as TOML.JsonMap);
+}
+
+export function isStandaloneAgentRoleToml(existingContent: string, agentName: string): boolean {
+  try {
+    const parsed = TOML.parse(existingContent) as Record<string, unknown>;
+    if (parsed.name !== agentName) {
+      return false;
+    }
+
+    if (typeof parsed.developer_instructions !== "string" || parsed.developer_instructions.trim().length === 0) {
+      return false;
+    }
+
+    if (Object.keys(safeObject(parsed.agents)).length > 0 || "disabled_tools" in parsed) {
+      return false;
+    }
+
+    const mcpServers = safeObject(parsed.mcp_servers);
+    if (!(MANAGED_NX_MCP_SERVER in mcpServers)) {
+      return true;
+    }
+
+    const nxServer = safeObject(mcpServers[MANAGED_NX_MCP_SERVER]);
+    if (typeof nxServer.command !== "string" || nxServer.command.trim().length === 0) {
+      return false;
+    }
+
+    if ("args" in nxServer && !isStringArray(nxServer.args)) {
+      return false;
+    }
+
+    if ("disabled_tools" in nxServer && !isStringArray(nxServer.disabled_tools)) {
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
 }

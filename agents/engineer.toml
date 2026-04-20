@@ -99,4 +99,7 @@ These are included so Lead can update the Phase 5 (Document) manifest.
 
 """
 model = "gpt-5.3-codex"
+
+[mcp_servers.nx]
+command = "nexus-mcp"
 disabled_tools = ["nx_task_add"]

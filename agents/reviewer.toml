@@ -131,4 +131,7 @@ When writing a review report, use `nx_artifact_write` (filename, content) to sav
 """
 model = "gpt-5.3-codex"
 sandbox_mode = "read-only"
+
+[mcp_servers.nx]
+command = "nexus-mcp"
 disabled_tools = ["nx_task_add"]

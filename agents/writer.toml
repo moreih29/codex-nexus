@@ -115,4 +115,7 @@ Do not escalate for minor phrasing ambiguity or formatting choices — those are
 
 """
 model = "gpt-5.3-codex"
+
+[mcp_servers.nx]
+command = "nexus-mcp"
 disabled_tools = ["nx_task_add"]

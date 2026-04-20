@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import TOML from "@iarna/toml";
 import { mergeManagedHooks } from "../src/config/codex-hooks.js";
-import { mergeConfigToml } from "../src/config/toml.js";
+import { adaptAgentRoleToml, isStandaloneAgentRoleToml, mergeConfigToml } from "../src/config/toml.js";
 
 describe("config merge", () => {
   test("preserves user hook entries while appending managed hooks", () => {
@@ -85,5 +85,62 @@ describe("config merge", () => {
 
     expect(parsed.hooks.PreToolUse[0]?.matcher).toBe("Bash");
     expect(parsed.hooks.PostToolUse[0]?.matcher).toBeUndefined();
+  });
+
+  test("adapts role-local nx MCP server config to the wrapper runtime path", () => {
+    const adapted = adaptAgentRoleToml(
+      [
+        'name = "architect"',
+        'description = "Technical design"',
+        'developer_instructions = """role"""',
+        'model = "gpt-5.4"',
+        "",
+        "[mcp_servers.nx]",
+        'command = "nexus-mcp"',
+        'disabled_tools = ["nx_task_add", "nx_task_update"]',
+        ""
+      ].join("\n"),
+      "/tmp/codex-nexus"
+    );
+    const parsed = TOML.parse(adapted) as {
+      mcp_servers?: {
+        nx?: {
+          command?: string;
+          args?: string[];
+          disabled_tools?: string[];
+        };
+      };
+    };
+
+    expect(adapted).toContain('[mcp_servers.nx]');
+    expect(adapted).toContain('command = "bun"');
+    expect(adapted).toContain('/tmp/codex-nexus/dist/mcp/server.js');
+    expect(adapted).not.toContain('command = "nexus-mcp"');
+    expect(parsed.mcp_servers?.nx?.disabled_tools).toEqual(["nx_task_add", "nx_task_update"]);
+  });
+
+  test("rejects malformed standalone agent files with root-level disabled_tools", () => {
+    const malformed = [
+      'name = "architect"',
+      'description = "Technical design"',
+      'developer_instructions = """role"""',
+      'disabled_tools = ["nx_task_add"]',
+      ""
+    ].join("\n");
+
+    const valid = [
+      'name = "architect"',
+      'description = "Technical design"',
+      'developer_instructions = """role"""',
+      "",
+      "[mcp_servers.nx]",
+      'command = "bun"',
+      'args = ["/tmp/codex-nexus/dist/mcp/server.js"]',
+      'disabled_tools = ["nx_task_add"]',
+      ""
+    ].join("\n");
+
+    expect(isStandaloneAgentRoleToml(malformed, "architect")).toBe(false);
+    expect(isStandaloneAgentRoleToml(valid, "architect")).toBe(true);
   });
 });

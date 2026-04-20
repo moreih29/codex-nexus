@@ -24,16 +24,19 @@ describe("synced nexus-core Codex assets", () => {
 
   test("ships core-generated agent, prompt, and install fragments", () => {
     const leadAgentPath = path.join(process.cwd(), "agents", "lead.toml");
+    const architectAgentPath = path.join(process.cwd(), "agents", "architect.toml");
     const leadPromptPath = path.join(process.cwd(), "prompts", "lead.md");
     const agentsFragmentPath = path.join(process.cwd(), "install", "AGENTS.fragment.md");
     const configFragmentPath = path.join(process.cwd(), "install", "config.fragment.toml");
 
     expect(existsSync(leadAgentPath)).toBe(true);
+    expect(existsSync(architectAgentPath)).toBe(true);
     expect(existsSync(leadPromptPath)).toBe(true);
     expect(existsSync(agentsFragmentPath)).toBe(true);
     expect(existsSync(configFragmentPath)).toBe(true);
 
     const agentToml = readFileSync(leadAgentPath, "utf8");
+    const architectToml = readFileSync(architectAgentPath, "utf8");
     const prompt = readFileSync(leadPromptPath, "utf8");
     const fragment = readFileSync(agentsFragmentPath, "utf8");
     const configFragment = readFileSync(configFragmentPath, "utf8");
@@ -42,6 +45,9 @@ describe("synced nexus-core Codex assets", () => {
     expect(agentToml).toContain('developer_instructions = """');
     expect(agentToml).toContain('model = "gpt-5.4"');
     expect(agentToml).not.toContain("[agents.");
+    expect(architectToml).toContain("[mcp_servers.nx]");
+    expect(architectToml).toContain('command = "nexus-mcp"');
+    expect(architectToml).toContain('disabled_tools = ["nx_task_add", "nx_task_update"]');
     expect(prompt).toContain("You are Lead");
     expect(fragment).toContain("<!-- nexus-core:lead:start -->");
     expect(fragment).toContain("# lead");

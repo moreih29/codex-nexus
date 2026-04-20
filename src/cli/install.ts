@@ -3,7 +3,7 @@ import { cp, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { mergeManagedHooks } from "../config/codex-hooks.js";
-import { mergeConfigToml } from "../config/toml.js";
+import { adaptAgentRoleToml, mergeConfigToml } from "../config/toml.js";
 import {
   AGENTS_MARKER_END,
   AGENTS_MARKER_START,
@@ -209,10 +209,11 @@ async function writeManagedSurfaces(
   for (const entry of agentEntries) {
     if (!entry.isFile() || !entry.name.endsWith(".toml")) continue;
     installedAgents.push(entry.name.replace(/\.toml$/, ""));
-    await cp(
-      path.join(shippedAgentsDir, entry.name),
+    const sourcePath = path.join(shippedAgentsDir, entry.name);
+    const sourceToml = await readFile(sourcePath, "utf8");
+    await writeText(
       path.join(scopePaths.agentsDir, entry.name),
-      { force: true }
+      adaptAgentRoleToml(sourceToml, packageRootPath)
     );
   }
 

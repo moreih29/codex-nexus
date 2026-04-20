@@ -48,7 +48,7 @@ codex-nexus install
 
 `install`은 core-generated skills/agents를 scope에 맞는 `.codex/` 아래에 배치하고, `.codex/config.toml`에 Codex-adapted `nx` MCP 서버와 optional MCP 통합을 설정합니다. 현재 기본 통합은 hosted `Context7`이고, Context7 인증과 더 높은 rate limit을 쓰려면 셸에 `CONTEXT7_API_KEY`를 export 해두세요.
 
-`nexus-core@0.16.0`부터 `.codex/agents/*.toml`은 Codex가 바로 읽는 standalone role file 스키마입니다. 예전 nested agent TOML로 설치되어 있었다면 upgrade 뒤에 `codex-nexus install --scope user` 또는 `codex-nexus install --scope project`를 다시 실행해 agent 파일을 재설치하세요.
+`nexus-core@0.16.0`부터 `.codex/agents/*.toml`은 Codex가 바로 읽는 standalone role file 스키마입니다. 이어서 `nexus-core@0.16.2`는 `disabled_tools`를 Codex가 허용하는 `[mcp_servers.nx]` 블록 아래로 옮겨 malformed role rejection을 해결했습니다. `0.16.0` 또는 `0.16.1` 기반 agent TOML이 설치돼 있었다면 upgrade 뒤에 `codex-nexus install --scope user` 또는 `codex-nexus install --scope project`를 다시 실행해 agent 파일을 교체하세요.
 
 AGENTS 동작은 scope별로 다릅니다.
 
