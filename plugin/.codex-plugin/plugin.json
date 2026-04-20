@@ -1,0 +1,57 @@
+{
+  "name": "codex-nexus",
+  "version": "0.1.1",
+  "description": "Codex wrapper plugin for nexus-core",
+  "agents": [
+    {
+      "id": "architect",
+      "config": "agents/architect.toml",
+      "prompt": "prompts/architect.md"
+    },
+    {
+      "id": "designer",
+      "config": "agents/designer.toml",
+      "prompt": "prompts/designer.md"
+    },
+    {
+      "id": "engineer",
+      "config": "agents/engineer.toml",
+      "prompt": "prompts/engineer.md"
+    },
+    {
+      "id": "lead",
+      "config": "agents/lead.toml",
+      "prompt": "prompts/lead.md"
+    },
+    {
+      "id": "postdoc",
+      "config": "agents/postdoc.toml",
+      "prompt": "prompts/postdoc.md"
+    },
+    {
+      "id": "researcher",
+      "config": "agents/researcher.toml",
+      "prompt": "prompts/researcher.md"
+    },
+    {
+      "id": "reviewer",
+      "config": "agents/reviewer.toml",
+      "prompt": "prompts/reviewer.md"
+    },
+    {
+      "id": "strategist",
+      "config": "agents/strategist.toml",
+      "prompt": "prompts/strategist.md"
+    },
+    {
+      "id": "tester",
+      "config": "agents/tester.toml",
+      "prompt": "prompts/tester.md"
+    },
+    {
+      "id": "writer",
+      "config": "agents/writer.toml",
+      "prompt": "prompts/writer.md"
+    }
+  ]
+}

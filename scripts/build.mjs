@@ -4,7 +4,7 @@ import path from "node:path";
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const distRoot = path.join(repoRoot, "dist");
 
-await import(path.join(repoRoot, "scripts", "generate-from-nexus-core.mjs"));
+await import(path.join(repoRoot, "scripts", "sync-from-nexus-core.mjs"));
 await rm(distRoot, { recursive: true, force: true });
 
 const result = await Bun.build({

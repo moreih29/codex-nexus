@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import path from "node:path";
 import { parseCliArgs, type CliCommand, type CliCommandOptions } from "./args.js";
 import { renderCommandHelp } from "./help.js";
 import { getCurrentVersion } from "../shared/version.js";
@@ -78,7 +79,9 @@ async function executeCommand(command: CliCommand, options: CliCommandOptions, i
         `.codex/hooks.json`,
         `.codex/skills/*`,
         `.codex/agents/*.toml`,
-        `AGENTS.md`
+        scope === "project"
+          ? `./AGENTS.md lead fragment`
+          : `${path.join(result.codexHomeDir, "AGENTS.md")} lead fragment`
       ].join("\n"));
       endInteractiveSession(summary);
     } else if (options.verbose) {

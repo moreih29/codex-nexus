@@ -1,9 +1,9 @@
 {
   "name": "codex-nexus",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": false,
   "type": "module",
-  "description": "Nexus orchestration plugin for OpenAI Codex CLI",
+  "description": "Codex wrapper plugin for nexus-core",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -30,33 +30,29 @@
   },
   "files": [
     "dist",
-    "skills",
+    "plugin",
+    "agents",
     "prompts",
-    "templates",
-    ".codex-plugin",
-    ".mcp.json",
-    "hooks.json",
+    "install",
     "VERSION"
   ],
   "scripts": {
-    "generate": "bun scripts/generate-from-nexus-core.mjs",
+    "sync:core": "bun scripts/sync-from-nexus-core.mjs",
     "build": "bun scripts/build.mjs",
-    "validate:conformance": "bun scripts/validate-conformance.mjs",
-    "check": "bun run generate && bun run validate:conformance && bunx tsc --noEmit",
+    "check": "bun run sync:core && bunx tsc --noEmit",
     "test": "bun run build && bun test",
     "prepack": "bun run build"
   },
   "dependencies": {
     "@clack/prompts": "^0.11.0",
     "@iarna/toml": "^2.2.5",
+    "@moreih29/nexus-core": "^0.15.1",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "zod": "^3.24.0"
   },
   "devDependencies": {
-    "@moreih29/nexus-core": "^0.12.0",
     "@types/bun": "^1.2.13",
     "@types/node": "^22.10.1",
-    "typescript": "^5.6.3",
-    "yaml": "^2.7.0"
+    "typescript": "^5.6.3"
   }
 }

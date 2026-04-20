@@ -4,9 +4,9 @@
 
 > 🌏 [English](README.en.md)
 
-OpenAI Codex CLI를 위한 Nexus 오케스트레이션 플러그인.
+OpenAI Codex CLI를 위한 Nexus wrapper 플러그인.
 
-`codex-nexus`는 Codex의 도구 호출과 에이전트 실행을 ad-hoc 프롬프트 대신 구조화된 Nexus 워크플로로 연결합니다. 복잡한 작업을 바로 구현으로 밀어붙이기보다, 먼저 정리하고, 결정하고, 태스크 단위로 실행하고, 프로젝트 지식을 `.nexus/`에 축적하게 해줍니다.
+`codex-nexus`는 `@moreih29/nexus-core`가 제공하는 Codex `sync` 산출물을 source of truth로 삼고, 그 위에 Codex 전용 install, config merge, hook, MCP adapter를 얹는 래퍼입니다. 즉 공통 Nexus 정의와 generated Codex outputs는 `nexus-core`에서 가져오고, `codex-nexus`는 그것을 Codex CLI에 맞게 설치하고 연결합니다.
 
 ## Why
 
@@ -17,11 +17,17 @@ OpenAI Codex CLI를 위한 Nexus 오케스트레이션 플러그인.
 - 역할이 분리된 Codex-native 에이전트 카탈로그 제공
 - `nx` MCP 도구로 plan/task/history/context 흐름 사용
 
+## Architecture
+
+- `nexus-core` — 공통 Codex 자산과 generated output contract의 source of truth
+- `codex-nexus` — Codex-specific wrapper (`install`, config merge, hooks, MCP adapter)
+- `bun run sync:core` — upstream `nexus-core sync --harness=codex`를 staging 경로에 실행한 뒤 managed outputs를 이 repo의 `agents/`, `plugin/`, `prompts/`, `install/`로 반영
+
 ## Quick Start
 
 ### 1. Install
 
-`codex-nexus`는 npm으로 배포되지만, 설치된 hooks와 MCP 서버는 `bun`으로 실행됩니다.
+`codex-nexus`는 npm으로 배포되지만, 설치된 hooks와 MCP adapter는 `bun`으로 실행됩니다.
 
 Requirements:
 
@@ -40,7 +46,12 @@ codex-nexus install
 
 를 순서대로 선택할 수 있습니다.
 
-`install`은 `.codex/config.toml`에 `nx` MCP 서버와 optional MCP 통합을 기본으로 설정합니다. 현재 기본 통합은 hosted `Context7`이고, Context7 인증과 더 높은 rate limit을 쓰려면 셸에 `CONTEXT7_API_KEY`를 export 해두세요.
+`install`은 core-generated skills/agents를 scope에 맞는 `.codex/` 아래에 배치하고, `.codex/config.toml`에 Codex-adapted `nx` MCP 서버와 optional MCP 통합을 설정합니다. 현재 기본 통합은 hosted `Context7`이고, Context7 인증과 더 높은 rate limit을 쓰려면 셸에 `CONTEXT7_API_KEY`를 export 해두세요.
+
+AGENTS 동작은 scope별로 다릅니다.
+
+- `--scope user` 는 `~/.codex/AGENTS.md`를 갱신하고 현재 레포의 `./AGENTS.md`는 건드리지 않습니다
+- `--scope project` 는 현재 레포의 `./AGENTS.md`를 갱신합니다
 
 명시적으로 설치하려면:
 
@@ -96,6 +107,8 @@ $nx-init
 | `[m:gc]` | memory 정리 | `[m:gc] 중복 memory 정리` |
 
 ## Agents
+
+메인 thread의 primary agent는 `Lead`이며, Codex AGENTS.md에는 core-generated lead fragment가 병합됩니다.
 
 ### How
 
@@ -153,12 +166,14 @@ nx_task_update(id=<task id>, owner_agent_id=<returned agent id>, status="in_prog
 - `.codex/packages/node_modules/codex-nexus`
 - `.codex/config.toml` (`nx` MCP, 기본적으로 hosted `context7` MCP 포함)
 - `.codex/hooks.json`
-- `.codex/skills/nx-init`
-- `.codex/skills/nx-plan`
-- `.codex/skills/nx-run`
-- `.codex/skills/nx-sync`
-- `.codex/agents/*.toml`
-- `AGENTS.md`의 Codex Nexus section
+- `.codex/skills/*` (`plugin/skills/`에서 복사)
+- `.codex/agents/*.toml` (`nexus-core` 자산에서 생성된 Codex agent TOML)
+- scope별 AGENTS target의 lead fragment (`install/AGENTS.fragment.md`)
+
+AGENTS target:
+
+- `user` — `~/.codex/AGENTS.md`
+- `project` — 현재 레포의 `./AGENTS.md`
 
 Scope 의미:
 
@@ -189,6 +204,7 @@ resume 관련 런타임 상태는 주로 여기에 저장됩니다.
 ## CLI
 
 ```bash
+bun run sync:core
 codex-nexus install
 codex-nexus install --core-only
 codex-nexus install --scope user --version latest

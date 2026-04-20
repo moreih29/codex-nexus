@@ -85,9 +85,11 @@ function installHelp(): string {
         ".codex/packages/node_modules/codex-nexus",
         ".codex/config.toml",
         ".codex/hooks.json",
-        ".codex/skills/nx-init|nx-plan|nx-run|nx-sync",
-        ".codex/agents/*.toml",
-        "AGENTS.md Nexus section"
+        ".codex/skills/* (copied from plugin/skills)",
+        ".codex/agents/*.toml (core-generated Codex agents)",
+        "Scope-specific AGENTS.md lead fragment",
+        "  user: ~/.codex/AGENTS.md",
+        "  project: ./AGENTS.md"
       ]
     },
     {

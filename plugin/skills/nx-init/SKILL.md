@@ -1,10 +1,6 @@
 ---
-name: nx-init
 description: "Project onboarding — scan, mission, essentials, context generation"
-trigger_display: "$nx-init"
-purpose: "Project onboarding — scan, mission, essentials, context generation"
 ---
-
 ## Role
 
 Scans the project and builds Nexus knowledge in the flat .nexus/ structure. On first run, performs a 5-step full onboarding sequence.
@@ -58,12 +54,7 @@ Show backup directory list, let user select backups to delete.
 ```
 IF --reset --cleanup flag:
   Show list of .nexus/bak.*/ directories
-  Prompt user with options via `If request_user_input is available in the current mode, use it with one question:
-- header: Question
-- id: select_a_backup_to_delete_or
-- question: Select a backup to delete (or cancel)
-- options: [<backup list...>, {label: Cancel, description: "Exit without changes"}]
-If request_user_input is unavailable, ask the same question in prose and wait for the user's reply.`.
+  Prompt user with options via `request_user_input({ prompt: "Select a backup to delete (or cancel)", options: [<backup list...>, {label: Cancel, description: "Exit without changes"}] })`.
   Delete selected backup and exit
 
 ELSE IF --reset flag:
@@ -172,12 +163,7 @@ On completion: "context knowledge N files generated"
 Check whether team custom rules are needed.
 
 ```
-If request_user_input is available in the current mode, use it with one question:
-- header: Question
-- id: do_you_want_to_set_up
-- question: Do you want to set up development rules now?
-- options: [{label: "Set up", description: "Coding conventions, test policy, commit rules, etc."}, {label: Skip, description: "Can be added later via [rule] tag"}]
-If request_user_input is unavailable, ask the same question in prose and wait for the user's reply.
+request_user_input({ prompt: "Do you want to set up development rules now?", options: [{label: "Set up", description: "Coding conventions, test policy, commit rules, etc."}, {label: Skip, description: "Can be added later via [rule] tag"}] })
 ```
 
 If "Set up": present a draft based on scan results → user confirms → save via the harness's file-creation primitive to `.nexus/rules/{topic}.md`.
@@ -201,4 +187,3 @@ Output a summary of the onboarding results.
 - [run] — execute from a plan
 - Manual re-run trigger with `--reset` flag — re-run onboarding (existing knowledge will be backed up). See harness docs: slash_command_display.
 ```
-

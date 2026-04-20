@@ -2,7 +2,6 @@ import { existsSync } from "node:fs";
 import { cp, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { installNativeAgentConfigs } from "../agents/native-config.js";
 import { mergeManagedHooks } from "../config/codex-hooks.js";
 import { mergeConfigToml } from "../config/toml.js";
 import {
@@ -70,14 +69,14 @@ function mergeAgentsMd(existingContent: string | null, sectionContent: string): 
   return `${trimmed}\n\n${wrapped}`;
 }
 
-async function copySkillDirectory(sourceDir: string, destinationDir: string): Promise<void> {
+async function copyDirectory(sourceDir: string, destinationDir: string): Promise<void> {
   await ensureDir(destinationDir);
   const entries = await readdir(sourceDir, { withFileTypes: true });
   for (const entry of entries) {
     const sourcePath = path.join(sourceDir, entry.name);
     const destinationPath = path.join(destinationDir, entry.name);
     if (entry.isDirectory()) {
-      await copySkillDirectory(sourcePath, destinationPath);
+      await copyDirectory(sourcePath, destinationPath);
     } else {
       await cp(sourcePath, destinationPath, { force: true });
     }
@@ -192,19 +191,30 @@ async function writeManagedSurfaces(
   await ensureDir(scopePaths.skillsDir);
   await ensureDir(scopePaths.agentsDir);
 
-  const shippedSkills = path.join(packageRootPath, "skills");
+  const shippedSkills = path.join(packageRootPath, "plugin", "skills");
   const skillEntries = await readdir(shippedSkills, { withFileTypes: true });
   const installedSkills: string[] = [];
   for (const entry of skillEntries) {
     if (!entry.isDirectory()) continue;
     installedSkills.push(entry.name);
-    await copySkillDirectory(
+    await copyDirectory(
       path.join(shippedSkills, entry.name),
       path.join(scopePaths.skillsDir, entry.name)
     );
   }
 
-  const installedAgents = await installNativeAgentConfigs(packageRootPath, scopePaths.agentsDir);
+  const shippedAgentsDir = path.join(packageRootPath, "agents");
+  const agentEntries = await readdir(shippedAgentsDir, { withFileTypes: true });
+  const installedAgents: string[] = [];
+  for (const entry of agentEntries) {
+    if (!entry.isFile() || !entry.name.endsWith(".toml")) continue;
+    installedAgents.push(entry.name.replace(/\.toml$/, ""));
+    await cp(
+      path.join(shippedAgentsDir, entry.name),
+      path.join(scopePaths.agentsDir, entry.name),
+      { force: true }
+    );
+  }
 
   const existingConfig = await readTextIfExists(scopePaths.configTomlPath);
   const mergedConfig = mergeConfigToml(existingConfig, packageRootPath, {
@@ -215,7 +225,7 @@ async function writeManagedSurfaces(
   const existingHooks = await readTextIfExists(scopePaths.hooksJsonPath);
   await writeText(scopePaths.hooksJsonPath, mergeManagedHooks(existingHooks, packageRootPath));
 
-  const template = await readFile(path.join(packageRootPath, "templates", "AGENTS.md"), "utf8");
+  const template = await readFile(path.join(packageRootPath, "install", "AGENTS.fragment.md"), "utf8");
   const existingAgentsMd = await readTextIfExists(scopePaths.agentsMdPath);
   await writeText(scopePaths.agentsMdPath, mergeAgentsMd(existingAgentsMd, template));
 

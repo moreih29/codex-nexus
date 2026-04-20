@@ -4,9 +4,9 @@
 
 > 🌏 [한국어](README.md)
 
-Nexus orchestration plugin for OpenAI Codex CLI.
+Nexus wrapper plugin for OpenAI Codex CLI.
 
-`codex-nexus` turns Codex tool calls and agent execution into a structured Nexus workflow. Instead of pushing straight into implementation, it helps you plan first, record decisions, execute through tasks, and keep project knowledge under `.nexus/`.
+`codex-nexus` uses the Codex `sync` outputs from `@moreih29/nexus-core` as its source of truth, then layers Codex-specific install, config merge, hook, and MCP adapters on top. Common Nexus definitions and generated Codex outputs come from `nexus-core`; `codex-nexus` packages and connects them for Codex CLI.
 
 ## Why
 
@@ -17,11 +17,17 @@ Nexus orchestration plugin for OpenAI Codex CLI.
 - use a Codex-native specialist agent catalog
 - access plan/task/history/context flows through `nx` MCP tools
 
+## Architecture
+
+- `nexus-core` — source of truth for shared Codex assets and generated output contract
+- `codex-nexus` — Codex-specific wrapper (`install`, config merge, hooks, MCP adapter)
+- `bun run sync:core` — runs upstream `nexus-core sync --harness=codex` into a staging directory, then applies the managed outputs to this repo's `agents/`, `plugin/`, `prompts/`, and `install/`
+
 ## Quick Start
 
 ### 1. Install
 
-`codex-nexus` is distributed through npm, but the installed hooks and MCP server execute with `bun`.
+`codex-nexus` is distributed through npm, but the installed hooks and MCP adapter execute with `bun`.
 
 Requirements:
 
@@ -38,7 +44,12 @@ When `codex-nexus install` runs in a TTY, it prompts for:
 - which package version to install
 - which target scope to install into (`user` or `project`)
 
-`install` writes the `nx` MCP server and default optional MCP integrations into `.codex/config.toml`. The current default optional integration is hosted `Context7`. Export `CONTEXT7_API_KEY` in your shell if you want authenticated Context7 access and higher rate limits.
+`install` copies the core-generated skills and agents into the scope-appropriate `.codex/`, then configures the Codex-adapted `nx` MCP server and default optional integrations in `.codex/config.toml`. The current default optional integration is hosted `Context7`. Export `CONTEXT7_API_KEY` in your shell if you want authenticated Context7 access and higher rate limits.
+
+AGENTS behavior differs by scope:
+
+- `--scope user` updates `~/.codex/AGENTS.md` and leaves the current repository's `./AGENTS.md` untouched
+- `--scope project` updates the current repository's `./AGENTS.md`
 
 To install explicitly:
 
@@ -94,6 +105,8 @@ Typical flow:
 | `[m:gc]` | clean up memory entries | `[m:gc] Deduplicate memory notes` |
 
 ## Agents
+
+The primary main-thread agent is `Lead`, and Codex AGENTS.md receives the core-generated lead fragment during install.
 
 ### How
 
@@ -151,12 +164,14 @@ An install updates these managed surfaces under the selected scope:
 - `.codex/packages/node_modules/codex-nexus`
 - `.codex/config.toml` (`nx` MCP plus hosted `context7` MCP by default)
 - `.codex/hooks.json`
-- `.codex/skills/nx-init`
-- `.codex/skills/nx-plan`
-- `.codex/skills/nx-run`
-- `.codex/skills/nx-sync`
-- `.codex/agents/*.toml`
-- the Codex Nexus section in `AGENTS.md`
+- `.codex/skills/*` (copied from `plugin/skills/`)
+- `.codex/agents/*.toml` (Codex agent TOML generated from `nexus-core` assets)
+- the lead fragment in the scope-specific AGENTS target (`install/AGENTS.fragment.md`)
+
+AGENTS target:
+
+- `user` — `~/.codex/AGENTS.md`
+- `project` — the current repository's `./AGENTS.md`
 
 Scope meanings:
 
@@ -187,6 +202,7 @@ Resume-related runtime state lives primarily in:
 ## CLI
 
 ```bash
+bun run sync:core
 codex-nexus install
 codex-nexus install --core-only
 codex-nexus install --scope user --version latest

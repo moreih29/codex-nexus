@@ -110,7 +110,10 @@ describe("CLI help", () => {
     expect(help).toContain("--core-only");
     expect(help).toContain(".codex/packages/node_modules/codex-nexus");
     expect(help).toContain(".codex/config.toml");
-    expect(help).toContain("AGENTS.md Nexus section");
+    expect(help).toContain(".codex/skills/* (copied from plugin/skills)");
+    expect(help).toContain("Scope-specific AGENTS.md lead fragment");
+    expect(help).toContain("user: ~/.codex/AGENTS.md");
+    expect(help).toContain("project: ./AGENTS.md");
   });
 });
 
@@ -130,19 +133,6 @@ describe("CLI integration", () => {
     const repoRoot = await mkdtemp(path.join(os.tmpdir(), "codex-nexus-cli-"));
     try {
       await mkdir(path.join(repoRoot, ".git"));
-      await mkdir(path.join(repoRoot, ".codex", "agents"), { recursive: true });
-      await writeFile(
-        path.join(repoRoot, ".codex", "agents", "nexus.toml"),
-        [
-          'name = "nexus"',
-          'description = "Nexus-aware orchestration lead for plan, run, delegation, and verification workflows"',
-          'developer_instructions = """',
-          "You are Nexus, the primary orchestration lead for `codex-nexus`.",
-          '"""',
-          ""
-        ].join("\n"),
-        "utf8"
-      );
 
       const install = await runCli(["install", "--scope", "project", "--version", getCurrentVersion(), "--verbose"], repoRoot);
       expect(install.code).toBe(0);
@@ -155,29 +145,35 @@ describe("CLI integration", () => {
       expect(existsSync(path.join(repoRoot, ".codex", "hooks.json"))).toBe(true);
       expect(existsSync(path.join(repoRoot, ".codex", "packages"))).toBe(true);
       expect(existsSync(path.join(repoRoot, ".codex", "skills", "nx-plan", "SKILL.md"))).toBe(true);
-      expect(existsSync(path.join(repoRoot, ".codex", "agents", "nexus.toml"))).toBe(false);
+      expect(existsSync(path.join(repoRoot, ".codex", "agents", "lead.toml"))).toBe(true);
       expect(existsSync(path.join(repoRoot, ".codex", "agents", "architect.toml"))).toBe(true);
       expect(existsSync(path.join(repoRoot, ".codex", "agents", "engineer.toml"))).toBe(true);
       expect(existsSync(path.join(repoRoot, ".codex", "agents", "reviewer.toml"))).toBe(true);
       expect(existsSync(path.join(repoRoot, "AGENTS.md"))).toBe(true);
 
+      const leadToml = await readFile(path.join(repoRoot, ".codex", "agents", "lead.toml"), "utf8");
       const architectToml = await readFile(path.join(repoRoot, ".codex", "agents", "architect.toml"), "utf8");
       const engineerToml = await readFile(path.join(repoRoot, ".codex", "agents", "engineer.toml"), "utf8");
       const reviewerToml = await readFile(path.join(repoRoot, ".codex", "agents", "reviewer.toml"), "utf8");
       const configToml = await readFile(path.join(repoRoot, ".codex", "config.toml"), "utf8");
+      const agentsMd = await readFile(path.join(repoRoot, "AGENTS.md"), "utf8");
+      expect(leadToml).toContain("[agents.lead]");
+      expect(leadToml).toContain('model = "gpt-5.4"');
+      expect(architectToml).toContain("[agents.architect]");
       expect(architectToml).toContain('model = "gpt-5.4"');
+      expect(architectToml).toContain('sandbox_mode = "read-only"');
+      expect(engineerToml).toContain("[agents.engineer]");
       expect(engineerToml).toContain('model = "gpt-5.3-codex"');
+      expect(reviewerToml).toContain("[agents.reviewer]");
       expect(reviewerToml).toContain('model = "gpt-5.3-codex"');
-      expect(architectToml).toContain('[mcp_servers.nx]');
-      expect(architectToml).toContain('command = "bun"');
-      expect(architectToml).toContain(`args = ["${path.join(process.cwd(), "dist", "mcp", "server.js")}"]`);
-      expect(architectToml).not.toContain("model_reasoning_effort");
-      expect(engineerToml).not.toContain("model_reasoning_effort");
-      expect(reviewerToml).not.toContain("model_reasoning_effort");
+      expect(architectToml).not.toContain("[mcp_servers.nx]");
       expect(configToml).toContain("[mcp_servers.context7]");
+      expect(configToml).toContain(path.join(process.cwd(), "dist", "mcp", "server.js"));
       expect(configToml).toContain('url = "https://mcp.context7.com/mcp"');
       expect(configToml).toContain('bearer_token_env_var = "CONTEXT7_API_KEY"');
       expect(configToml).toContain("Use optional MCP integrations such as context7");
+      expect(agentsMd).toContain("<!-- nexus-core:lead:start -->");
+      expect(agentsMd).toContain("# lead");
 
       const doctor = await runCli(["doctor", "--scope", "project"], repoRoot);
       expect(doctor.code).toBe(0);
@@ -207,6 +203,76 @@ describe("CLI integration", () => {
       expect(configToml).not.toContain("Use optional MCP integrations such as context7");
     } finally {
       await rm(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("user scope installs global AGENTS.md without mutating the current repo AGENTS.md", async () => {
+    const homeRoot = await mkdtemp(path.join(os.tmpdir(), "codex-nexus-home-"));
+    const repoRoot = await mkdtemp(path.join(os.tmpdir(), "codex-nexus-cli-"));
+    try {
+      const codexHome = path.join(homeRoot, ".codex");
+      await mkdir(path.join(repoRoot, ".git"));
+      await writeFile(path.join(repoRoot, "AGENTS.md"), "# project instructions\n", "utf8");
+
+      const install = await new Promise<CliResult>((resolve, reject) => {
+        const cliPath = path.join(process.cwd(), "dist", "cli", "index.js");
+        const child = spawn(process.execPath, [cliPath, "install", "--scope", "user", "--version", getCurrentVersion(), "--verbose"], {
+          cwd: repoRoot,
+          env: {
+            ...process.env,
+            HOME: homeRoot,
+            CODEX_HOME: codexHome,
+            CODEX_NEXUS_FORCE_TTY: "0",
+            CODEX_NEXUS_TEST_PACKAGE_ROOT: process.cwd(),
+            CODEX_NEXUS_TEST_VERSIONS: JSON.stringify([getCurrentVersion()])
+          },
+          stdio: ["ignore", "pipe", "pipe"]
+        });
+
+        let stdout = "";
+        let stderr = "";
+        child.stdout.on("data", (chunk) => { stdout += String(chunk); });
+        child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+        child.on("error", reject);
+        child.on("close", (code) => {
+          resolve({ code, stdout: stdout.trim(), stderr: stderr.trim() });
+        });
+      });
+
+      expect(install.code).toBe(0);
+      expect(existsSync(path.join(codexHome, "AGENTS.md"))).toBe(true);
+      expect(await readFile(path.join(repoRoot, "AGENTS.md"), "utf8")).toBe("# project instructions\n");
+      const globalAgents = await readFile(path.join(codexHome, "AGENTS.md"), "utf8");
+      expect(globalAgents).toContain("<!-- nexus-core:lead:start -->");
+
+      const doctor = await new Promise<CliResult>((resolve, reject) => {
+        const cliPath = path.join(process.cwd(), "dist", "cli", "index.js");
+        const child = spawn(process.execPath, [cliPath, "doctor", "--scope", "user"], {
+          cwd: repoRoot,
+          env: {
+            ...process.env,
+            HOME: homeRoot,
+            CODEX_HOME: codexHome,
+            CODEX_NEXUS_FORCE_TTY: "0"
+          },
+          stdio: ["ignore", "pipe", "pipe"]
+        });
+
+        let stdout = "";
+        let stderr = "";
+        child.stdout.on("data", (chunk) => { stdout += String(chunk); });
+        child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+        child.on("error", reject);
+        child.on("close", (code) => {
+          resolve({ code, stdout: stdout.trim(), stderr: stderr.trim() });
+        });
+      });
+
+      expect(doctor.code).toBe(0);
+      expect(doctor.stdout).toContain("Doctor passed.");
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true });
+      await rm(homeRoot, { recursive: true, force: true });
     }
   });
 });

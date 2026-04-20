@@ -1,10 +1,8 @@
 ---
-name: nx-plan
 description: "Structured multi-perspective analysis to decompose issues, align on decisions, and produce an enriched plan before execution. Plan only — does not execute."
-trigger_display: "[plan]"
-purpose: "Structured planning — subagent-based analysis, deliberate decisions, produce execution plan"
+triggers:
+  - plan
 ---
-
 ## Role
 
 Facilitate structured multi-perspective analysis using subagents to decompose issues, deliberate on options, and align on decisions. Lead acts as synthesizer AND active participant — orchestrates subagent research/analysis AND contributes its own position. Does not execute — planning only. Transition to execution is the user's decision.
@@ -42,7 +40,7 @@ Facilitate structured multi-perspective analysis using subagents to decompose is
 
 ## Auto Mode (`[plan:auto]`)
 
-When triggered with `[plan:auto]` or invoked via `Load and follow the $nx-plan skill now (mode: auto).`, run the full planning process **without user interaction**:
+When triggered with `[plan:auto]` or invoked via `$nx-plan`, run the full planning process **without user interaction**:
 
 1. **Research** — spawn researcher+Explore subagents (same as interactive)
 2. **Issue derivation** — Lead identifies issues from research
@@ -100,16 +98,8 @@ Understand code, core knowledge, and prior decisions before forming a planning a
 
 | Scenario | Approach |
 |----------|----------|
-| Codebase orientation | `Use spawn_agent to spawn the explorer subagent now.
-Suggested call shape:
-- agent_type: explorer
-- message:
-<file/code search task>` for codebase exploration |
-| External research needed | `Use spawn_agent to spawn the researcher subagent now.
-Suggested call shape:
-- agent_type: researcher
-- message:
-<research question>` for web search |
+| Codebase orientation | `spawn_agent("explore", "<file/code search task>")` for codebase exploration |
+| External research needed | `spawn_agent("researcher", "<research question>")` for web search |
 | Both codebase and external | Spawn Explore + Researcher in parallel |
 
 - NEVER call `nx_plan_start` before research is complete.
@@ -361,45 +351,3 @@ gate.ts detects `[d]` and routes to `nx_plan_decide` if plan.json exists; blocks
 ## Deactivation
 
 When transitioning to `[run]`, Plan's role ends. Execution is handled by the run skill.
-
-
----
-
-## Harness-Specific: resume_invocation
-
-# Codex Agent Resume Mechanism
-
-Codex exposes native completed-agent continuation through `resume_agent(id)` and `send_input(target, ...)`.
-
-## Native Primitives
-
-| Tool | Purpose |
-|---|---|
-| `resume_agent` | Re-open a previously completed agent by its Codex agent id |
-| `send_input` | Send the follow-up prompt into the resumed agent context |
-
-When continuity is available, the default Codex pattern is:
-
-1. `resume_agent(id=<prior agent id>)`
-2. `send_input(target=<same id>, message=<follow-up prompt>)`
-
-If the runtime rejects the resume or the prior id no longer exists, silently fall back to a fresh `spawn_agent`.
-
-## Continuity Sources
-
-- **Plan mode**: prefer `how_agent_ids` recorded on the relevant plan issue, then fall back to `.nexus/state/codex-nexus/agent-tracker.json`
-- **Run mode**: prefer the task's persisted `owner_agent_id`, then fall back to tracker-based continuity for `persistent` tiers only
-
-## Resume Tiers
-
-| Tier | Codex policy |
-|---|---|
-| `persistent` | resume by default when a completed prior participant exists |
-| `bounded` | resume only when the task is pinned to a prior `owner_agent_id`; prepend `Re-read target files before any modification.` to the follow-up prompt |
-| `ephemeral` | always fresh spawn |
-
-## Run-Mode State
-
-For reusable run-task continuity, keep the task's `owner_agent_id` populated after the first spawn. Use `nx_task_update(id, owner_agent_id=..., status=...)` to persist it.
-
-`nx_task_resume` returns delegation-ready guidance for run tasks, including whether to resume or spawn fresh.
