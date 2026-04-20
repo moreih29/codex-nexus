@@ -1,6 +1,17 @@
-import path from "node:path";
+import { readFileSync } from "node:fs";
+import {
+  nexusCoreCodexHookManifestPath,
+  nexusCoreCodexHookRuntimePath
+} from "./nexus-core.js";
 
-type HookEventName = "SessionStart" | "UserPromptSubmit" | "PreToolUse" | "PostToolUse" | "Stop";
+type HookEventName = "SessionStart" | "UserPromptSubmit" | "SubagentStart" | "SubagentStop";
+type HookEntry = {
+  command: string;
+  timeout?: number;
+};
+type HookManifest = {
+  hooks: Partial<Record<HookEventName, HookEntry[]>>;
+};
 
 function clone<T>(value: T): T {
   return structuredClone(value);
@@ -12,35 +23,37 @@ function safeObject(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function buildCommandEntry(command: string, matcher?: string): Record<string, unknown> {
-  return {
-    ...(matcher ? { matcher } : {}),
-    hooks: [
-      {
-        type: "command",
-        command
-      }
-    ]
-  };
+function rewriteHookCommand(command: string, packageRoot: string): string {
+  const match = command.match(/dist\/hooks\/([^"\s]+\.js)/);
+  if (!match) {
+    throw new Error(`Unsupported nexus-core Codex hook command: ${command}`);
+  }
+
+  return `node "${nexusCoreCodexHookRuntimePath(packageRoot, match[1])}"`;
 }
 
-function hookCommand(packageRoot: string): string {
-  return `bun "${path.join(packageRoot, "dist", "hooks", "codex-native-hook.js")}"`;
+function loadCoreHookManifest(packageRoot: string): HookManifest {
+  return JSON.parse(readFileSync(nexusCoreCodexHookManifestPath(packageRoot), "utf8")) as HookManifest;
 }
 
 export function buildManagedHooks(packageRoot: string): Record<HookEventName, unknown[]> {
-  const command = hookCommand(packageRoot);
-  return {
-    SessionStart: [buildCommandEntry(command)],
-    UserPromptSubmit: [buildCommandEntry(command)],
-    PreToolUse: [buildCommandEntry(command, "Bash")],
-    PostToolUse: [buildCommandEntry(command)],
-    Stop: [buildCommandEntry(command)]
-  };
+  const manifest = loadCoreHookManifest(packageRoot);
+  const managed = {} as Record<HookEventName, unknown[]>;
+
+  for (const eventName of Object.keys(manifest.hooks) as HookEventName[]) {
+    managed[eventName] = (manifest.hooks[eventName] ?? []).map((entry) => ({
+      ...entry,
+      command: rewriteHookCommand(entry.command, packageRoot)
+    }));
+  }
+
+  return managed;
 }
 
 function isManagedHookCommand(command: string): boolean {
-  return /codex-native-hook\.js(?:["\s]|$)/.test(command);
+  return /codex-native-hook\.js(?:["\s]|$)/.test(command) ||
+    (/nexus-core/.test(command) &&
+      /(?:agent-bootstrap|agent-finalize|prompt-router|session-init)\.js(?:["\s]|$)/.test(command));
 }
 
 function stripManagedEntry(entry: unknown): unknown | null {

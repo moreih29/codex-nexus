@@ -10,9 +10,7 @@ await rm(distRoot, { recursive: true, force: true });
 const result = await Bun.build({
   entrypoints: [
     path.join(repoRoot, "src", "index.ts"),
-    path.join(repoRoot, "src", "cli", "index.ts"),
-    path.join(repoRoot, "src", "mcp", "server.ts"),
-    path.join(repoRoot, "src", "hooks", "codex-native-hook.ts")
+    path.join(repoRoot, "src", "cli", "index.ts")
   ],
   outdir: distRoot,
   target: "bun",

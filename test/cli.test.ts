@@ -7,6 +7,7 @@ import TOML from "@iarna/toml";
 import { describe, expect, test } from "bun:test";
 import { parseCliArgs } from "../src/cli/args.js";
 import { renderCommandHelp } from "../src/cli/help.js";
+import { nexusCoreCodexHookRuntimePath, nexusCoreMcpServerPath } from "../src/config/nexus-core.js";
 import { getCurrentVersion } from "../src/shared/version.js";
 
 interface CliResult {
@@ -158,6 +159,7 @@ describe("CLI integration", () => {
       const engineerToml = await readFile(path.join(repoRoot, ".codex", "agents", "engineer.toml"), "utf8");
       const reviewerToml = await readFile(path.join(repoRoot, ".codex", "agents", "reviewer.toml"), "utf8");
       const configToml = await readFile(path.join(repoRoot, ".codex", "config.toml"), "utf8");
+      const hooksJson = await readFile(path.join(repoRoot, ".codex", "hooks.json"), "utf8");
       const agentsMd = await readFile(path.join(repoRoot, "AGENTS.md"), "utf8");
       const architectRole = TOML.parse(architectToml) as {
         mcp_servers?: {
@@ -185,8 +187,8 @@ describe("CLI integration", () => {
       expect(architectToml).toContain('model = "gpt-5.4"');
       expect(architectToml).toContain('sandbox_mode = "read-only"');
       expect(architectToml).toContain("[mcp_servers.nx]");
-      expect(architectRole.mcp_servers?.nx?.command).toBe("bun");
-      expect(architectRole.mcp_servers?.nx?.args).toEqual([path.join(process.cwd(), "dist", "mcp", "server.js")]);
+      expect(architectRole.mcp_servers?.nx?.command).toBe("node");
+      expect(architectRole.mcp_servers?.nx?.args).toEqual([nexusCoreMcpServerPath(process.cwd())]);
       expect(architectRole.mcp_servers?.nx?.disabled_tools).toEqual(["nx_task_add", "nx_task_update"]);
       expect(engineerToml).toContain('name = "engineer"');
       expect(engineerToml).toContain('developer_instructions = """');
@@ -197,10 +199,15 @@ describe("CLI integration", () => {
       expect(reviewerToml).toContain('developer_instructions = """');
       expect(reviewerToml).toContain('model = "gpt-5.3-codex"');
       expect(configToml).toContain("[mcp_servers.context7]");
-      expect(configToml).toContain(path.join(process.cwd(), "dist", "mcp", "server.js"));
+      expect(configToml).toContain(nexusCoreMcpServerPath(process.cwd()));
       expect(configToml).toContain('url = "https://mcp.context7.com/mcp"');
-      expect(configToml).toContain('bearer_token_env_var = "CONTEXT7_API_KEY"');
+      expect(configToml).not.toContain('bearer_token_env_var = "CONTEXT7_API_KEY"');
       expect(configToml).toContain("Use optional MCP integrations such as context7");
+      expect(hooksJson).toContain(nexusCoreCodexHookRuntimePath(process.cwd(), "session-init.js"));
+      expect(hooksJson).toContain(nexusCoreCodexHookRuntimePath(process.cwd(), "prompt-router.js"));
+      expect(hooksJson).toContain(nexusCoreCodexHookRuntimePath(process.cwd(), "agent-bootstrap.js"));
+      expect(hooksJson).toContain(nexusCoreCodexHookRuntimePath(process.cwd(), "agent-finalize.js"));
+      expect(hooksJson).not.toContain("codex-native-hook.js");
       expect(agentsMd).toContain("<!-- nexus-core:lead:start -->");
       expect(agentsMd).toContain("# lead");
 
@@ -287,6 +294,35 @@ describe("CLI integration", () => {
       expect(configToml).toContain("[mcp_servers.nx]");
       expect(configToml).not.toContain("[mcp_servers.context7]");
       expect(configToml).not.toContain("Use optional MCP integrations such as context7");
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("install rewrites the legacy managed Context7 entry to the url-only default", async () => {
+    const repoRoot = await mkdtemp(path.join(os.tmpdir(), "codex-nexus-cli-"));
+    try {
+      await mkdir(path.join(repoRoot, ".git"));
+
+      await mkdir(path.join(repoRoot, ".codex"), { recursive: true });
+      await writeFile(
+        path.join(repoRoot, ".codex", "config.toml"),
+        [
+          "[mcp_servers.context7]",
+          'url = "https://mcp.context7.com/mcp"',
+          'bearer_token_env_var = "CONTEXT7_API_KEY"',
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+
+      const install = await runCli(["install", "--scope", "project", "--version", getCurrentVersion()], repoRoot);
+      expect(install.code).toBe(0);
+
+      const configToml = await readFile(path.join(repoRoot, ".codex", "config.toml"), "utf8");
+      expect(configToml).toContain("[mcp_servers.context7]");
+      expect(configToml).toContain('url = "https://mcp.context7.com/mcp"');
+      expect(configToml).not.toContain('bearer_token_env_var = "CONTEXT7_API_KEY"');
     } finally {
       await rm(repoRoot, { recursive: true, force: true });
     }

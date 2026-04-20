@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import TOML from "@iarna/toml";
 import { mergeManagedHooks } from "../src/config/codex-hooks.js";
+import { nexusCoreCodexHookRuntimePath, nexusCoreMcpServerPath } from "../src/config/nexus-core.js";
 import { adaptAgentRoleToml, isStandaloneAgentRoleToml, mergeConfigToml } from "../src/config/toml.js";
 
 describe("config merge", () => {
@@ -20,22 +21,38 @@ describe("config merge", () => {
           ]
         }
       }),
-      "/tmp/codex-nexus"
+      process.cwd()
     );
 
     const parsed = JSON.parse(merged) as { hooks: Record<string, Array<Record<string, unknown>>> };
     expect(parsed.hooks.SessionStart.length).toBe(2);
+    expect(parsed.hooks.SubagentStart).toBeArray();
   });
 
   test("injects nx and default hosted Context7 MCP servers plus features", () => {
     const merged = mergeConfigToml("", "/tmp/codex-nexus");
     expect(merged).toContain("codex_hooks = true");
     expect(merged).toContain("[mcp_servers.nx]");
-    expect(merged).toContain("/tmp/codex-nexus/dist/mcp/server.js");
+    expect(merged).toContain(nexusCoreMcpServerPath("/tmp/codex-nexus"));
     expect(merged).toContain("[mcp_servers.context7]");
     expect(merged).toContain('url = "https://mcp.context7.com/mcp"');
-    expect(merged).toContain('bearer_token_env_var = "CONTEXT7_API_KEY"');
+    expect(merged).not.toContain('bearer_token_env_var = "CONTEXT7_API_KEY"');
     expect(merged).toContain("Use optional MCP integrations such as context7");
+  });
+
+  test("rewrites the legacy managed Context7 entry to the url-only default", () => {
+    const merged = mergeConfigToml(TOML.stringify({
+      mcp_servers: {
+        context7: {
+          url: "https://mcp.context7.com/mcp",
+          bearer_token_env_var: "CONTEXT7_API_KEY"
+        }
+      }
+    }), "/tmp/codex-nexus");
+
+    expect(merged).toContain("[mcp_servers.context7]");
+    expect(merged).toContain('url = "https://mcp.context7.com/mcp"');
+    expect(merged).not.toContain('bearer_token_env_var = "CONTEXT7_API_KEY"');
   });
 
   test("preserves an existing custom Context7 MCP configuration", () => {
@@ -77,17 +94,27 @@ describe("config merge", () => {
     expect(custom).toContain('bearer_token_env_var = "CUSTOM_CONTEXT7_TOKEN"');
   });
 
-  test("registers PostToolUse hook without Bash-only matcher", () => {
-    const merged = mergeManagedHooks(null, "/tmp/codex-nexus");
+  test("registers nexus-core Codex hook runtimes in hooks.json", () => {
+    const merged = mergeManagedHooks(null, process.cwd());
     const parsed = JSON.parse(merged) as {
       hooks: Record<string, Array<Record<string, unknown>>>;
     };
 
-    expect(parsed.hooks.PreToolUse[0]?.matcher).toBe("Bash");
-    expect(parsed.hooks.PostToolUse[0]?.matcher).toBeUndefined();
+    expect(parsed.hooks.SessionStart[0]?.command).toContain(
+      nexusCoreCodexHookRuntimePath(process.cwd(), "session-init.js")
+    );
+    expect(parsed.hooks.UserPromptSubmit[0]?.command).toContain(
+      nexusCoreCodexHookRuntimePath(process.cwd(), "prompt-router.js")
+    );
+    expect(parsed.hooks.SubagentStart[0]?.command).toContain(
+      nexusCoreCodexHookRuntimePath(process.cwd(), "agent-bootstrap.js")
+    );
+    expect(parsed.hooks.SubagentStop[0]?.command).toContain(
+      nexusCoreCodexHookRuntimePath(process.cwd(), "agent-finalize.js")
+    );
   });
 
-  test("adapts role-local nx MCP server config to the wrapper runtime path", () => {
+  test("adapts role-local nx MCP server config to the core runtime path", () => {
     const adapted = adaptAgentRoleToml(
       [
         'name = "architect"',
@@ -113,8 +140,8 @@ describe("config merge", () => {
     };
 
     expect(adapted).toContain('[mcp_servers.nx]');
-    expect(adapted).toContain('command = "bun"');
-    expect(adapted).toContain('/tmp/codex-nexus/dist/mcp/server.js');
+    expect(adapted).toContain('command = "node"');
+    expect(adapted).toContain(nexusCoreMcpServerPath("/tmp/codex-nexus"));
     expect(adapted).not.toContain('command = "nexus-mcp"');
     expect(parsed.mcp_servers?.nx?.disabled_tools).toEqual(["nx_task_add", "nx_task_update"]);
   });
@@ -134,8 +161,8 @@ describe("config merge", () => {
       'developer_instructions = """role"""',
       "",
       "[mcp_servers.nx]",
-      'command = "bun"',
-      'args = ["/tmp/codex-nexus/dist/mcp/server.js"]',
+      'command = "node"',
+      `args = ["${nexusCoreMcpServerPath("/tmp/codex-nexus")}"]`,
       'disabled_tools = ["nx_task_add"]',
       ""
     ].join("\n");

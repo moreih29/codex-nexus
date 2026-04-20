@@ -6,7 +6,7 @@
 
 Nexus wrapper plugin for OpenAI Codex CLI.
 
-`codex-nexus` uses the Codex `sync` outputs from `@moreih29/nexus-core` as its source of truth, then layers Codex-specific install, config merge, hook, and MCP adapters on top. Common Nexus definitions and generated Codex outputs come from `nexus-core`; `codex-nexus` packages and connects them for Codex CLI.
+`codex-nexus` uses the Codex `sync` outputs and runtime exports from `@moreih29/nexus-core` as its source of truth, then layers Codex-specific install, config merge, and path adaptation on top. Common Nexus definitions, generated Codex outputs, and the hook/MCP runtime implementations come from `nexus-core`; `codex-nexus` packages and connects them for Codex CLI.
 
 ## Why
 
@@ -15,19 +15,19 @@ Nexus wrapper plugin for OpenAI Codex CLI.
 - resume completed specialist subagents through Codex-native continuation
 - keep project knowledge and decisions in `.nexus/`
 - use a Codex-native specialist agent catalog
-- access plan/task/history/context flows through `nx` MCP tools
+- access plan/task/history/artifact flows through `nx` MCP tools
 
 ## Architecture
 
 - `nexus-core` — source of truth for shared Codex assets and generated output contract
-- `codex-nexus` — Codex-specific wrapper (`install`, config merge, hooks, MCP adapter)
+- `codex-nexus` — Codex-specific wrapper (`install`, config merge, runtime path adaptation)
 - `bun run sync:core` — runs upstream `nexus-core sync --harness=codex` into a staging directory, then applies the managed outputs to this repo's `agents/`, `plugin/`, `prompts/`, and `install/`
 
 ## Quick Start
 
 ### 1. Install
 
-`codex-nexus` is distributed through npm, but the installed hooks and MCP adapter execute with `bun`.
+`codex-nexus` is distributed through npm. Its CLI entrypoint runs with `bun`, while the installed hook/MCP runtimes come from the prebuilt `@moreih29/nexus-core` dependency.
 
 Requirements:
 
@@ -44,7 +44,7 @@ When `codex-nexus install` runs in a TTY, it prompts for:
 - which package version to install
 - which target scope to install into (`user` or `project`)
 
-`install` copies the core-generated skills and agents into the scope-appropriate `.codex/`, then configures the Codex-adapted `nx` MCP server and default optional integrations in `.codex/config.toml`. The current default optional integration is hosted `Context7`. Export `CONTEXT7_API_KEY` in your shell if you want authenticated Context7 access and higher rate limits.
+`install` copies the core-generated skills and agents into the scope-appropriate `.codex/`, then configures the Codex-adapted `nx` MCP server and default optional integrations in `.codex/config.toml`. The current default optional integration is hosted `Context7`, and the default install writes it as a url-only remote MCP entry to avoid startup failures when no API key is configured. If you want higher rate limits or authenticated access, add the Context7 API key header manually using the Context7 client docs.
 
 Starting with `nexus-core@0.16.0`, `.codex/agents/*.toml` uses the standalone role-file schema that current Codex loads directly. `nexus-core@0.16.2` then fixes the remaining Codex compatibility issue by moving `disabled_tools` under the supported `[mcp_servers.nx]` block. If you upgraded from `0.16.0` or `0.16.1`, rerun `codex-nexus install --scope user` or `codex-nexus install --scope project` so the malformed agent files are replaced.
 
@@ -196,10 +196,12 @@ Scope meanings:
 - `memory/`, `context/`, `rules/`, and `history.json` hold project knowledge.
 - `state/` holds runtime state and is excluded from git.
 
-Resume-related runtime state lives primarily in:
+Runtime state now lives under the core session root `.nexus/state/<session_id>/`, for example:
 
-- `.nexus/state/codex-nexus/agent-tracker.json`
-- `.nexus/state/codex-nexus/tool-log.jsonl`
+- `.nexus/state/<session_id>/agent-tracker.json`
+- `.nexus/state/<session_id>/tool-log.jsonl`
+- `.nexus/state/<session_id>/plan.json`
+- `.nexus/state/<session_id>/tasks.json`
 
 ## CLI
 
