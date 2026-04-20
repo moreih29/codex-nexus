@@ -1738,6 +1738,24 @@
           "created_at": "2026-04-20T13:17:18.822Z"
         }
       ]
+    },
+    {
+      "completed_at": "2026-04-20T13:34:59.907Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Remove tmp and release runtime-reduction update",
+          "context": "",
+          "deps": [],
+          "acceptance": "tmp directory removed; package/VERSION/plugin manifest aligned to a new unpublished version; checks/tests pass; changes committed; PR merged to main; release tag pushed; publish workflow succeeds or a concrete blocker is recorded.",
+          "owner": "codex",
+          "owner_reuse_policy": "fresh",
+          "status": "completed",
+          "created_at": "2026-04-20T13:31:50.181Z"
+        }
+      ]
     }
   ]
 }
