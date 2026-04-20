@@ -38,8 +38,10 @@ describe("synced nexus-core Codex assets", () => {
     const fragment = readFileSync(agentsFragmentPath, "utf8");
     const configFragment = readFileSync(configFragmentPath, "utf8");
 
-    expect(agentToml).toContain("[agents.lead]");
+    expect(agentToml).toContain('name = "lead"');
+    expect(agentToml).toContain('developer_instructions = """');
     expect(agentToml).toContain('model = "gpt-5.4"');
+    expect(agentToml).not.toContain("[agents.");
     expect(prompt).toContain("You are Lead");
     expect(fragment).toContain("<!-- nexus-core:lead:start -->");
     expect(fragment).toContain("# lead");

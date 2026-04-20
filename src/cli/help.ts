@@ -48,7 +48,7 @@ function topLevelHelp(): string {
       title: "Examples",
       lines: [
         "codex-nexus install",
-        "codex-nexus install --scope project --version 0.1.0 --verbose",
+        "codex-nexus install --scope project --version 0.2.0 --verbose",
         "codex-nexus doctor --scope project",
         "codex-nexus version"
       ]
@@ -86,7 +86,7 @@ function installHelp(): string {
         ".codex/config.toml",
         ".codex/hooks.json",
         ".codex/skills/* (copied from plugin/skills)",
-        ".codex/agents/*.toml (core-generated Codex agents)",
+        ".codex/agents/*.toml (standalone Codex role files)",
         "Scope-specific AGENTS.md lead fragment",
         "  user: ~/.codex/AGENTS.md",
         "  project: ./AGENTS.md"
@@ -98,7 +98,7 @@ function installHelp(): string {
         "codex-nexus install",
         "codex-nexus install --core-only",
         "codex-nexus install --scope user",
-        "codex-nexus install --scope project --version 0.1.0",
+        "codex-nexus install --scope project --version 0.2.0",
         "codex-nexus install --scope user --version latest --verbose"
       ]
     }

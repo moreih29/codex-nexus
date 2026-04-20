@@ -60,12 +60,12 @@ describe("CLI parser", () => {
   });
 
   test("parses install with explicit scope, version, verbose, and core-only mode", () => {
-    expect(parseCliArgs(["install", "--scope", "project", "--version", "0.1.0", "--verbose", "--core-only"])).toEqual({
+    expect(parseCliArgs(["install", "--scope", "project", "--version", "0.2.0", "--verbose", "--core-only"])).toEqual({
       kind: "command",
       command: "install",
       options: {
         scope: "project",
-        version: "0.1.0",
+        version: "0.2.0",
         verbose: true,
         coreOnly: true
       }
@@ -111,6 +111,7 @@ describe("CLI help", () => {
     expect(help).toContain(".codex/packages/node_modules/codex-nexus");
     expect(help).toContain(".codex/config.toml");
     expect(help).toContain(".codex/skills/* (copied from plugin/skills)");
+    expect(help).toContain(".codex/agents/*.toml (standalone Codex role files)");
     expect(help).toContain("Scope-specific AGENTS.md lead fragment");
     expect(help).toContain("user: ~/.codex/AGENTS.md");
     expect(help).toContain("project: ./AGENTS.md");
@@ -157,14 +158,19 @@ describe("CLI integration", () => {
       const reviewerToml = await readFile(path.join(repoRoot, ".codex", "agents", "reviewer.toml"), "utf8");
       const configToml = await readFile(path.join(repoRoot, ".codex", "config.toml"), "utf8");
       const agentsMd = await readFile(path.join(repoRoot, "AGENTS.md"), "utf8");
-      expect(leadToml).toContain("[agents.lead]");
+      expect(leadToml).toContain('name = "lead"');
+      expect(leadToml).toContain('developer_instructions = """');
       expect(leadToml).toContain('model = "gpt-5.4"');
-      expect(architectToml).toContain("[agents.architect]");
+      expect(leadToml).not.toContain("[agents.");
+      expect(architectToml).toContain('name = "architect"');
+      expect(architectToml).toContain('developer_instructions = """');
       expect(architectToml).toContain('model = "gpt-5.4"');
       expect(architectToml).toContain('sandbox_mode = "read-only"');
-      expect(engineerToml).toContain("[agents.engineer]");
+      expect(engineerToml).toContain('name = "engineer"');
+      expect(engineerToml).toContain('developer_instructions = """');
       expect(engineerToml).toContain('model = "gpt-5.3-codex"');
-      expect(reviewerToml).toContain("[agents.reviewer]");
+      expect(reviewerToml).toContain('name = "reviewer"');
+      expect(reviewerToml).toContain('developer_instructions = """');
       expect(reviewerToml).toContain('model = "gpt-5.3-codex"');
       expect(architectToml).not.toContain("[mcp_servers.nx]");
       expect(configToml).toContain("[mcp_servers.context7]");
@@ -179,6 +185,35 @@ describe("CLI integration", () => {
       expect(doctor.code).toBe(0);
       expect(doctor.stdout).toContain("codex-nexus doctor");
       expect(doctor.stdout).toContain("Doctor passed.");
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("doctor flags legacy nested agent TOML installs", async () => {
+    const repoRoot = await mkdtemp(path.join(os.tmpdir(), "codex-nexus-cli-"));
+    try {
+      await mkdir(path.join(repoRoot, ".git"));
+
+      const install = await runCli(["install", "--scope", "project", "--version", getCurrentVersion()], repoRoot);
+      expect(install.code).toBe(0);
+
+      await writeFile(
+        path.join(repoRoot, ".codex", "agents", "lead.toml"),
+        [
+          "[agents.lead]",
+          'description = "Legacy nested schema"',
+          "",
+          "[agents.lead.system]",
+          'content = """old"""',
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+
+      const doctor = await runCli(["doctor", "--scope", "project"], repoRoot);
+      expect(doctor.code).toBe(1);
+      expect(doctor.stdout).toContain("[xx] agents/lead.toml");
     } finally {
       await rm(repoRoot, { recursive: true, force: true });
     }

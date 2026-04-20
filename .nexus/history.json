@@ -1548,6 +1548,60 @@
           "created_at": "2026-04-20T06:03:38.043Z"
         }
       ]
+    },
+    {
+      "completed_at": "2026-04-20T06:16:13.107Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Finalize release pipeline: commit history, merge PR, and publish",
+          "context": "Current branch has one uncommitted .nexus/history.json change after nx_task_close. PR #1 is open and clean. Publish workflow is triggered by semver tag pushes, so version/tag alignment must be confirmed before merge/release.",
+          "deps": [],
+          "approach": "Check published npm version and existing tags, commit the history update, push the branch, merge the PR, then create the correct release tag only if package version is publishable.",
+          "acceptance": "History change committed, PR merged, and the GitHub publish workflow triggered in a valid way without reusing an existing npm version.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-20T06:11:27.133Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-20T07:04:24.881Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "File upstream issue for Codex agent TOML contract mismatch",
+          "context": "User chose to defer local fixes until upstream feedback. Need to report that nexus-core's generated Codex `agents/*.toml` currently use nested `[agents.<id>]` tables, while current Codex runtime expects standalone role files with root-level `name`, `description`, and `developer_instructions`.",
+          "deps": [],
+          "approach": "Check for duplicates, summarize concrete evidence from installed agent files and openai/codex parser/tests, then create a focused issue describing impact on codex-nexus and the likely contract mismatch.",
+          "acceptance": "New upstream GitHub issue created with clear repro, parser evidence, and wrapper impact for the Codex agent TOML mismatch.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-20T07:02:45.154Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-20T08:01:08.107Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Migrate codex-nexus to nexus-core 0.16.0 standalone Codex agent schema",
+          "context": "User asked to perform the migration after upstream issue #42 fix and nexus-core 0.16.0 release.",
+          "deps": [],
+          "approach": "Update dependency, run sync:core, inspect diffs, patch tests/docs/doctor/help if needed, run verification sequentially.",
+          "acceptance": "Dependency bumped to ^0.16.0; synced agents use standalone root-level schema; tests and docs updated; build/test/check pass.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-20T07:57:24.095Z"
+        }
+      ]
     }
   ]
 }

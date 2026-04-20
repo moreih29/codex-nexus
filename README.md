@@ -48,6 +48,8 @@ codex-nexus install
 
 `install`은 core-generated skills/agents를 scope에 맞는 `.codex/` 아래에 배치하고, `.codex/config.toml`에 Codex-adapted `nx` MCP 서버와 optional MCP 통합을 설정합니다. 현재 기본 통합은 hosted `Context7`이고, Context7 인증과 더 높은 rate limit을 쓰려면 셸에 `CONTEXT7_API_KEY`를 export 해두세요.
 
+`nexus-core@0.16.0`부터 `.codex/agents/*.toml`은 Codex가 바로 읽는 standalone role file 스키마입니다. 예전 nested agent TOML로 설치되어 있었다면 upgrade 뒤에 `codex-nexus install --scope user` 또는 `codex-nexus install --scope project`를 다시 실행해 agent 파일을 재설치하세요.
+
 AGENTS 동작은 scope별로 다릅니다.
 
 - `--scope user` 는 `~/.codex/AGENTS.md`를 갱신하고 현재 레포의 `./AGENTS.md`는 건드리지 않습니다
@@ -57,7 +59,7 @@ AGENTS 동작은 scope별로 다릅니다.
 
 ```bash
 codex-nexus install --scope user --version latest
-codex-nexus install --scope project --version 0.1.0
+codex-nexus install --scope project --version 0.2.0
 ```
 
 optional MCP 통합 없이 core만 설치하려면:
@@ -167,7 +169,7 @@ nx_task_update(id=<task id>, owner_agent_id=<returned agent id>, status="in_prog
 - `.codex/config.toml` (`nx` MCP, 기본적으로 hosted `context7` MCP 포함)
 - `.codex/hooks.json`
 - `.codex/skills/*` (`plugin/skills/`에서 복사)
-- `.codex/agents/*.toml` (`nexus-core` 자산에서 생성된 Codex agent TOML)
+- `.codex/agents/*.toml` (`nexus-core` 자산에서 생성된 standalone Codex role file)
 - scope별 AGENTS target의 lead fragment (`install/AGENTS.fragment.md`)
 
 AGENTS target:
@@ -208,7 +210,7 @@ bun run sync:core
 codex-nexus install
 codex-nexus install --core-only
 codex-nexus install --scope user --version latest
-codex-nexus install --scope project --version 0.1.0
+codex-nexus install --scope project --version 0.2.0
 codex-nexus doctor --scope project
 codex-nexus version
 ```

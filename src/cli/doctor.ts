@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { resolveScopePaths, type ScopePaths, type SetupScope } from "../shared/paths.js";
 
 export interface DoctorCheck {
@@ -60,6 +60,19 @@ async function listManagedEntries(
   return values.length > 0 ? values : fallback;
 }
 
+async function hasStandaloneAgentRole(agentPath: string, agentName: string): Promise<boolean> {
+  if (!existsSync(agentPath)) {
+    return false;
+  }
+
+  const content = await readFile(agentPath, "utf8");
+  return (
+    content.includes(`name = "${agentName}"`) &&
+    content.includes('developer_instructions = """') &&
+    !content.includes("[agents.")
+  );
+}
+
 export function formatDoctorSummary(result: DoctorResult): string {
   const lines = [
     "codex-nexus doctor",
@@ -103,7 +116,7 @@ export async function doctorCommand(scope: SetupScope): Promise<DoctorResult> {
     checks.push({
       group: "Agents",
       label: `agents/${name}.toml`,
-      ok: existsSync(path.join(scopePaths.agentsDir, `${name}.toml`))
+      ok: await hasStandaloneAgentRole(path.join(scopePaths.agentsDir, `${name}.toml`), name)
     });
   }
 
