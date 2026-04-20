@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { AGENT_DEFINITIONS } from "../agents/definitions.js";
-import { resolveScopePaths, type SetupScope } from "../shared/paths.js";
+import { readdir } from "node:fs/promises";
+import { resolveScopePaths, type ScopePaths, type SetupScope } from "../shared/paths.js";
 
 export interface DoctorCheck {
   group: "Config" | "Skills" | "Agents";
@@ -14,6 +14,50 @@ export interface DoctorResult {
   codexHomeDir: string;
   failed: number;
   checks: DoctorCheck[];
+}
+
+const FALLBACK_AGENT_IDS = [
+  "lead",
+  "architect",
+  "designer",
+  "postdoc",
+  "strategist",
+  "engineer",
+  "researcher",
+  "writer",
+  "reviewer",
+  "tester"
+];
+
+const FALLBACK_SKILL_IDS = ["nx-init", "nx-plan", "nx-run", "nx-sync"];
+
+async function listManagedEntries(
+  scopePaths: ScopePaths,
+  relativeDir: string,
+  extension: string,
+  fallback: string[]
+): Promise<string[]> {
+  const managedDir = path.join(
+    scopePaths.packageStoreDir,
+    "node_modules",
+    "codex-nexus",
+    relativeDir
+  );
+
+  if (!existsSync(managedDir)) {
+    return fallback;
+  }
+
+  const entries = await readdir(managedDir, { withFileTypes: true });
+  const values = entries
+    .filter((entry) => {
+      if (extension === "/") return entry.isDirectory();
+      return entry.isFile() && entry.name.endsWith(extension);
+    })
+    .map((entry) => extension === "/" ? entry.name : entry.name.slice(0, -extension.length))
+    .sort();
+
+  return values.length > 0 ? values : fallback;
 }
 
 export function formatDoctorSummary(result: DoctorResult): string {
@@ -39,17 +83,23 @@ export function formatDoctorSummary(result: DoctorResult): string {
 
 export async function doctorCommand(scope: SetupScope): Promise<DoctorResult> {
   const scopePaths = resolveScopePaths(scope);
+  const managedSkills = await listManagedEntries(scopePaths, path.join("plugin", "skills"), "/", FALLBACK_SKILL_IDS);
+  const managedAgents = await listManagedEntries(scopePaths, "agents", ".toml", FALLBACK_AGENT_IDS);
   const checks: DoctorCheck[] = [
     { group: "Config", label: "config.toml", ok: existsSync(scopePaths.configTomlPath) },
     { group: "Config", label: "hooks.json", ok: existsSync(scopePaths.hooksJsonPath) },
-    { group: "Config", label: "AGENTS.md", ok: existsSync(scopePaths.agentsMdPath) },
-    { group: "Skills", label: "skills/nx-init", ok: existsSync(path.join(scopePaths.skillsDir, "nx-init", "SKILL.md")) },
-    { group: "Skills", label: "skills/nx-plan", ok: existsSync(path.join(scopePaths.skillsDir, "nx-plan", "SKILL.md")) },
-    { group: "Skills", label: "skills/nx-run", ok: existsSync(path.join(scopePaths.skillsDir, "nx-run", "SKILL.md")) },
-    { group: "Skills", label: "skills/nx-sync", ok: existsSync(path.join(scopePaths.skillsDir, "nx-sync", "SKILL.md")) }
+    { group: "Config", label: "AGENTS.md", ok: existsSync(scopePaths.agentsMdPath) }
   ];
 
-  for (const name of Object.keys(AGENT_DEFINITIONS)) {
+  for (const name of managedSkills) {
+    checks.push({
+      group: "Skills",
+      label: `skills/${name}`,
+      ok: existsSync(path.join(scopePaths.skillsDir, name, "SKILL.md"))
+    });
+  }
+
+  for (const name of managedAgents) {
     checks.push({
       group: "Agents",
       label: `agents/${name}.toml`,

@@ -61,11 +61,12 @@ export function mergeConfigToml(
 
   parsed.developer_instructions = [
     "Nexus is installed.",
+    "Core Codex agents and skills are sourced from @moreih29/nexus-core.",
     "Use AGENTS.md as the primary orchestration surface.",
     "Use workflow skills via $nx-plan, $nx-run, $nx-init, and $nx-sync when routed by tags or user request.",
-    "Use the nx MCP server for stateful plan, task, onboarding, and sync workflows.",
+    "Use the nx MCP server for Codex-adapted stateful plan, task, onboarding, and sync workflows.",
     ...(hasContext7 ? ["Use optional MCP integrations such as context7 for up-to-date library and API documentation when they are available."] : []),
-    "Installed native subagents live under .codex/agents and are available for bounded delegation."
+    "Installed native subagents live under .codex/agents and are core-generated Codex wrappers."
   ].join(" ");
 
   parsed.mcp_servers = mcpServers;

@@ -1184,6 +1184,352 @@
           "created_at": "2026-04-17T11:33:30.388Z"
         }
       ]
+    },
+    {
+      "completed_at": "2026-04-20T01:06:35.275Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Assess upstream Nexus Core update impact",
+          "context": "User reported Nexus Core now ships concrete MCP/hook implementations rather than prompt-only guidance. Need local impact assessment against current codex-nexus repo.",
+          "deps": [],
+          "approach": "Inspect local Nexus context and implementation points, review upstream docs, compare architecture and integration expectations, summarize required and optional changes.",
+          "acceptance": "Clear summary of upstream changes, affected local areas, required changes, and recommended next steps.",
+          "owner": "codex",
+          "status": "completed",
+          "created_at": "2026-04-20T00:57:10.497Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-20T01:30:19.429Z",
+      "branch": "default",
+      "plan": {
+        "id": 13,
+        "topic": "Migrate codex-nexus to a nexus-core-backed wrapper architecture",
+        "issues": [
+          {
+            "id": 1,
+            "title": "Replace legacy manifest-driven generation and package layout with upstream nexus-core Codex scaffold consumption",
+            "status": "decided",
+            "decision": "Adopt upstream nexus-core Codex scaffold outputs as the package asset source of truth. Remove legacy manifest/meta-driven generation and repoint build/package scripts to sync-based generated outputs.",
+            "how_agents": [
+              "architect"
+            ],
+            "how_summary": {
+              "architect": "The old manifest-based consumer contract is gone upstream. Build-time sync against the Codex harness output is the stable boundary and avoids reimplementing agent/skill packaging locally."
+            }
+          },
+          {
+            "id": 2,
+            "title": "Shift install/runtime ownership so core assets and MCP are consumed directly while codex-nexus stays a thin Codex wrapper",
+            "status": "decided",
+            "decision": "Keep codex-nexus as a thin Codex wrapper: install CLI, config merge, doctor checks, and any explicit Codex-only additions remain local, but shared core assets and shared MCP runtime should be sourced from nexus-core wherever possible.",
+            "how_agents": [
+              "architect"
+            ],
+            "how_summary": {
+              "architect": "Wrapper responsibilities should be limited to Codex-specific installation and integration seams. Shared orchestration assets and shared runtime should be delegated to nexus-core to reduce drift."
+            }
+          },
+          {
+            "id": 3,
+            "title": "Update documentation, tests, and developer workflow to match the new wrapper contract",
+            "status": "decided",
+            "decision": "Refresh README/help/tests around the new wrapper contract and delete obsolete upgrade/conformance guidance that assumes the pre-0.13 manifest layout.",
+            "how_agents": [
+              "writer"
+            ],
+            "how_summary": {
+              "writer": "Docs and tests need to describe codex-nexus as a Codex-facing wrapper over nexus-core, not as an independent implementation of shared Nexus runtime behavior."
+            }
+          }
+        ],
+        "research_summary": "Reviewed local codex-nexus implementation and latest upstream nexus-core documentation and source. Current codex-nexus depends on removed manifest-era contracts from nexus-core 0.10.x, while upstream 0.13.0 now ships assets/, hooks runtime, a nexus-mcp server, and Codex scaffold outputs via sync --harness=codex. Local runtime duplicates upstream MCP, prompt generation, agent TOML generation, and parts of hook behavior. Recommended direction is to make nexus-core the source of truth for generated Codex assets and shared runtime surfaces, while codex-nexus keeps Codex-specific install, merge, doctor, and any explicit wrapper-only extensions.",
+        "created_at": "2026-04-20T01:10:51.878Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Replace legacy manifest-driven asset generation with sync-based Codex scaffold consumption",
+          "context": "Current build scripts and generated assets assume removed manifest/meta contracts from older nexus-core versions.",
+          "deps": [],
+          "approach": "Introduce a build-time sync step against upstream Codex outputs, align repository/package file layout with scaffold outputs, and delete legacy generation assumptions.",
+          "acceptance": "Build pipeline no longer reads removed manifest-era paths and package assets come from sync-based Codex scaffold outputs.",
+          "plan_issue": 1,
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-20T01:11:09.527Z"
+        },
+        {
+          "id": 2,
+          "title": "Refactor install and runtime surfaces into a thin Codex wrapper over nexus-core",
+          "context": "Installer, config merge, hooks, and MCP setup currently reimplement behavior now owned by nexus-core.",
+          "deps": [
+            1
+          ],
+          "approach": "Point install flow at synced core assets, prefer core MCP/runtime surfaces where viable, and keep only Codex-specific merge/doctor/wrapper logic locally.",
+          "acceptance": "Install flow consumes core-generated Codex assets and wrapper code does not duplicate removed shared runtime contracts.",
+          "plan_issue": 2,
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-20T01:11:09.645Z"
+        },
+        {
+          "id": 3,
+          "title": "Update docs, tests, and developer workflow for the wrapper architecture",
+          "context": "README/help/tests still describe codex-nexus as an independent shared runtime implementation and reference obsolete upgrade/conformance paths.",
+          "deps": [
+            1,
+            2
+          ],
+          "approach": "Rewrite docs/help text, adapt tests to the synced asset model, and remove obsolete protocol references.",
+          "acceptance": "Documentation and tests reflect codex-nexus as a Codex wrapper around nexus-core and verification passes or remaining gaps are explicit.",
+          "plan_issue": 3,
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-20T01:11:09.646Z"
+        },
+        {
+          "id": 4,
+          "title": "Verify migration outputs and close the run cycle",
+          "context": "After code changes, the repo needs build/test verification and Nexus cycle archival.",
+          "deps": [
+            3
+          ],
+          "approach": "Run targeted verification, refresh any generated/context artifacts that belong in the cycle, then archive the task cycle.",
+          "acceptance": "Relevant checks run successfully or blockers are documented, and Nexus task state is completed and archived.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-20T01:11:09.647Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-20T01:38:00.042Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Remove obsolete wrapper artifacts after nexus-core migration",
+          "context": "User requested full cleanup of remaining unnecessary files. Current candidates include harness-content, invocation-map, install/config.fragment, prompt-only artifacts, and dead agent-generation code kept only by tests.",
+          "deps": [],
+          "approach": "Delete unreferenced files and dead code, update sync/build/docs/tests to the slimmer asset set, then run verification.",
+          "acceptance": "All identified obsolete files are removed, no remaining code references depend on them, and build/tests/check pass.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-20T01:35:12.122Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-20T01:44:10.059Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Report nexus-core v0.13.0 packaging/export regressions upstream",
+          "context": "User requested that the upstream nexus-core repository receive a GitHub issue covering the strict exports limitation, broken published CLI/scripts in v0.13.0, and the fact that codex-nexus had to avoid the published CLI and use file-based asset reads instead.",
+          "deps": [],
+          "approach": "Check for existing duplicate issues, verify GitHub CLI auth, draft a precise reproduction and impact statement, and create the issue if credentials are available.",
+          "acceptance": "GitHub issue created upstream with clear repro, impact, and workaround context, or a concrete blocker reported if issue creation is not possible.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-20T01:42:48.089Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-20T03:09:36.982Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Validate nexus-core v0.14.0 fixes against prior consumer blockers",
+          "context": "User says nexus-core has been updated to v0.14.0 and wants the updated changes checked for problems. Prior blockers were issue #25 (published CLI/scripts broken) and issue #26 (runtime export/mountHooks consumer surface missing or unusable).",
+          "deps": [],
+          "approach": "Review upstream release/issues/docs, inspect npm package metadata and tarball contents for v0.14.0, run direct consumer smoke tests that previously failed, and summarize what is fixed, what remains broken, and what codex-nexus should change if anything.",
+          "acceptance": "Clear verdict on v0.14.0 with concrete evidence from docs/package contents/runtime smoke tests, plus recommended next steps for codex-nexus.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-20T03:05:18.321Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-20T03:11:29.041Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "File upstream issue for nexus-core v0.14.0 compiled CLI root-resolution regression",
+          "context": "User requested a new upstream issue for the newly validated v0.14.0 problem: compiled CLI/build scripts resolve package root incorrectly under dist/, causing sync/list/validate to misread assets or fail.",
+          "deps": [],
+          "approach": "Check for duplicates, reproduce the failure in a clean temp consumer install, and file a focused GitHub issue with repro, root-cause hypothesis, and downstream impact.",
+          "acceptance": "New GitHub issue created on moreih29/nexus-core with concrete repro and links/impact details.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-20T03:10:36.581Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-20T03:43:52.901Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Validate nexus-core v0.14.1 against prior packaging regressions",
+          "context": "User relayed upstream message claiming v0.14.1 fixes two packaging defects: dist/ ROOT resolution (#28) and bin symlink/main() invocation guard issues, with no breaking changes.",
+          "deps": [],
+          "approach": "Inspect official changelog and npm metadata for v0.14.1, install it in a clean temp consumer environment, rerun the same sync/list/validate/import smoke tests that previously failed, and summarize whether codex-nexus can safely bump.",
+          "acceptance": "Concrete verdict on v0.14.1 with evidence from official changelog plus fresh consumer smoke tests, and a recommendation on whether codex-nexus should bump now.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-20T03:42:32.403Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-20T03:53:05.416Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "File upstream issue for Codex plugin consumer contract and deployment-oriented I/O",
+          "context": "User wants an upstream issue that frames codex-nexus from the deployment perspective: what stable inputs/outputs and public consumer contract nexus-core should provide so codex-nexus can ship a real plugin while still wrapping some Codex-specific behavior locally.",
+          "deps": [],
+          "approach": "Check existing upstream issues for overlap, synthesize codex-nexus deployment needs into a concrete contract proposal, and create a new issue focused on Codex plugin packaging/deployment rather than a narrow packaging bug.",
+          "acceptance": "New upstream GitHub issue created with a clear deployment-oriented proposal for codex-nexus consumer I/O and consumer contract design.",
+          "owner": "lead",
+          "status": "pending",
+          "created_at": "2026-04-20T03:51:31.311Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-20T04:51:31.383Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Review nexus-core v0.15.0 and response on Codex consumer-contract issue",
+          "context": "User asked to check nexus-core v0.15.0 and comments on the previously filed Codex thin-wrapper consumer contract issue.",
+          "deps": [],
+          "approach": "Inspect changelog, npm metadata, and issue comments; run fresh consumer smoke tests for the Codex sync/install contract; summarize what changed and whether codex-nexus can simplify.",
+          "acceptance": "Clear summary of v0.15.0 changes, upstream response on the issue, smoke-test results, and implications for codex-nexus.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-20T04:50:21.866Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-20T04:57:26.330Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Diagnose exact root cause of nexus-core v0.15.0 full-sync build-hooks failure and report upstream",
+          "context": "User explicitly asked for a root-cause diagnosis before filing the issue. Current symptom: published npm package passes dry-run but full sync fails in build-hooks with unresolved imports from assets/hooks/*/handler.ts to ../../../src/...",
+          "deps": [],
+          "approach": "Inspect the published v0.15.0 package contents and build-hooks implementation, enumerate failing hook handler imports, determine exactly why they fail in consumer installs, then open a detailed upstream issue with proposed fixes.",
+          "acceptance": "New upstream issue created with exact cause, concrete repro, failing import paths, and actionable fix direction.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-20T04:55:19.397Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-20T05:31:46.761Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Review latest nexus-core update and response on issue #34",
+          "context": "User says nexus-core has been updated again and upstream commented on issue #34. Need to inspect the comment, latest published package, and rerun consumer smoke tests.",
+          "deps": [],
+          "approach": "Read issue #34 comments, inspect npm latest metadata/changelog, install the latest version in a clean temp consumer env, and rerun the exact full-sync tests that previously failed.",
+          "acceptance": "Clear verdict on whether the latest nexus-core update fixes the issue from #34, with evidence from issue comments and fresh consumer tests.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-20T05:30:51.190Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-20T05:43:41.929Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Migrate codex-nexus asset sync to upstream nexus-core v0.15.1 contract",
+          "context": "Current repo still uses a local asset-reading sync script as a workaround. v0.15.1 appears to support the intended upstream sync contract for Codex outputs.",
+          "deps": [],
+          "approach": "Bump dependency to v0.15.1, replace the local asset parser with a wrapper around upstream `nexus-core sync --harness=codex`, and align generated assets/package contents with the upstream Codex output set while preserving codex-nexus-specific install/runtime seams.",
+          "acceptance": "codex-nexus no longer parses nexus-core assets directly; it derives its wrapper assets from upstream v0.15.1 sync outputs.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-20T05:35:43.740Z"
+        },
+        {
+          "id": 2,
+          "title": "Reconcile wrapper install/docs/tests with upstream Codex output contract",
+          "context": "After switching to upstream sync outputs, codex-nexus docs/tests/install surfaces must match the new generated artifact set and any wrapper-owned deviations.",
+          "deps": [
+            1
+          ],
+          "approach": "Update install packaging, documentation, and tests to reflect the v0.15.1 Codex contract and remaining codex-nexus-specific ownership.",
+          "acceptance": "Docs/tests/install flow consistently describe and validate the new upstream-based Codex wrapper architecture.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-20T05:35:43.865Z"
+        },
+        {
+          "id": 3,
+          "title": "Verify end-to-end migration on the repo and close the cycle",
+          "context": "After the migration, build/test/check must confirm the repo still works and generated artifacts are coherent.",
+          "deps": [
+            2
+          ],
+          "approach": "Run dependency install, sync/build/test/check, inspect resulting outputs, and archive the completed cycle.",
+          "acceptance": "All relevant checks pass or any residual risk is documented clearly.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-20T05:35:43.866Z"
+        }
+      ]
+    },
+    {
+      "completed_at": "2026-04-20T06:00:40.303Z",
+      "branch": "default",
+      "plan": null,
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Make user-scope install truly global for codex-nexus",
+          "context": "Current behavior writes shared assets into user scope but still mutates the current repo AGENTS.md. User wants true global behavior similar to oh-my-codex and Codex AGENTS layering.",
+          "deps": [],
+          "approach": "Split scope-specific AGENTS target resolution, update install and doctor flows, refresh help/README text, and add tests covering user-scope behavior.",
+          "acceptance": "`--scope user` no longer modifies repo AGENTS.md, user doctor checks `~/.codex/AGENTS.md`, docs reflect the new layering model, and tests pass.",
+          "owner": "lead",
+          "status": "completed",
+          "created_at": "2026-04-20T05:57:46.873Z"
+        }
+      ]
     }
   ]
 }

@@ -273,7 +273,7 @@ export function registerPlanTools(server: McpServer): void {
     "nx_plan_update",
     "Update plan issues",
     {
-      action: z.enum(["add", "remove", "edit", "reopen"]),
+      action: z.enum(["add", "remove", "edit", "modify", "reopen"]),
       issue_id: z.number().optional(),
       title: z.string().optional()
     },
@@ -299,8 +299,8 @@ export function registerPlanTools(server: McpServer): void {
         return textResult({ removed: true, issue_id });
       }
 
-      if (action === "edit") {
-        if (!title) return textResult({ error: "title is required for edit" });
+      if (action === "edit" || action === "modify") {
+        if (!title) return textResult({ error: `title is required for ${action}` });
         issue.title = title;
         await writePlan(plan);
         return textResult({ edited: true, issue });

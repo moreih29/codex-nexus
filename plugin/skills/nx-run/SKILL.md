@@ -1,10 +1,8 @@
 ---
-name: nx-run
-description: Execution — user-directed agent composition.
-trigger_display: "[run]"
-purpose: "Execution — user-directed agent composition"
+description: "Execution — user-directed agent composition."
+triggers:
+  - run
 ---
-
 ## Role
 
 Execution norm that Lead follows when the user invokes the [run] tag. Composes subagents dynamically based on user direction and drives the full execution pipeline from intake to completion.
@@ -31,16 +29,16 @@ Execution norm that Lead follows when the user invokes the [run] tag. Composes s
 - **Branch Guard**: if on main/master, create a branch appropriate to the task type before proceeding (prefix: `feat/`, `fix/`, `chore/`, `research/`, etc. — Lead's judgment). Auto-create without user confirmation.
 - Check for `tasks.json`:
   - **Exists** → read it and proceed to Step 2.
-  - **Absent** → auto-invoke `Load and follow the $nx-plan skill now (mode: auto).` to generate tasks.json. Do NOT ask — `[run]` implies execution intent. After plan generation, proceed to Step 2.
+  - **Absent** → auto-invoke `$nx-plan` to generate tasks.json. Do NOT ask — `[run]` implies execution intent. After plan generation, proceed to Step 2.
 - If tasks.json exists, check prior decisions with `nx_plan_status`.
 
 ### Step 1.5: TUI Progress
 
 Register tasks for visual progress tracking (Ctrl+T):
 
-- **≤ 10 tasks**: `Best effort only: if the runtime exposes a Codex visual progress tracker, use update_plan to keep the existing plan items in sync, setting the entry whose step is "<per-task label>" to status "pending" and appending it if missing. Do not use nx_task_add or nx_task_update for this primitive; those tools manage persistent Nexus task state rather than transient UI progress.` per task
-- **> 10 tasks**: group by `plan_issue`, `Best effort only: if the runtime exposes a Codex visual progress tracker, use update_plan to keep the existing plan items in sync, setting the entry whose step is "<group label>" to status "pending" and appending it if missing. Do not use nx_task_add or nx_task_update for this primitive; those tools manage persistent Nexus task state rather than transient UI progress.` per group
-- Update the registered entry via `Best effort only: if the runtime exposes a Codex visual progress tracker, use update_plan to keep the existing plan items in sync, setting the entry whose step is "<label>" to status "in_progress" and appending it if missing. Do not use nx_task_add or nx_task_update for this primitive; those tools manage persistent Nexus task state rather than transient UI progress.` / `Best effort only: if the runtime exposes a Codex visual progress tracker, use update_plan to keep the existing plan items in sync, setting the entry whose step is "<label>" to status "completed" and appending it if missing. Do not use nx_task_add or nx_task_update for this primitive; those tools manage persistent Nexus task state rather than transient UI progress.` as execution proceeds
+- **≤ 10 tasks**: `update_plan([{ name: "<per-task label>", state: "pending" }])` per task
+- **> 10 tasks**: group by `plan_issue`, `update_plan([{ name: "<group label>", state: "pending" }])` per group
+- Update the registered entry via `update_plan([{ name: "<label>", state: "in_progress" }])` / `update_plan([{ name: "<label>", state: "completed" }])` as execution proceeds
 - **Skip only if**: non-TTY environment (VSCode, headless)
 - **Known issue**: TUI may freeze during auto-compact (#27919) — task data on disk remains correct
 
@@ -97,7 +95,7 @@ For each task, Lead chooses between fresh spawn and resume based on the `owner`'
 
 Execute in order:
 
-1. **nx-sync**: invoke `Load and follow the $nx-sync skill now.` if code changes were made in this cycle. Best effort — failure does not block cycle completion.
+1. **nx-sync**: invoke `$nx-sync` if code changes were made in this cycle. Best effort — failure does not block cycle completion.
 2. **nx_task_close**: call to archive plan+tasks to history.json. This updates `.nexus/history.json`.
 3. **git commit**: stage and commit source changes, build artifacts (`bridge/`, `scripts/`), `.nexus/history.json`, and any modified `.nexus/memory/` or `.nexus/context/`. Use explicit `git add` with paths (not `git add -A`) and a HEREDOC commit message with `Co-Authored-By`. This ensures the cycle's history archive lands in the same commit as the code changes, giving a 1:1 cycle-commit mapping.
 4. **Report**: summarize to user — changed files, key decisions applied, and suggested next steps. Merge/push is the user's decision and outside this skill's scope.
@@ -154,45 +152,3 @@ ACCEPTANCE:
 
 `.nexus/state/tasks.json` — produced by nx-plan, managed via `nx_task_add`/`nx_task_update`. Gate Stop enforcement.
 On cycle end, archive plan+tasks to `.nexus/history.json` via `nx_task_close`.
-
-
----
-
-## Harness-Specific: resume_invocation
-
-# Codex Agent Resume Mechanism
-
-Codex exposes native completed-agent continuation through `resume_agent(id)` and `send_input(target, ...)`.
-
-## Native Primitives
-
-| Tool | Purpose |
-|---|---|
-| `resume_agent` | Re-open a previously completed agent by its Codex agent id |
-| `send_input` | Send the follow-up prompt into the resumed agent context |
-
-When continuity is available, the default Codex pattern is:
-
-1. `resume_agent(id=<prior agent id>)`
-2. `send_input(target=<same id>, message=<follow-up prompt>)`
-
-If the runtime rejects the resume or the prior id no longer exists, silently fall back to a fresh `spawn_agent`.
-
-## Continuity Sources
-
-- **Plan mode**: prefer `how_agent_ids` recorded on the relevant plan issue, then fall back to `.nexus/state/codex-nexus/agent-tracker.json`
-- **Run mode**: prefer the task's persisted `owner_agent_id`, then fall back to tracker-based continuity for `persistent` tiers only
-
-## Resume Tiers
-
-| Tier | Codex policy |
-|---|---|
-| `persistent` | resume by default when a completed prior participant exists |
-| `bounded` | resume only when the task is pinned to a prior `owner_agent_id`; prepend `Re-read target files before any modification.` to the follow-up prompt |
-| `ephemeral` | always fresh spawn |
-
-## Run-Mode State
-
-For reusable run-task continuity, keep the task's `owner_agent_id` populated after the first spawn. Use `nx_task_update(id, owner_agent_id=..., status=...)` to persist it.
-
-`nx_task_resume` returns delegation-ready guidance for run tasks, including whether to resume or spawn fresh.

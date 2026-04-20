@@ -61,6 +61,9 @@ export function resolveScopePaths(scope: SetupScope, cwd = process.cwd()): Scope
     ? path.join(projectRoot, ".codex")
     : path.join(process.env.CODEX_HOME ?? path.join(process.env.HOME ?? "~", ".codex"));
   const packageStoreDir = path.join(codexHomeDir, "packages");
+  const agentsMdPath = scope === "project"
+    ? path.join(projectRoot, "AGENTS.md")
+    : path.join(codexHomeDir, "AGENTS.md");
 
   return {
     scope,
@@ -71,7 +74,7 @@ export function resolveScopePaths(scope: SetupScope, cwd = process.cwd()): Scope
     hooksJsonPath: path.join(codexHomeDir, "hooks.json"),
     skillsDir: path.join(codexHomeDir, "skills"),
     agentsDir: path.join(codexHomeDir, "agents"),
-    agentsMdPath: path.join(projectRoot, "AGENTS.md")
+    agentsMdPath
   };
 }
 
