@@ -1,10 +1,39 @@
 import { describe, expect, test } from "bun:test";
 import TOML from "@iarna/toml";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { tmpdir } from "node:os";
 import { mergeManagedHooks } from "../src/config/codex-hooks.js";
-import { nexusCoreCodexHookRuntimePath, nexusCoreMcpServerPath } from "../src/config/nexus-core.js";
+import {
+  nexusCoreCodexHookRuntimePath,
+  nexusCoreMcpServerPath,
+  nexusCorePackageRoot
+} from "../src/config/nexus-core.js";
 import { adaptAgentRoleToml, isStandaloneAgentRoleToml, mergeConfigToml } from "../src/config/toml.js";
 
 describe("config merge", () => {
+  test("resolves nexus-core from sibling node_modules of an installed package", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "codex-nexus-paths-"));
+    const packageRoot = path.join(dir, "node_modules", "codex-nexus");
+    const coreRoot = path.join(dir, "node_modules", "@moreih29", "nexus-core");
+
+    try {
+      mkdirSync(packageRoot, { recursive: true });
+      mkdirSync(coreRoot, { recursive: true });
+      writeFileSync(path.join(packageRoot, "package.json"), JSON.stringify({ name: "codex-nexus" }) + "\n", "utf8");
+      writeFileSync(path.join(coreRoot, "package.json"), JSON.stringify({ name: "@moreih29/nexus-core" }) + "\n", "utf8");
+
+      const normalizedCoreRoot = realpathSync(coreRoot);
+      expect(nexusCorePackageRoot(packageRoot)).toBe(normalizedCoreRoot);
+      expect(nexusCoreMcpServerPath(packageRoot)).toBe(path.join(normalizedCoreRoot, "dist", "src", "mcp", "server.js"));
+      expect(nexusCoreCodexHookRuntimePath(packageRoot, "session-init.js")).toBe(
+        path.join(normalizedCoreRoot, "dist", "codex", "dist", "hooks", "session-init.js")
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("preserves user hook entries while appending managed hooks", () => {
     const merged = mergeManagedHooks(
       JSON.stringify({
