@@ -108,4 +108,7 @@ When escalating, state: what you were asked, what you found, what is blocking yo
 """
 model = "gpt-5.4"
 sandbox_mode = "read-only"
+
+[mcp_servers.nx]
+command = "nexus-mcp"
 disabled_tools = ["nx_task_add", "nx_task_update"]

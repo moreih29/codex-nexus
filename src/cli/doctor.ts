@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { readFile, readdir } from "node:fs/promises";
+import { isStandaloneAgentRoleToml } from "../config/toml.js";
 import { resolveScopePaths, type ScopePaths, type SetupScope } from "../shared/paths.js";
 
 export interface DoctorCheck {
@@ -66,11 +67,7 @@ async function hasStandaloneAgentRole(agentPath: string, agentName: string): Pro
   }
 
   const content = await readFile(agentPath, "utf8");
-  return (
-    content.includes(`name = "${agentName}"`) &&
-    content.includes('developer_instructions = """') &&
-    !content.includes("[agents.")
-  );
+  return isStandaloneAgentRoleToml(content, agentName);
 }
 
 export function formatDoctorSummary(result: DoctorResult): string {

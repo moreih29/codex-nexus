@@ -130,4 +130,7 @@ Format for memory entries: include the research question, key findings, source U
 """
 model = "gpt-5.3-codex"
 sandbox_mode = "read-only"
+
+[mcp_servers.nx]
+command = "nexus-mcp"
 disabled_tools = ["nx_task_add"]
