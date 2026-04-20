@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { getCurrentVersion } from "../src/shared/version.js";
 
 describe("synced nexus-core Codex assets", () => {
   test("ships core-generated skills under plugin/skills", () => {
@@ -18,7 +19,7 @@ describe("synced nexus-core Codex assets", () => {
     expect(skill).toContain("$nx-plan");
     expect(skill).toContain("update_plan([{ name:");
     expect(pluginManifest.name).toBe("codex-nexus");
-    expect(pluginManifest.version).toBe("0.1.0");
+    expect(pluginManifest.version).toBe(getCurrentVersion());
   });
 
   test("ships core-generated agent, prompt, and install fragments", () => {
