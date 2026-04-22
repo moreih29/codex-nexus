@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,11 +8,6 @@ import { spawn } from "node:child_process";
 import { stdin as input, stdout as output } from "node:process";
 import TOML from "@iarna/toml";
 import { intro, isCancel, outro, select, spinner } from "@clack/prompts";
-import {
-  managedInstalledNxServerConfig,
-  normalizeAgentNxServerBlocks,
-  readAgentNxServerConfigs
-} from "./lib/nx-agent-mcp.mjs";
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PACKAGE_JSON = JSON.parse(readFileSync(path.join(PACKAGE_ROOT, "package.json"), "utf8"));
@@ -347,6 +342,35 @@ function mergeHooksJson(existingContent, installedPackageRoot) {
   return JSON.stringify(next, null, 2) + "\n";
 }
 
+function managedInstalledNxServerConfig(runtimeCommand, serverPath) {
+  return {
+    command: runtimeCommand,
+    args: [serverPath]
+  };
+}
+
+function readAgentNxServerConfigs(agentDir) {
+  if (!existsSync(agentDir)) {
+    return [];
+  }
+
+  return readdirSync(agentDir)
+    .filter((entry) => entry.endsWith(".toml"))
+    .map((entry) => {
+      const filePath = path.join(agentDir, entry);
+      const parsed = TOML.parse(readFileSync(filePath, "utf8"));
+      const nxConfig = safeObject(safeObject(parsed.mcp_servers).nx);
+
+      return {
+        file: entry,
+        command: typeof nxConfig.command === "string" ? nxConfig.command : "",
+        args: Array.isArray(nxConfig.args) ? nxConfig.args : [],
+        disabledTools: Array.isArray(nxConfig.disabled_tools) ? nxConfig.disabled_tools : []
+      };
+    })
+    .filter((entry) => entry.command.length > 0 || entry.args.length > 0 || entry.disabledTools.length > 0);
+}
+
 function mergeConfigToml(existingContent, runtimeCommand, serverPath) {
   const parsed = existingContent ? TOML.parse(existingContent) : {};
   const features = safeObject(parsed.features);
@@ -405,12 +429,9 @@ async function installManagedSurfaces(installedPackageRoot, scopePaths) {
   const nexusCoreVersion = resolveNexusCoreVersion(installedPackageRoot);
   const runtimeCommand = resolveRuntimeCommand();
   const nexusCoreServerPath = resolveNexusCoreServerPath(installedPackageRoot);
-  const installedNxServerConfig = managedInstalledNxServerConfig(runtimeCommand, nexusCoreServerPath);
 
   copyDirectory(pluginSourceRoot, scopePaths.pluginInstallDir);
   copyDirectory(path.join(pluginSourceRoot, "agents"), scopePaths.agentsDir);
-  normalizeAgentNxServerBlocks(path.join(scopePaths.pluginInstallDir, "agents"), installedNxServerConfig);
-  normalizeAgentNxServerBlocks(scopePaths.agentsDir, installedNxServerConfig);
   copyDirectory(path.join(pluginSourceRoot, "skills"), scopePaths.skillsDir);
   writeText(
     scopePaths.leadInstructionsPath,
@@ -491,12 +512,8 @@ function doctorCommand(options = {}, runtime = {}) {
   const usesLocalDevelopmentHooks = hooks.includes(path.join(PACKAGE_ROOT, "scripts", "codex-nexus-hook.mjs")) ||
     hooks.includes("node ./scripts/codex-nexus-hook.mjs");
   const installedAgentNxConfigs = readAgentNxServerConfigs(paths.agentsDir);
-  const agentsUseResolvedNxConfig = installedAgentNxConfigs.length > 0 &&
-    installedAgentNxConfigs.every((agent) =>
-      agent.command === nxCommand &&
-      agent.args[0] === nxServerPath &&
-      agent.command !== "nexus-mcp"
-    );
+  const agentsAvoidBareNxLauncher = installedAgentNxConfigs.length > 0 &&
+    installedAgentNxConfigs.every((agent) => agent.command !== "nexus-mcp");
 
   const checks = [
     { label: "plugin install dir", ok: existsSync(path.join(paths.pluginInstallDir, ".codex-plugin", "plugin.json")) },
@@ -515,7 +532,7 @@ function doctorCommand(options = {}, runtime = {}) {
     { label: "hooks.json", ok: existsSync(paths.hooksJsonPath) && hasManagedHooks },
     { label: "marketplace.json", ok: existsSync(paths.marketplacePath) && marketplace.includes(paths.pluginSourcePath) },
     { label: ".codex/agents/lead.toml", ok: existsSync(path.join(paths.agentsDir, "lead.toml")) },
-    { label: ".codex/agents nx MCP config", ok: agentsUseResolvedNxConfig },
+    { label: ".codex/agents avoid bare nx MCP launcher", ok: agentsAvoidBareNxLauncher },
     { label: ".agents/skills/nx-plan", ok: existsSync(path.join(paths.skillsDir, "nx-plan", "SKILL.md")) },
     { label: "package store", ok: usesLocalDevelopmentHooks || existsSync(path.join(packageStoreRoot, "package.json")) }
   ];

@@ -4,6 +4,19 @@
 
 형식은 Keep a Changelog 스타일을 느슨하게 따르며, 버전 표기는 SemVer 기준으로 관리한다.
 
+## [0.3.10] - 2026-04-22
+
+### Changed
+
+- `@moreih29/nexus-core`를 `0.19.2`로 올리고 Codex / planning generated assets를 최신 upstream 계약에 맞게 다시 동기화
+- Codex child-agent가 부모 세션의 `nx` MCP launcher를 상속하도록, downstream wrapper의 child-agent launcher rewrite workaround를 제거
+
+### Fixed
+
+- spawned Nexus subagent가 bare `nexus-mcp` 가정 때문에 MCP startup failure를 일으키던 경로를 upstream fix에 맞춰 정리
+- `doctor`, validation, 테스트가 child-agent launcher 상속 모델과 실제 publishable package 구조를 기준으로 동작하도록 갱신
+- upstream planning skill 보완에 맞춰 resume 매크로 안내가 명시적으로 포함된 generated skill 문서를 동기화
+
 ## [0.3.9] - 2026-04-22
 
 ### Fixed

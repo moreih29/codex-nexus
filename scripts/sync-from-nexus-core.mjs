@@ -2,7 +2,6 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { managedNxServerConfig, normalizeAgentNxServerBlocks } from "./lib/nx-agent-mcp.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const packageJsonPath = path.join(repoRoot, "package.json");
@@ -71,7 +70,6 @@ try {
 
   replaceDirectory(path.join(stagingRoot, ".codex", "skills"), path.join(pluginRoot, "skills"));
   replaceDirectory(path.join(stagingRoot, ".codex", "agents"), path.join(pluginRoot, "agents"));
-  normalizeAgentNxServerBlocks(path.join(pluginRoot, "agents"), managedNxServerConfig(nexusCoreVersion));
   writeLeadInstructions();
 
   console.log(`Synced Codex artifacts from @moreih29/nexus-core@${nexusCoreVersion}.`);

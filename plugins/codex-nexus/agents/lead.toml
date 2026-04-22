@@ -259,7 +259,7 @@ For questions that can be answered briefly, answer directly without structure.
 
 ### Subagent ID Recording Practice
 
-Every time a subagent is spawned, record its id (either returned by the harness spawn tool or the `name` the Lead assigned) through one of the paths below. Without this, `nx_plan_resume` / `nx_task_resume` will have no resume candidates to return.
+Every time a subagent is spawned, record the agent id returned by the harness spawn tool through one of the paths below. Do not substitute a human-readable assigned name; names are for active-session messaging only and are not a safe resume identifier for completed sessions. Without this, `nx_plan_resume` / `nx_task_resume` will have no resume candidates to return.
 
 - HOW participation → pass `agent_id` to `nx_plan_analysis_add(issue_id, role, agent_id=<id>, summary)` (Step 4 of nx-plan / nx-auto-plan skill).
 - Task execution → store via `nx_task_update(id, owner={role, agent_id=<id>, resume_tier=<ephemeral|bounded|persistent>})` (Step 2 of nx-run skill).

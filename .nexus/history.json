@@ -141,6 +141,129 @@
           "created_at": "2026-04-22T13:00:24.843Z"
         }
       ]
+    },
+    {
+      "schema_version": "1.0",
+      "completed_at": "2026-04-22T13:44:03.564Z",
+      "branch": "fix/subagent-nx-mcp-startup",
+      "plan": {
+        "id": 3,
+        "topic": "Update codex-nexus for nexus-core v0.19.1 and deploy a release",
+        "issues": [
+          {
+            "id": 1,
+            "title": "Choose the correct downstream change set for adopting nexus-core v0.19.1 without retaining conflicting MCP workaround behavior",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "lead",
+                "summary": "Upstream v0.19.1 removes the root cause that codex-nexus had worked around: generated Codex child agents no longer hardcode `command = \"nexus-mcp\"` and instead preserve the parent session's MCP launcher. Keeping our downstream child-agent rewrite logic would now fight the intended upstream inheritance model, create unnecessary divergence, and force source/install behavior that upstream explicitly says consumers can remove. However, our main-session install logic that writes `.codex/config.toml` with a runtime + absolute installed server path remains valuable and should stay, because it solves parent-session PATH dependence. Therefore the correct scope is: keep parent-session MCP installation behavior, drop child-agent-specific rewrite/normalization workarounds, and resync generated assets from upstream 0.19.1.",
+                "recorded_at": "2026-04-22T13:36:37.305Z"
+              }
+            ],
+            "decision": "Selected approach: adopt nexus-core v0.19.1 as the new source of truth for Codex child-agent MCP behavior, keeping only codex-nexus's parent-session install wiring and removing downstream child-agent nx MCP rewrite logic. Rationale: upstream now intentionally preserves the parent launcher and explicitly says downstream Codex consumers can remove those workarounds; retaining them would unnecessarily override the inherited launcher model and increase maintenance burden. Rejected alternatives: (1) keep all local rewrite logic while also bumping upstream — rejected because it preserves divergence after the upstream fix; (2) remove all MCP wiring, including parent-session absolute-path install config — rejected because parent-session PATH-independence is still a codex-nexus responsibility and remains documented behavior; (3) postpone release until more upstream releases land — rejected because v0.19.1 directly fixes the issue we filed and the wrapper should align promptly."
+          },
+          {
+            "id": 2,
+            "title": "Implement the update: bump dependency, remove or simplify obsolete MCP rewrite logic, resync generated assets, and adjust validation/tests",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "lead",
+                "summary": "The implementation delta is clear from local code search: remove `scripts/lib/nx-agent-mcp.mjs`, stop calling its normalization helpers from install/sync/validate/tests, rerun `sync:core` after bumping `@moreih29/nexus-core` to 0.19.1 so `plugins/codex-nexus/agents/*`, skills, and lead instructions are regenerated, and update tests to assert the new upstream behavior (child-agent MCP stanza should not hardcode bare nexus-mcp and should preserve disabled_tools while allowing parent inheritance). Also update any validation assumptions and published-files list that only existed for the workaround helper.",
+                "recorded_at": "2026-04-22T13:36:48.720Z"
+              }
+            ],
+            "decision": "Selected implementation: bump @moreih29/nexus-core to 0.19.1, run the official sync flow to regenerate publishable skills/agents/instructions, then delete the downstream child-agent MCP normalization helper and all call sites/tests that depended on it. Replace them with checks that match the upstream contract: generated child agents keep per-role disabled_tools under `[mcp_servers.nx]` but do not force a launcher, while installed parent config still points to the runtime plus absolute server path. Rejected alternatives: (1) hand-edit generated plugin agent files without rerunning sync — rejected because it fights the generated source-of-truth model; (2) keep the helper only for install-time doctor — rejected because it would keep dead code and misleading assertions; (3) skip validation changes and trust upstream blindly — rejected because the wrapper still owns packaging, install surfaces, and release safety."
+          },
+          {
+            "id": 3,
+            "title": "Prepare and execute the release/deploy path, including version bump, changelog/release notes, validation, tag push, publish monitoring, and post-publish checks",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "lead",
+                "summary": "Current published version is 0.3.9, so the next safe release is a patch bump to 0.3.10. This release should include the upstream alignment plus removal of obsolete workaround code and the new generated assets. Release execution should follow the repository checklist: full validation locally, version bump/changelog, commit, tag `v0.3.10`, push branch and tag, monitor `validate.yml` and `publish-npm.yml`, confirm npm shows 0.3.10, run a fresh install/doctor smoke check against the published package, and create/update the GitHub Release if the workflow does not do that automatically.",
+                "recorded_at": "2026-04-22T13:37:00.490Z"
+              }
+            ],
+            "decision": "Selected release plan: publish codex-nexus 0.3.10 as a patch release. Reasoning: 0.3.9 is already the latest published version, and this change is a compatibility/bug-fix alignment with upstream v0.19.1 rather than a feature or breaking change. Execute the checklist-driven release path locally, then deploy through the existing trusted-publishing GitHub Actions workflow by pushing tag `v0.3.10`. Rejected alternatives: (1) reuse version 0.3.9 — rejected because npm already has it; (2) publish 0.4.0 — rejected because the scope is not a breaking feature release; (3) stop at code changes without deployment — rejected because the user explicitly asked to deploy."
+          }
+        ],
+        "research_summary": "Current published codex-nexus version is 0.3.9 on npm and GitHub. Local package.json is 0.3.9 and depends on @moreih29/nexus-core 0.19.0. Upstream nexus-core released v0.19.1 on 2026-04-22. Release notes explicitly say Codex child-agent specs no longer hardcode a bare nexus-mcp launcher and downstream Codex consumers can remove workarounds that rewrote child-agent mcp_servers.nx.command. PR #62 / issue #59 confirm the intended behavior: preserve parent nx MCP launcher and keep only disabled_tools in child-agent MCP blocks by default. Local codex-nexus still carries a downstream workaround: scripts/lib/nx-agent-mcp.mjs plus installer/sync/validation/tests that normalize child-agent nx MCP config. Release checklist in .nexus/context/releasing.md requires updating changelog, running bun install, bun run sync:core, bun run validate, bun test, node scripts/codex-nexus.mjs --help, doctor --scope project, npm pack --dry-run, and completing post-publish checks. Local npm CLI is not authenticated, but this repo has a trusted-publishing GitHub Actions workflow that publishes on tag push. GitHub release notes say downstream wrappers should reinstall/resync assets from @moreih29/nexus-core@0.19.1.",
+        "created_at": "2026-04-22T13:36:29.291Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Update dependency and regenerate Nexus assets from upstream v0.19.1",
+          "status": "completed",
+          "context": "Published codex-nexus 0.3.9 still depends on @moreih29/nexus-core 0.19.0. Upstream v0.19.1 fixes the Codex child-agent MCP launcher inheritance issue and includes related generated instruction updates.",
+          "acceptance": "package.json and lockfile reference @moreih29/nexus-core 0.19.1; generated publishable assets are resynced from upstream; repo sources are internally consistent after sync.",
+          "approach": "Bump @moreih29/nexus-core to 0.19.1, refresh the lockfile, and run the official sync flow so publishable plugin assets and lead/skill text are regenerated from upstream.",
+          "risk": "Generated assets may overwrite local customizations if any were intentionally diverged from upstream.",
+          "plan_issue": 2,
+          "owner": {
+            "role": "lead",
+            "resume_tier": "ephemeral"
+          },
+          "created_at": "2026-04-22T13:37:15.221Z"
+        },
+        {
+          "id": 2,
+          "title": "Remove obsolete child-agent nx MCP workaround code and align validation/tests",
+          "status": "completed",
+          "context": "codex-nexus currently contains downstream helper and rewrite logic that normalized child-agent nx MCP blocks to work around an upstream issue now fixed in nexus-core 0.19.1.",
+          "acceptance": "No downstream code rewrites child-agent nx MCP launcher blocks solely to avoid bare nexus-mcp; validation and tests assert the new upstream contract; the repository no longer publishes dead workaround helper code.",
+          "approach": "Delete the no-longer-needed normalization helper, remove install/sync/validation logic that rewrites child-agent launchers, and update tests to assert the new upstream child-agent inheritance behavior while keeping parent-session install checks.",
+          "risk": "If the new upstream contract is misunderstood, tests may accidentally validate the wrong inheritance behavior.",
+          "plan_issue": 2,
+          "deps": [
+            1
+          ],
+          "owner": {
+            "role": "lead",
+            "resume_tier": "ephemeral"
+          },
+          "created_at": "2026-04-22T13:37:20.161Z"
+        },
+        {
+          "id": 3,
+          "title": "Prepare release metadata and validate the 0.3.10 package",
+          "status": "completed",
+          "context": "The next deployable version must be greater than the currently published npm version 0.3.9 and must satisfy the repo release checklist before tagging/publishing.",
+          "acceptance": "package.json and related release metadata are 0.3.10; CHANGELOG documents the release; bun install/sync/validate/test, CLI help, doctor, and npm pack --dry-run all pass.",
+          "approach": "Bump package version to 0.3.10, update CHANGELOG with user-visible changes, run the full checklist commands plus smoke checks needed for confidence, and ensure package contents are correct.",
+          "risk": "Release metadata or package contents could drift from the actual code changes if updated too early or too late.",
+          "plan_issue": 3,
+          "deps": [
+            2
+          ],
+          "owner": {
+            "role": "lead",
+            "resume_tier": "ephemeral"
+          },
+          "created_at": "2026-04-22T13:37:25.116Z"
+        },
+        {
+          "id": 4,
+          "title": "Deploy 0.3.10 via tag-triggered publish workflow and complete post-publish checks",
+          "status": "completed",
+          "context": "This repository uses GitHub Actions trusted publishing on tag push; local npm auth is not available, so deployment must complete through the remote workflow and follow-up verification.",
+          "acceptance": "Release commit and tag v0.3.10 are pushed; publish workflow succeeds; npm shows codex-nexus 0.3.10; fresh install/help/doctor smoke checks pass against the published package; a GitHub Release exists for v0.3.10.",
+          "approach": "Commit the release changes, create/push tag v0.3.10, monitor validate/publish workflows, verify npm shows 0.3.10, run a fresh published-package smoke test, and create/publish the GitHub Release if needed.",
+          "risk": "Remote CI or trusted publishing configuration may fail after tagging, which would block full deployment despite local validation.",
+          "plan_issue": 3,
+          "deps": [
+            3
+          ],
+          "owner": {
+            "role": "lead",
+            "resume_tier": "ephemeral"
+          },
+          "created_at": "2026-04-22T13:37:32.108Z"
+        }
+      ]
     }
   ]
 }

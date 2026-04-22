@@ -71,8 +71,8 @@ Issues must be processed one at a time. For each issue:
 1. Lead summarizes the current state and the problem.
 2. If needed, spawn HOW subagents for independent analysis.
    - If reusing context from a prior HOW session for the same role is advantageous, check resume routing information with `nx_plan_resume` first.
-   - If resumable, continue with the existing session; otherwise, spawn fresh.
-3. When HOW results return, record them on the issue with `nx_plan_analysis_add(issue_id, role, agent_id=<id from spawn>, summary)`. The `agent_id` is the value `nx_plan_resume` will return on a future resume request for the same role, so always pass it.
+   - If resumable, invoke `resume_agent({ id: "<id>" }) then send_input({ target: "<id>", message: "<resume prompt>" })` with the `agent_id` returned by `nx_plan_resume`; otherwise, spawn fresh.
+3. When HOW results return, record them on the issue with `nx_plan_analysis_add(issue_id, role, agent_id=<id from spawn>, summary)`. The `agent_id` is the value `nx_plan_resume` will return on a future resume request for the same role, so always pass the agent id obtained from the spawn tool response. Do not substitute a human-readable assigned name; names are only for messaging a currently running subagent and are not a safe resume identifier for a completed session.
 4. **Lead internal deliberation**: enumerate candidate options, compare pros/cons and trade-offs, and select the most reasonable one. Do not output comparison tables or option presentations.
 5. Proceed immediately to Step 5 to record the decision.
 

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { readAgentNxServerConfigs } from "../scripts/lib/nx-agent-mcp.mjs";
+import TOML from "@iarna/toml";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
 const pluginRoot = path.join(repoRoot, "plugins", "codex-nexus");
@@ -20,6 +20,7 @@ test("wrapper metadata stays aligned", () => {
   expect(manifest.skills).toBe("./skills/");
   expect(manifest.mcpServers).toBe("./.mcp.json");
   expect(mcp.mcpServers.nx.command).toBe("npx");
+  expect(mcp.mcpServers.nx.args).toContain(`@moreih29/nexus-core@${pkg.dependencies["@moreih29/nexus-core"]}`);
   expect(hooks.hooks.SessionStart.length).toBeGreaterThan(0);
   expect(hooks.hooks.UserPromptSubmit.length).toBeGreaterThan(0);
   expect(hooks.hooks.PreToolUse.length).toBeGreaterThan(0);
@@ -27,7 +28,6 @@ test("wrapper metadata stays aligned", () => {
   expect(pkg.bin["codex-nexus"]).toBe("./scripts/codex-nexus.mjs");
   expect(existsSync(path.join(pluginRoot, "lead.instructions.md"))).toBe(true);
   expect(pkg.files).toContain("plugins");
-  expect(pkg.files).toContain("scripts/lib/nx-agent-mcp.mjs");
   expect(pkg.files).not.toContain(".codex");
   expect(pkg.files).not.toContain(".agents");
 });
@@ -40,13 +40,15 @@ test("generated nexus-core artifacts are present", () => {
 });
 
 test("generated subagent nx MCP config stays launchable", () => {
-  const pkg = readJson(path.join(repoRoot, "package.json"));
-  const agentNxConfigs = readAgentNxServerConfigs(path.join(pluginRoot, "agents"));
+  const agentFiles = ["architect.toml", "designer.toml", "engineer.toml", "postdoc.toml", "researcher.toml", "reviewer.toml", "strategist.toml", "tester.toml", "writer.toml"]
+    .filter((entry) => existsSync(path.join(pluginRoot, "agents", entry)));
 
-  expect(agentNxConfigs.length).toBeGreaterThan(0);
-  for (const agent of agentNxConfigs) {
-    expect(agent.command).not.toBe("nexus-mcp");
-    expect(agent.command).toBe("npx");
-    expect(agent.args).toEqual(["-y", "-p", `@moreih29/nexus-core@${pkg.dependencies["@moreih29/nexus-core"]}`, "nexus-mcp"]);
+  expect(agentFiles.length).toBeGreaterThan(0);
+  for (const agentFile of agentFiles) {
+    const parsed = TOML.parse(readFileSync(path.join(pluginRoot, "agents", agentFile), "utf8"));
+    const nx = parsed?.mcp_servers?.nx ?? {};
+    expect(nx.command).toBeUndefined();
+    expect(nx.args).toBeUndefined();
+    expect(Array.isArray(nx.disabled_tools)).toBe(true);
   }
 });
