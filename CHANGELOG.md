@@ -4,6 +4,19 @@
 
 형식은 Keep a Changelog 스타일을 느슨하게 따르며, 버전 표기는 SemVer 기준으로 관리한다.
 
+## [0.3.8] - 2026-04-22
+
+### Changed
+
+- `@moreih29/nexus-core`를 `0.19.0`으로 올리고 plan skill 생성물을 최신 계약에 맞게 동기화
+- repo에서 `plugins/codex-nexus`만 tracked publishable source로 남기고, project-scope install 산출물인 repo-root `.codex` / `.agents`는 추적하지 않도록 구조를 정리
+- project install 시 `.gitignore`가 `.codex/`, `.agents/` 디렉터리 전체를 로컬 install artifact로 무시하도록 변경
+
+### Fixed
+
+- 검증과 레이아웃 테스트가 repo self-install fixture 대신 publishable plugin 자산과 실제 installer 동작을 기준으로 확인하도록 정리
+- plugin hook self-pin이 현재 배포 버전 `0.3.8`을 가리키도록 갱신
+
 ## [0.3.7] - 2026-04-22
 
 ### Added
