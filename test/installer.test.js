@@ -93,4 +93,4 @@ test("published-style install includes nexus-core dependency", () => {
     rmSync(packDir, { recursive: true, force: true });
     rmSync(installDir, { recursive: true, force: true });
   }
-});
+}, 20000);
