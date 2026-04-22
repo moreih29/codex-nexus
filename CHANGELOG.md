@@ -4,6 +4,13 @@
 
 형식은 Keep a Changelog 스타일을 느슨하게 따르며, 버전 표기는 SemVer 기준으로 관리한다.
 
+## [0.3.9] - 2026-04-22
+
+### Fixed
+
+- GitHub Actions `validate` workflow가 repo-root local install artifact를 더 이상 tracked source로 가정하지 않도록, `doctor --scope project` 전에 `install --scope project`를 수행하게 수정
+- `0.3.8` 태그에서 publish workflow가 실패하던 CI 검증 경로를 복구
+
 ## [0.3.8] - 2026-04-22
 
 ### Changed
@@ -15,7 +22,7 @@
 ### Fixed
 
 - 검증과 레이아웃 테스트가 repo self-install fixture 대신 publishable plugin 자산과 실제 installer 동작을 기준으로 확인하도록 정리
-- plugin hook self-pin이 현재 배포 버전 `0.3.8`을 가리키도록 갱신
+- plugin hook self-pin이 당시 배포 버전 `0.3.8`을 가리키도록 갱신
 
 ## [0.3.7] - 2026-04-22
 

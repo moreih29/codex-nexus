@@ -40,6 +40,15 @@ jobs:
       - name: Verify CLI help
         run: node scripts/codex-nexus.mjs --help
 
+      - name: Prepare temporary package root for doctor check
+        run: |
+          TMP_PACKAGE_ROOT="$(mktemp -d)"
+          rsync -a --exclude .git ./ "${TMP_PACKAGE_ROOT}/"
+          echo "CODEX_NEXUS_TEST_PACKAGE_ROOT=${TMP_PACKAGE_ROOT}" >> "$GITHUB_ENV"
+
+      - name: Install project-scoped assets for doctor check
+        run: node scripts/codex-nexus.mjs install --scope project
+
       - name: Verify local doctor
         run: node scripts/codex-nexus.mjs doctor --scope project
 
