@@ -1,216 +1,140 @@
+[npm](https://www.npmjs.com/package/codex-nexus) · [License](./LICENSE) · [한국어](./README.md)
+
 # codex-nexus
 
-[![npm version](https://img.shields.io/npm/v/codex-nexus)](https://www.npmjs.com/package/codex-nexus)
+`codex-nexus` installs [`@moreih29/nexus-core`](https://github.com/moreih29/nexus-core) into the paths Codex actually uses.
 
-> 🌏 [한국어](README.md)
+After installation, it wires:
 
-Nexus wrapper plugin for OpenAI Codex CLI.
+- the Lead main instruction file
+- Nexus subagents
+- the `nx` MCP server
+- Codex hooks for Nexus tags
+- the Codex skill discovery path
 
-`codex-nexus` uses the Codex `sync` outputs and runtime exports from `@moreih29/nexus-core` as its source of truth, then layers Codex-specific install, config merge, and path adaptation on top. Common Nexus definitions, generated Codex outputs, and the hook/MCP runtime implementations come from `nexus-core`; `codex-nexus` packages and connects them for Codex CLI.
+## What it gives you
 
-## Why
+Once installed, you can use flows like:
 
-- plan before implementation with `[plan]`
-- execute through task-based `[run]`
-- resume completed specialist subagents through Codex-native continuation
-- keep project knowledge and decisions in `.nexus/`
-- use a Codex-native specialist agent catalog
-- access plan/task/history/artifact flows through `nx` MCP tools
+- `[plan]` to structure decisions before implementation
+- `[auto-plan]` for Lead-driven planning
+- `[run]` to execute from a plan
+- `[m]` to store memory
+- `[m:gc]` to clean memory
+- `[d]` to record the current plan decision
 
-## Architecture
+## Quick install
 
-- `nexus-core` — source of truth for shared Codex assets and generated output contract
-- `codex-nexus` — Codex-specific wrapper (`install`, config merge, runtime path adaptation)
-- `bun run sync:core` — runs upstream `nexus-core sync --harness=codex` into a staging directory, then applies the managed outputs to this repo's `agents/`, `plugin/`, `prompts/`, and `install/`
-
-## Quick Start
-
-### 1. Install
-
-`codex-nexus` is distributed through npm. Its CLI entrypoint runs with `bun`, while the installed hook/MCP runtimes come from the prebuilt `@moreih29/nexus-core` dependency.
-
-Requirements:
-
-- OpenAI Codex CLI
-- `bun` available on `PATH`
+Recommended default install:
 
 ```bash
-npm install -g codex-nexus
-codex-nexus install
+npx -y codex-nexus install
 ```
 
-When `codex-nexus install` runs in a TTY, it prompts for:
+In a TTY session, the installer lets you choose:
 
-- which package version to install
-- which target scope to install into (`user` or `project`)
+1. which published `codex-nexus` version to install
+2. whether to install to `user` or `project` scope
 
-`install` copies the core-generated skills and agents into the scope-appropriate `.codex/`, then configures the Codex-adapted `nx` MCP server and default optional integrations in `.codex/config.toml`. The current default optional integration is hosted `Context7`, and the default install writes it as a url-only remote MCP entry to avoid startup failures when no API key is configured. If you want higher rate limits or authenticated access, add the Context7 API key header manually using the Context7 client docs.
+Compatible installer versions start at `0.3.0`.
 
-Starting with `nexus-core@0.16.0`, `.codex/agents/*.toml` uses the standalone role-file schema that current Codex loads directly. `nexus-core@0.16.2` then fixes the remaining Codex compatibility issue by moving `disabled_tools` under the supported `[mcp_servers.nx]` block. If you upgraded from `0.16.0` or `0.16.1`, rerun `codex-nexus install --scope user` or `codex-nexus install --scope project` so the malformed agent files are replaced.
+## Installation scopes
 
-AGENTS behavior differs by scope:
-
-- `--scope user` updates `~/.codex/AGENTS.md` and leaves the current repository's `./AGENTS.md` untouched
-- `--scope project` updates the current repository's `./AGENTS.md`
-
-To install explicitly:
+### user
 
 ```bash
-codex-nexus install --scope user --version latest
-codex-nexus install --scope project --version 0.2.0
+npx -y codex-nexus install --scope user
 ```
 
-To install only the core Nexus setup without optional MCP integrations:
+Recommended when you want the setup available across repositories.
+
+Installs into:
+
+- `~/.codex`
+- `~/.agents`
+
+### project
 
 ```bash
-codex-nexus install --core-only
+npx -y codex-nexus install --scope project
 ```
 
-To verify the installation:
+Use this when you want the setup only for the current repository.
 
-```bash
-codex-nexus doctor --scope user
-codex-nexus doctor --scope project
-```
+Installs into:
 
-### 2. Onboard Your Project
+- `<repo>/.codex`
+- `<repo>/.agents`
+- `<repo>/plugins/codex-nexus`
 
-Start by running `$nx-init` in your project.
+## What the installer configures
 
-```text
-$nx-init
-```
+The installer writes or updates:
 
-This loads the onboarding workflow that scans the repository and prepares initial knowledge under `.nexus/`.
-
-### 3. Start Using It
-
-- Plan: `[plan] How should we design the auth flow?`
-- Record a decision: `Let's go with that direction [d]`
-- Run: `[run] Implement the agreed auth flow`
-
-Typical flow:
-
-`[plan]` to discuss and align → `[d]` to record decisions → `[run]` to execute
-
-## Usage
-
-| Tag | Action | Example |
-|---|---|---|
-| `[plan]` | pre-implementation planning mode | `[plan] Discuss DB migration strategy` |
-| `[run]` | task-based execution mode | `[run] Implement login API` |
-| `[d]` | record a decision for the current plan issue | `Let's go with option 2 [d]` |
-| `[sync]` | sync `.nexus/context/` | `[sync] Reflect recent architecture changes into context docs` |
-| `[rule]` | save a team rule | `[rule] Use bun as the default package manager` |
-| `[rule:<tag>]` | save a tagged rule | `[rule:testing] Always run tests before release` |
-| `[m]` | save a memo or reference | `[m] Save lessons from this incident` |
-| `[m:gc]` | clean up memory entries | `[m:gc] Deduplicate memory notes` |
-
-## Agents
-
-The primary main-thread agent is `Lead`, and Codex AGENTS.md receives the core-generated lead fragment during install.
-
-### How
-
-| Agent | Role | Model |
-|---|---|---|
-| Architect | technical design and architecture review | `gpt-5.4` |
-| Designer | UX/UI and interaction design | `gpt-5.4` |
-| Postdoc | research methodology and evidence synthesis | `gpt-5.4` |
-| Strategist | strategy, positioning, and business judgment | `gpt-5.4` |
-
-### Do
-
-| Agent | Role | Model |
-|---|---|---|
-| Engineer | implementation and debugging | `gpt-5.3-codex` |
-| Researcher | independent investigation and web research | `gpt-5.3-codex` |
-| Writer | documentation and written deliverables | `gpt-5.3-codex` |
-
-### Check
-
-| Agent | Role | Model |
-|---|---|---|
-| Tester | testing, verification, and stability checks | `gpt-5.3-codex` |
-| Reviewer | document, fact, and format review | `gpt-5.3-codex` |
-
-## Entrypoints
-
-| Entrypoint | Purpose |
-|---|---|
-| `$nx-init` | project onboarding and initial `.nexus/` knowledge generation |
-| `[plan]` | structured discussion and decision-making |
-| `[run]` | task-based execution |
-| `[sync]` | `.nexus/context/` synchronization |
-
-## Subagent Resume
-
-Completed subagents can be continued through Codex-native resume flow.
-
-- plan mode: `nx_plan_resume` and `nx_plan_followup` return follow-up guidance in `resume_agent -> send_input` form
-- run mode: `nx_task_resume` evaluates `owner_agent_id`, `owner_reuse_policy`, and `agent-tracker.json` to decide between resume and fresh spawn
-- `persistent` tier: resume by default when a prior completed participant exists
-- `bounded` tier: requires `owner_agent_id` to be persisted on the task, and prepends `Re-read target files before any modification.` to the follow-up prompt
-- `ephemeral` tier: always fresh spawn
-
-To preserve run-mode continuity, store the returned agent id on the task after the first spawn.
-
-```text
-nx_task_update(id=<task id>, owner_agent_id=<returned agent id>, status="in_progress")
-```
-
-## What Install Writes
-
-An install updates these managed surfaces under the selected scope:
-
-- `.codex/packages/node_modules/codex-nexus`
-- `.codex/config.toml` (`nx` MCP plus hosted `context7` MCP by default)
+- `model_instructions_file = "lead.instructions.md"`
+- `[features].multi_agent = true`
+- `[features].child_agents_md = true`
+- `[features].codex_hooks = true`
+- `[mcp_servers.nx]`
 - `.codex/hooks.json`
-- `.codex/skills/*` (copied from `plugin/skills/`)
-- `.codex/agents/*.toml` (standalone Codex role files generated from `nexus-core` assets)
-- the lead fragment in the scope-specific AGENTS target (`install/AGENTS.fragment.md`)
+- `.codex/agents/*`
+- `.agents/skills/*`
+- the marketplace entry
 
-AGENTS target:
+This is the important distinction: it does not just copy a plugin folder. It wires the final-user config paths that Codex actually reads.
 
-- `user` — `~/.codex/AGENTS.md`
-- `project` — the current repository's `./AGENTS.md`
-
-Scope meanings:
-
-- `user` — installs into `~/.codex` and shares the setup across repositories
-- `project` — installs into the current repository's `./.codex`
-
-## Project Knowledge
-
-`codex-nexus` stores project knowledge and runtime state under `.nexus/`.
-
-```text
-.nexus/
-  memory/     lessons learned, references
-  context/    architecture and design context
-  rules/      team rules
-  history.json
-  state/      active plan/task runtime state
-```
-
-- `memory/`, `context/`, `rules/`, and `history.json` hold project knowledge.
-- `state/` holds runtime state and is excluded from git.
-
-Runtime state now lives under the core session root `.nexus/state/<session_id>/`, for example:
-
-- `.nexus/state/<session_id>/agent-tracker.json`
-- `.nexus/state/<session_id>/tool-log.jsonl`
-- `.nexus/state/<session_id>/plan.json`
-- `.nexus/state/<session_id>/tasks.json`
-
-## CLI
+## Verify the install
 
 ```bash
-bun run sync:core
-codex-nexus install
-codex-nexus install --core-only
-codex-nexus install --scope user --version latest
-codex-nexus install --scope project --version 0.2.0
-codex-nexus doctor --scope project
-codex-nexus version
+npx -y codex-nexus doctor --scope user
+npx -y codex-nexus doctor --scope project
 ```
+
+A healthy setup prints `Doctor passed.`.
+
+## Example usage
+
+After installation, you can start with prompts like:
+
+```text
+[plan] Help me break down the authentication flow
+```
+
+```text
+[run] Implement the plan we just agreed on
+```
+
+```text
+[m] Save what we learned from this outage
+```
+
+## Update
+
+Re-run install to move to the latest compatible version:
+
+```bash
+npx -y codex-nexus install --scope user
+```
+
+To pin a version explicitly:
+
+```bash
+npx -y codex-nexus install --scope user --version 0.3.0
+```
+
+The installer also aligns the pinned `@moreih29/nexus-core` version from the selected `codex-nexus` package.
+
+## Notes
+
+- Versions below `0.3.0` are intentionally blocked by the current installer.
+- Hooks are merged into Codex config-layer `hooks.json`.
+- For project installs, the installer adds a minimal local-config ignore set to `.gitignore`.
+
+## Marketplace layout
+
+This repository follows the Codex marketplace layout:
+
+- `.agents/plugins/marketplace.json`
+- `plugins/codex-nexus/.codex-plugin/plugin.json`
+
+Most users do not need to manage those files directly. In practice, `codex-nexus install` is the entry point that matters.

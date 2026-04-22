@@ -4,73 +4,97 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
-const corePackagePath = path.join(repoRoot, "node_modules", "@moreih29", "nexus-core", "package.json");
+const packageJsonPath = path.join(repoRoot, "package.json");
+const pluginRoot = path.join(repoRoot, "plugins", "codex-nexus");
+const projectCodexRoot = path.join(repoRoot, ".codex");
+const projectAgentsSkillRoot = path.join(repoRoot, ".agents", "skills");
+const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+const nexusCoreVersion = packageJson.devDependencies?.["@moreih29/nexus-core"];
+const nexusCoreSpecLeadPath = path.join(
+  repoRoot,
+  "node_modules",
+  "@moreih29",
+  "nexus-core",
+  "spec",
+  "agents",
+  "lead",
+  "body.md"
+);
 
-function ensureDir(dirPath) {
-  mkdirSync(dirPath, { recursive: true });
+if (!nexusCoreVersion) {
+  throw new Error("Missing @moreih29/nexus-core in devDependencies.");
+}
+
+const nexusSyncBin = path.join(
+  repoRoot,
+  "node_modules",
+  ".bin",
+  process.platform === "win32" ? "nexus-sync.cmd" : "nexus-sync"
+);
+
+if (!existsSync(nexusSyncBin)) {
+  throw new Error(`Missing nexus-sync binary at ${nexusSyncBin}. Run 'bun install' first.`);
 }
 
 function replaceDirectory(sourceDir, destinationDir) {
   rmSync(destinationDir, { recursive: true, force: true });
-  ensureDir(path.dirname(destinationDir));
+  mkdirSync(path.dirname(destinationDir), { recursive: true });
   cpSync(sourceDir, destinationDir, { recursive: true });
 }
 
-function replaceFile(sourcePath, destinationPath) {
-  ensureDir(path.dirname(destinationPath));
-  cpSync(sourcePath, destinationPath, { force: true });
+function stripFrontmatter(markdown) {
+  return markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
 }
 
-if (!existsSync(corePackagePath)) {
-  throw new Error(`Missing installed nexus-core package at ${corePackagePath}`);
+function writeFile(destinationPath, content) {
+  mkdirSync(path.dirname(destinationPath), { recursive: true });
+  writeFileSync(destinationPath, content, "utf8");
+}
+
+function writeLeadInstructions() {
+  const leadSpec = readFileSync(nexusCoreSpecLeadPath, "utf8");
+  const leadInstructions = stripFrontmatter(leadSpec).trim() + "\n";
+
+  writeFile(path.join(pluginRoot, "lead.instructions.md"), leadInstructions);
+  writeFile(path.join(projectCodexRoot, "lead.instructions.md"), leadInstructions);
+}
+
+function writeProjectCodexConfig() {
+  const config = `model_instructions_file = "lead.instructions.md"
+
+[features]
+multi_agent = true
+child_agents_md = true
+codex_hooks = true
+
+[mcp_servers.nx]
+command = "npx"
+args = ["-y", "-p", "@moreih29/nexus-core@${nexusCoreVersion}", "nexus-mcp"]
+`;
+
+  writeFile(path.join(projectCodexRoot, "config.toml"), config);
 }
 
 const stagingRoot = mkdtempSync(path.join(tmpdir(), "codex-nexus-sync-"));
-const targetRoot = path.join(stagingRoot, "out");
-const nexusCoreBin = path.join(
-  repoRoot,
-  "node_modules",
-  ".bin",
-  process.platform === "win32" ? "nexus-core.cmd" : "nexus-core"
-);
 
 try {
-  const result = spawnSync(
-    nexusCoreBin,
-    ["sync", "--harness=codex", `--target=${targetRoot}`],
-    {
-      cwd: repoRoot,
-      stdio: "inherit"
-    }
-  );
+  const result = spawnSync(nexusSyncBin, ["--harness=codex", `--target=${stagingRoot}`], {
+    cwd: repoRoot,
+    stdio: "inherit"
+  });
 
   if (result.status !== 0) {
-    throw new Error(`nexus-core sync failed with exit code ${result.status ?? 1}`);
+    throw new Error(`nexus-sync failed with exit code ${result.status ?? 1}.`);
   }
 
-  replaceDirectory(path.join(targetRoot, "agents"), path.join(repoRoot, "agents"));
-  replaceDirectory(path.join(targetRoot, "plugin"), path.join(repoRoot, "plugin"));
-  replaceDirectory(path.join(targetRoot, "prompts"), path.join(repoRoot, "prompts"));
+  replaceDirectory(path.join(stagingRoot, ".codex", "skills"), path.join(pluginRoot, "skills"));
+  replaceDirectory(path.join(stagingRoot, ".codex", "agents"), path.join(pluginRoot, "agents"));
+  replaceDirectory(path.join(stagingRoot, ".codex", "agents"), path.join(projectCodexRoot, "agents"));
+  replaceDirectory(path.join(stagingRoot, ".codex", "skills"), projectAgentsSkillRoot);
+  writeLeadInstructions();
+  writeProjectCodexConfig();
 
-  replaceFile(
-    path.join(targetRoot, "install", "AGENTS.fragment.md"),
-    path.join(repoRoot, "install", "AGENTS.fragment.md")
-  );
-  replaceFile(
-    path.join(targetRoot, "install", "config.fragment.toml"),
-    path.join(repoRoot, "install", "config.fragment.toml")
-  );
-
-  const wrapperPackage = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"));
-  const pluginManifestPath = path.join(repoRoot, "plugin", ".codex-plugin", "plugin.json");
-  const pluginManifest = JSON.parse(readFileSync(pluginManifestPath, "utf8"));
-  pluginManifest.name = wrapperPackage.name;
-  pluginManifest.version = wrapperPackage.version;
-  pluginManifest.description = wrapperPackage.description;
-  writeFileSync(pluginManifestPath, JSON.stringify(pluginManifest, null, 2) + "\n", "utf8");
-
-  const corePackage = JSON.parse(readFileSync(corePackagePath, "utf8"));
-  console.log(`Synced Codex managed outputs from @moreih29/nexus-core@${corePackage.version}.`);
+  console.log(`Synced Codex artifacts from @moreih29/nexus-core@${nexusCoreVersion}.`);
 } finally {
   rmSync(stagingRoot, { recursive: true, force: true });
 }

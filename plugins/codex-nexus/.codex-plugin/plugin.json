@@ -1,0 +1,45 @@
+{
+  "name": "codex-nexus",
+  "version": "0.3.0",
+  "description": "Thin Codex plugin wrapper that packages nexus-core skills, agent specs, and MCP tooling.",
+  "author": {
+    "name": "moreih29",
+    "url": "https://github.com/moreih29"
+  },
+  "homepage": "https://github.com/moreih29/codex-nexus",
+  "repository": "https://github.com/moreih29/codex-nexus",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "nexus",
+    "plugin",
+    "agents",
+    "mcp"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Codex Nexus",
+    "shortDescription": "nexus-core orchestration packaged for Codex",
+    "longDescription": "Install the Codex-facing outputs from nexus-core as a thin plugin wrapper: generated skills, generated agent specs, and MCP wiring for Nexus planning and task tools.",
+    "developerName": "moreih29",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/moreih29/codex-nexus",
+    "privacyPolicyURL": "https://github.com/moreih29/codex-nexus?tab=readme-ov-file#privacy",
+    "termsOfServiceURL": "https://github.com/moreih29/codex-nexus?tab=readme-ov-file#terms",
+    "defaultPrompt": [
+      "Use [plan] to structure an implementation decision before coding",
+      "Set up Nexus task orchestration for this repository",
+      "Sync project context and record the latest architecture decisions"
+    ],
+    "brandColor": "#0F766E",
+    "composerIcon": "./assets/codex-nexus-small.svg",
+    "logo": "./assets/codex-nexus-logo.svg",
+    "screenshots": []
+  }
+}

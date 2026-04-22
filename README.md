@@ -1,218 +1,142 @@
+[npm](https://www.npmjs.com/package/codex-nexus) · [라이선스](./LICENSE) · [English](./README.en.md)
+
 # codex-nexus
 
-[![npm version](https://img.shields.io/npm/v/codex-nexus)](https://www.npmjs.com/package/codex-nexus)
+`codex-nexus`는 [`@moreih29/nexus-core`](https://github.com/moreih29/nexus-core)를 Codex에서 바로 쓰기 쉽게 설치해 주는 플러그인 패키지다.
 
-> 🌏 [English](README.en.md)
+설치가 끝나면 다음이 자동으로 연결된다.
 
-OpenAI Codex CLI를 위한 Nexus wrapper 플러그인.
+- Lead 메인 지시 파일
+- Nexus 전용 하위 에이전트
+- `nx` MCP 서버
+- Nexus 태그용 Codex 훅
+- Codex가 읽는 스킬 디렉터리
 
-`codex-nexus`는 `@moreih29/nexus-core`가 제공하는 Codex `sync` 산출물과 runtime exports를 source of truth로 삼고, 그 위에 Codex 전용 install, config merge, 경로 해석을 얹는 얇은 래퍼입니다. 공통 Nexus 정의, generated Codex outputs, hook/MCP runtime 구현은 `nexus-core`에서 가져오고, `codex-nexus`는 그것을 Codex CLI에 맞게 설치하고 연결합니다.
+## 무엇을 할 수 있나
 
-## Why
+설치 후 Codex에서 이런 흐름을 바로 쓸 수 있다.
 
-- 구현 전에 `[plan]`으로 먼저 정리
-- `[run]`에서 태스크 기반으로 실행
-- 완료된 specialist subagent를 Codex native resume로 이어서 호출 가능
-- `.nexus/`에 프로젝트 지식과 결정 기록 유지
-- 역할이 분리된 Codex-native 에이전트 카탈로그 제공
-- `nx` MCP 도구로 plan/task/history/artifact 흐름 사용
+- `[plan]` 구현 전에 의사결정 정리
+- `[auto-plan]` Lead가 자동으로 계획 정리
+- `[run]` 계획을 태스크로 실행
+- `[m]` 메모 저장
+- `[m:gc]` 메모 정리
+- `[d]` 현재 plan 안건의 결정 기록
 
-## Architecture
+## 빠른 설치
 
-- `nexus-core` — 공통 Codex 자산과 generated output contract의 source of truth
-- `codex-nexus` — Codex-specific wrapper (`install`, config merge, runtime path adaptation)
-- `bun run sync:core` — upstream `nexus-core sync --harness=codex`를 staging 경로에 실행한 뒤 managed outputs를 이 repo의 `agents/`, `plugin/`, `prompts/`, `install/`로 반영
-
-## Quick Start
-
-### 1. Install
-
-`codex-nexus`는 npm으로 배포됩니다. CLI entrypoint는 `bun`으로 실행되고, 설치 후 hook/MCP runtime은 `@moreih29/nexus-core` dependency의 prebuilt JS를 사용합니다.
-
-Requirements:
-
-- OpenAI Codex CLI
-- `bun` available on `PATH`
+가장 일반적인 설치는 user scope다.
 
 ```bash
-npm install -g codex-nexus
-codex-nexus install
+npx -y codex-nexus install
 ```
 
-터미널(TTY)에서 `codex-nexus install`을 실행하면:
+TTY 환경에서는 설치 중에:
 
-- 설치할 패키지 버전
-- 설치 대상 scope (`user` / `project`)
+1. 설치할 `codex-nexus` 버전
+2. 설치 범위 `user` 또는 `project`
 
-를 순서대로 선택할 수 있습니다.
+를 순서대로 고를 수 있다.
 
-`install`은 core-generated skills/agents를 scope에 맞는 `.codex/` 아래에 배치하고, `.codex/config.toml`에 Codex-adapted `nx` MCP 서버와 optional MCP 통합을 설정합니다. 현재 기본 통합은 hosted `Context7`이고, 기본 설치는 startup failure를 피하기 위해 `url` only remote MCP로 구성됩니다. 더 높은 rate limit이나 인증이 필요하면 Context7 문서에 맞춰 API key 기반 header를 수동으로 추가하세요.
+호환되는 설치 버전은 `0.3.0` 이상부터다. 그보다 낮은 버전은 선택지에 나오지 않는다.
 
-`nexus-core@0.16.0`부터 `.codex/agents/*.toml`은 Codex가 바로 읽는 standalone role file 스키마입니다. 이어서 `nexus-core@0.16.2`는 `disabled_tools`를 Codex가 허용하는 `[mcp_servers.nx]` 블록 아래로 옮겨 malformed role rejection을 해결했습니다. `0.16.0` 또는 `0.16.1` 기반 agent TOML이 설치돼 있었다면 upgrade 뒤에 `codex-nexus install --scope user` 또는 `codex-nexus install --scope project`를 다시 실행해 agent 파일을 교체하세요.
+## 설치 범위
 
-AGENTS 동작은 scope별로 다릅니다.
-
-- `--scope user` 는 `~/.codex/AGENTS.md`를 갱신하고 현재 레포의 `./AGENTS.md`는 건드리지 않습니다
-- `--scope project` 는 현재 레포의 `./AGENTS.md`를 갱신합니다
-
-명시적으로 설치하려면:
+### user
 
 ```bash
-codex-nexus install --scope user --version latest
-codex-nexus install --scope project --version 0.2.0
+npx -y codex-nexus install --scope user
 ```
 
-optional MCP 통합 없이 core만 설치하려면:
+여러 저장소에서 공통으로 쓰고 싶을 때 권장한다.
+
+설치 대상:
+
+- `~/.codex`
+- `~/.agents`
+
+### project
 
 ```bash
-codex-nexus install --core-only
+npx -y codex-nexus install --scope project
 ```
 
-설치 상태를 확인하려면:
+현재 저장소에서만 쓰고 싶을 때 사용한다.
 
-```bash
-codex-nexus doctor --scope user
-codex-nexus doctor --scope project
-```
+설치 대상:
 
-### 2. Onboard Your Project
+- `<repo>/.codex`
+- `<repo>/.agents`
+- `<repo>/plugins/codex-nexus`
 
-프로젝트에서 먼저 `$nx-init`을 실행해 `.nexus/` 지식을 생성하세요.
+## 설치 후 무엇이 생기나
 
-```text
-$nx-init
-```
+installer는 선택한 버전을 기준으로 아래를 맞춰 준다.
 
-이 entrypoint는 프로젝트를 스캔하고 초기 knowledge/context/rules 구조를 준비하는 온보딩 워크플로를 로드합니다.
-
-### 3. Start Using It
-
-- 플랜: `[plan] 인증 플로우를 어떻게 설계할까?`
-- 결정 기록: `그 방향으로 가자 [d]`
-- 실행: `[run] 합의한 인증 플로우를 구현해줘`
-
-전형적인 흐름은:
-
-`[plan]`으로 정리 → `[d]`로 결정 기록 → `[run]`으로 실행
-
-## Usage
-
-| Tag | 동작 | 예시 |
-|---|---|---|
-| `[plan]` | 구현 전 의사결정 모드 | `[plan] DB 마이그레이션 전략 논의` |
-| `[run]` | 태스크 기반 실행 모드 | `[run] 로그인 API 구현` |
-| `[d]` | 현재 플랜 이슈의 결정 기록 | `2안으로 가자 [d]` |
-| `[sync]` | `.nexus/context/` 동기화 | `[sync] 최근 구조 변경을 context 문서에 반영` |
-| `[rule]` | 팀 규칙 저장 | `[rule] 기본 패키지 매니저는 bun` |
-| `[rule:<tag>]` | 태그가 포함된 규칙 저장 | `[rule:testing] 배포 전 test 필수` |
-| `[m]` | 메모/레퍼런스 저장 | `[m] 이번 장애 대응 교훈 저장` |
-| `[m:gc]` | memory 정리 | `[m:gc] 중복 memory 정리` |
-
-## Agents
-
-메인 thread의 primary agent는 `Lead`이며, Codex AGENTS.md에는 core-generated lead fragment가 병합됩니다.
-
-### How
-
-| Agent | Role | Model |
-|---|---|---|
-| Architect | 기술 설계와 아키텍처 리뷰 | `gpt-5.4` |
-| Designer | UX/UI와 인터랙션 설계 | `gpt-5.4` |
-| Postdoc | 리서치 방법론 설계와 증거 종합 | `gpt-5.4` |
-| Strategist | 전략, 포지셔닝, 비즈니스 판단 | `gpt-5.4` |
-
-### Do
-
-| Agent | Role | Model |
-|---|---|---|
-| Engineer | 구현과 디버깅 | `gpt-5.3-codex` |
-| Researcher | 독립 조사와 웹 리서치 | `gpt-5.3-codex` |
-| Writer | 문서와 작성형 산출물 | `gpt-5.3-codex` |
-
-### Check
-
-| Agent | Role | Model |
-|---|---|---|
-| Tester | 테스트, 검증, 안정성 확인 | `gpt-5.3-codex` |
-| Reviewer | 문서/사실/형식 검토 | `gpt-5.3-codex` |
-
-## Entrypoints
-
-| Entrypoint | Purpose |
-|---|---|
-| `$nx-init` | 프로젝트 온보딩과 초기 `.nexus/` 지식 생성 |
-| `[plan]` | 구조화된 논의와 결정 |
-| `[run]` | 태스크 기반 실행 |
-| `[sync]` | `.nexus/context/` 동기화 |
-
-## Subagent Resume
-
-완료된 subagent는 Codex native resume 흐름으로 다시 이어서 호출할 수 있습니다.
-
-- plan mode: `nx_plan_resume`, `nx_plan_followup`가 `resume_agent -> send_input` 순서의 follow-up guidance를 반환합니다.
-- run mode: `nx_task_resume`가 task의 `owner_agent_id`, `owner_reuse_policy`, `agent-tracker.json`을 기준으로 resume 가능 여부를 계산합니다.
-- `persistent` tier: 이전 완료 세션이 있으면 기본적으로 resume
-- `bounded` tier: task에 `owner_agent_id`가 저장되어 있어야 하며, follow-up prompt 앞에 `Re-read target files before any modification.`가 붙습니다.
-- `ephemeral` tier: 항상 fresh spawn
-
-run mode에서 continuity를 유지하려면 첫 spawn 뒤 returned agent id를 task에 저장하세요.
-
-```text
-nx_task_update(id=<task id>, owner_agent_id=<returned agent id>, status="in_progress")
-```
-
-## What Install Writes
-
-설치가 완료되면 선택한 scope 아래에 다음이 생성되거나 갱신됩니다.
-
-- `.codex/packages/node_modules/codex-nexus`
-- `.codex/config.toml` (`nx` MCP, 기본적으로 hosted `context7` MCP 포함)
+- `model_instructions_file = "lead.instructions.md"`
+- `[features].multi_agent = true`
+- `[features].child_agents_md = true`
+- `[features].codex_hooks = true`
+- `[mcp_servers.nx]`
 - `.codex/hooks.json`
-- `.codex/skills/*` (`plugin/skills/`에서 복사)
-- `.codex/agents/*.toml` (`nexus-core` 자산에서 생성된 standalone Codex role file)
-- scope별 AGENTS target의 lead fragment (`install/AGENTS.fragment.md`)
+- `.codex/agents/*`
+- `.agents/skills/*`
+- marketplace entry
 
-AGENTS target:
+즉, 플러그인만 복사하는 것이 아니라 Codex가 실제로 읽는 최종 사용자 경로까지 함께 정리한다.
 
-- `user` — `~/.codex/AGENTS.md`
-- `project` — 현재 레포의 `./AGENTS.md`
-
-Scope 의미:
-
-- `user` — `~/.codex`에 설치되어 여러 저장소에서 공유
-- `project` — 현재 저장소의 `./.codex`에 설치
-
-## Project Knowledge
-
-`codex-nexus`는 프로젝트 지식과 실행 상태를 `.nexus/`에 저장합니다.
-
-```text
-.nexus/
-  memory/     lessons learned, references
-  context/    architecture and design context
-  rules/      team rules
-  history.json
-  state/      active plan/task runtime state
-```
-
-- `memory/`, `context/`, `rules/`, `history.json`은 프로젝트 지식입니다.
-- `state/`는 런타임 상태이며 git에서 제외됩니다.
-
-runtime state는 core session root `.nexus/state/<session_id>/` 아래에 저장됩니다. 예:
-
-- `.nexus/state/<session_id>/agent-tracker.json`
-- `.nexus/state/<session_id>/tool-log.jsonl`
-- `.nexus/state/<session_id>/plan.json`
-- `.nexus/state/<session_id>/tasks.json`
-
-## CLI
+## 설치 확인
 
 ```bash
-bun run sync:core
-codex-nexus install
-codex-nexus install --core-only
-codex-nexus install --scope user --version latest
-codex-nexus install --scope project --version 0.2.0
-codex-nexus doctor --scope project
-codex-nexus version
+npx -y codex-nexus doctor --scope user
+npx -y codex-nexus doctor --scope project
 ```
+
+설치가 정상이면 `Doctor passed.`가 나온다.
+
+## 사용 예시
+
+설치가 끝난 뒤 Codex에서 바로 이렇게 시작하면 된다.
+
+```text
+[plan] 인증 플로우를 어떻게 나눌지 정리해줘
+```
+
+```text
+[run] 방금 정리한 계획대로 구현해줘
+```
+
+```text
+[m] 이번 장애 대응에서 배운 점 저장
+```
+
+## 업데이트
+
+최신 호환 버전으로 다시 설치하면 된다.
+
+```bash
+npx -y codex-nexus install --scope user
+```
+
+특정 버전으로 고정하고 싶으면:
+
+```bash
+npx -y codex-nexus install --scope user --version 0.3.0
+```
+
+installer는 선택한 `codex-nexus` 버전에 맞춰 `@moreih29/nexus-core` 버전도 함께 맞춘다.
+
+## 주의할 점
+
+- `0.3.0` 미만 구버전은 현재 installer와 호환되지 않는다.
+- 훅은 Codex의 config-layer `hooks.json`에 병합된다.
+- project scope 설치 시 `.gitignore`에는 로컬 설정 파일용 최소 항목만 자동으로 추가된다.
+
+## 배포 저장소로서의 구조
+
+이 저장소는 Codex marketplace 스타일 구조를 따른다.
+
+- `.agents/plugins/marketplace.json`
+- `plugins/codex-nexus/.codex-plugin/plugin.json`
+
+하지만 최종 사용자는 보통 이 경로를 직접 만질 필요가 없다. 실제 사용은 `codex-nexus install` 기준으로 보면 된다.

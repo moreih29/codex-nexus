@@ -1,0 +1,10 @@
+model_instructions_file = "lead.instructions.md"
+
+[features]
+multi_agent = true
+child_agents_md = true
+codex_hooks = true
+
+[mcp_servers.nx]
+command = "npx"
+args = ["-y", "-p", "@moreih29/nexus-core@0.18.2", "nexus-mcp"]
