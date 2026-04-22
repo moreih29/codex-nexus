@@ -486,14 +486,15 @@ function doctorCommand(options = {}, runtime = {}) {
   const config = readTextIfExists(paths.configTomlPath) ?? "";
   const hooks = readTextIfExists(paths.hooksJsonPath) ?? "";
   const marketplace = readTextIfExists(paths.marketplacePath) ?? "";
+  const parsedConfig = config ? TOML.parse(config) : {};
+  const nxConfig = safeObject(safeObject(parsedConfig.mcp_servers).nx);
+  const nxCommand = typeof nxConfig.command === "string" ? nxConfig.command : "";
+  const nxArgs = Array.isArray(nxConfig.args) ? nxConfig.args : [];
+  const nxServerPath = typeof nxArgs[0] === "string" ? nxArgs[0] : "";
   const hasManagedHooks = /codex-nexus-hook[^\n]*session-start/.test(hooks);
   const packageStoreRoot = env[TEST_PACKAGE_ROOT_ENV]
     ? path.resolve(env[TEST_PACKAGE_ROOT_ENV])
     : path.join(paths.packageStoreDir, "node_modules", PACKAGE_NAME);
-  const expectedRuntimeCommand = resolveRuntimeCommand();
-  const expectedNexusCoreServerPath = existsSync(path.join(packageStoreRoot, "package.json"))
-    ? resolveNexusCoreServerPath(packageStoreRoot)
-    : null;
   const usesLocalDevelopmentHooks = hooks.includes(path.join(PACKAGE_ROOT, "scripts", "codex-nexus-hook.mjs")) ||
     hooks.includes("node ./scripts/codex-nexus-hook.mjs");
 
@@ -506,8 +507,10 @@ function doctorCommand(options = {}, runtime = {}) {
         existsSync(paths.configTomlPath) &&
         config.includes('model_instructions_file = "lead.instructions.md"') &&
         config.includes("[mcp_servers.nx]") &&
-        config.includes(`command = "${expectedRuntimeCommand}"`) &&
-        (expectedNexusCoreServerPath === null || config.includes(expectedNexusCoreServerPath))
+        nxCommand.length > 0 &&
+        existsSync(nxCommand) &&
+        nxServerPath.length > 0 &&
+        existsSync(nxServerPath)
     },
     { label: "hooks.json", ok: existsSync(paths.hooksJsonPath) && hasManagedHooks },
     { label: "marketplace.json", ok: existsSync(paths.marketplacePath) && marketplace.includes(paths.pluginSourcePath) },
