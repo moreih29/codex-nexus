@@ -1,6 +1,6 @@
 {
   "name": "codex-nexus",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "private": false,
   "type": "module",
   "description": "Thin Codex plugin wrapper around @moreih29/nexus-core",
@@ -33,6 +33,7 @@
     "codex-nexus-hook": "./scripts/codex-nexus-hook.mjs"
   },
   "files": [
+    "CHANGELOG.md",
     "LICENSE",
     "README.en.md",
     "plugins",
