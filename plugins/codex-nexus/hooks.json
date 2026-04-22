@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y -p codex-nexus@0.3.0 codex-nexus-hook session-start",
+            "command": "npx -y -p codex-nexus@0.3.1 codex-nexus-hook session-start",
             "timeout": 30
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y -p codex-nexus@0.3.0 codex-nexus-hook user-prompt-submit",
+            "command": "npx -y -p codex-nexus@0.3.1 codex-nexus-hook user-prompt-submit",
             "timeout": 30
           }
         ]
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npx -y -p codex-nexus@0.3.0 codex-nexus-hook pre-tool-use",
+            "command": "npx -y -p codex-nexus@0.3.1 codex-nexus-hook pre-tool-use",
             "timeout": 30
           }
         ]

@@ -38,6 +38,8 @@ In a TTY session, the installer lets you choose:
 
 Compatible installer versions start at `0.3.0`.
 
+In non-interactive environments, omitting `--version` installs the same `codex-nexus` version that is currently being executed.
+
 ## Installation scopes
 
 ### user
@@ -119,7 +121,7 @@ npx -y codex-nexus install --scope user
 To pin a version explicitly:
 
 ```bash
-npx -y codex-nexus install --scope user --version 0.3.0
+npx -y codex-nexus install --scope user --version 0.3.1
 ```
 
 The installer also aligns the pinned `@moreih29/nexus-core` version from the selected `codex-nexus` package.

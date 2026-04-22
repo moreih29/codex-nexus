@@ -701,7 +701,7 @@ async function resolveInstallOptions(parsed, runtime = {}) {
       throw error;
     }
   } else if (!options.version) {
-    options.version = "latest";
+    options.version = PACKAGE_VERSION;
   }
 
   if (!options.scope && interactive) {

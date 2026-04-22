@@ -40,6 +40,8 @@ TTY 환경에서는 설치 중에:
 
 호환되는 설치 버전은 `0.3.0` 이상부터다. 그보다 낮은 버전은 선택지에 나오지 않는다.
 
+TTY가 아닌 환경에서는 `--version` 을 생략하면 현재 실행 중인 `codex-nexus` 버전으로 설치된다.
+
 ## 설치 범위
 
 ### user
@@ -121,7 +123,7 @@ npx -y codex-nexus install --scope user
 특정 버전으로 고정하고 싶으면:
 
 ```bash
-npx -y codex-nexus install --scope user --version 0.3.0
+npx -y codex-nexus install --scope user --version 0.3.1
 ```
 
 installer는 선택한 `codex-nexus` 버전에 맞춰 `@moreih29/nexus-core` 버전도 함께 맞춘다.

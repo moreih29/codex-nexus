@@ -18,7 +18,7 @@ test("project install wires plugin, config, hooks, agents, and skills", async ()
       ...process.env,
       CODEX_NEXUS_TEST_PACKAGE_ROOT: path.resolve(path.join(import.meta.dir, ".."))
     };
-    const result = await installCommand({ scope: "project", version: "0.3.0" }, { cwd: repoRoot, env });
+    const result = await installCommand({ scope: "project", version: "0.3.1" }, { cwd: repoRoot, env });
 
     expect(result.scope).toBe("project");
     expect(existsSync(path.join(repoRoot, "plugins", "codex-nexus", ".codex-plugin", "plugin.json"))).toBe(true);
@@ -47,7 +47,7 @@ test("user install targets home-scoped marketplace and codex directories", async
       HOME: homeDir,
       CODEX_NEXUS_TEST_PACKAGE_ROOT: path.resolve(path.join(import.meta.dir, ".."))
     };
-    const result = await installCommand({ scope: "user", version: "0.3.0" }, { cwd: workDir, env });
+    const result = await installCommand({ scope: "user", version: "0.3.1" }, { cwd: workDir, env });
 
     expect(result.scope).toBe("user");
     expect(existsSync(path.join(homeDir, ".codex", "plugins", "codex-nexus", ".codex-plugin", "plugin.json"))).toBe(true);
