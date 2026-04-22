@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Codex Nexus icon">
+  <rect width="96" height="96" rx="24" fill="#0F766E"/>
+  <path d="M28 48 48 28l20 20-20 20Z" fill="#F4F1E8"/>
+  <path d="M48 20v56" stroke="#F4F1E8" stroke-width="8" stroke-linecap="round"/>
+  <path d="M20 48h56" stroke="#9FD7CD" stroke-width="8" stroke-linecap="round"/>
+</svg>
