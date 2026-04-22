@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { doctorCommand, fetchPublishedVersions, installCommand } from "../scripts/codex-nexus.mjs";
+import { doctorCommand, installCommand } from "../scripts/codex-nexus.mjs";
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
@@ -18,7 +18,7 @@ test("project install wires plugin, config, hooks, agents, and skills", async ()
       ...process.env,
       CODEX_NEXUS_TEST_PACKAGE_ROOT: path.resolve(path.join(import.meta.dir, ".."))
     };
-    const result = await installCommand({ scope: "project", version: "0.3.1" }, { cwd: repoRoot, env });
+    const result = await installCommand({ scope: "project" }, { cwd: repoRoot, env });
 
     expect(result.scope).toBe("project");
     expect(existsSync(path.join(repoRoot, "plugins", "codex-nexus", ".codex-plugin", "plugin.json"))).toBe(true);
@@ -47,7 +47,7 @@ test("user install targets home-scoped marketplace and codex directories", async
       HOME: homeDir,
       CODEX_NEXUS_TEST_PACKAGE_ROOT: path.resolve(path.join(import.meta.dir, ".."))
     };
-    const result = await installCommand({ scope: "user", version: "0.3.1" }, { cwd: workDir, env });
+    const result = await installCommand({ scope: "user" }, { cwd: workDir, env });
 
     expect(result.scope).toBe("user");
     expect(existsSync(path.join(homeDir, ".codex", "plugins", "codex-nexus", ".codex-plugin", "plugin.json"))).toBe(true);
@@ -63,15 +63,4 @@ test("user install targets home-scoped marketplace and codex directories", async
     rmSync(homeDir, { recursive: true, force: true });
     rmSync(workDir, { recursive: true, force: true });
   }
-});
-
-test("published versions are filtered to compatible releases only", async () => {
-  const versions = await fetchPublishedVersions({
-    env: {
-      ...process.env,
-      CODEX_NEXUS_TEST_VERSIONS: JSON.stringify(["0.1.0", "0.2.3", "0.3.0", "0.3.1"])
-    }
-  });
-
-  expect(versions).toEqual(["0.3.0", "0.3.1"]);
 });

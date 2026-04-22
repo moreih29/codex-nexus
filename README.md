@@ -33,14 +33,12 @@ npx -y codex-nexus install
 
 TTY 환경에서는 설치 중에:
 
-1. 설치할 `codex-nexus` 버전
-2. 설치 범위 `user` 또는 `project`
+1. 설치 범위 `user` 또는 `project`
 
-를 순서대로 고를 수 있다.
+를 고를 수 있다.
 
-호환되는 설치 버전은 `0.3.0` 이상부터다. 그보다 낮은 버전은 선택지에 나오지 않는다.
-
-TTY가 아닌 환경에서는 `--version` 을 생략하면 현재 실행 중인 `codex-nexus` 버전으로 설치된다.
+설치되는 버전은 항상 현재 실행 중인 `codex-nexus` 버전이다.
+즉, 버전을 바꾸고 싶다면 installer 안에서 고르는 것이 아니라 실행할 패키지 버전을 바꿔야 한다.
 
 ## 설치 범위
 
@@ -120,17 +118,17 @@ npx -y codex-nexus doctor --scope project
 npx -y codex-nexus install --scope user
 ```
 
-특정 버전으로 고정하고 싶으면:
+특정 버전으로 설치하고 싶으면:
 
 ```bash
-npx -y codex-nexus install --scope user --version 0.3.1
+npx -y codex-nexus@<version> install --scope user
+bunx codex-nexus@<version> install --scope user
 ```
 
-installer는 선택한 `codex-nexus` 버전에 맞춰 `@moreih29/nexus-core` 버전도 함께 맞춘다.
+installer는 현재 실행 중인 `codex-nexus` 버전에 맞춰 `@moreih29/nexus-core` 버전도 함께 맞춘다.
 
 ## 주의할 점
 
-- `0.3.0` 미만 구버전은 현재 installer와 호환되지 않는다.
 - 훅은 Codex의 config-layer `hooks.json`에 병합된다.
 - project scope 설치 시 `.gitignore`에는 로컬 설정 파일용 최소 항목만 자동으로 추가된다.
 

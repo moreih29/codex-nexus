@@ -33,12 +33,10 @@ npx -y codex-nexus install
 
 In a TTY session, the installer lets you choose:
 
-1. which published `codex-nexus` version to install
-2. whether to install to `user` or `project` scope
+1. whether to install to `user` or `project` scope
 
-Compatible installer versions start at `0.3.0`.
-
-In non-interactive environments, omitting `--version` installs the same `codex-nexus` version that is currently being executed.
+The installed version is always the same as the currently executed `codex-nexus` package.
+If you want a different version, change the package version at invocation time.
 
 ## Installation scopes
 
@@ -118,17 +116,17 @@ Re-run install to move to the latest compatible version:
 npx -y codex-nexus install --scope user
 ```
 
-To pin a version explicitly:
+To install a specific version explicitly:
 
 ```bash
-npx -y codex-nexus install --scope user --version 0.3.1
+npx -y codex-nexus@<version> install --scope user
+bunx codex-nexus@<version> install --scope user
 ```
 
-The installer also aligns the pinned `@moreih29/nexus-core` version from the selected `codex-nexus` package.
+The installer also aligns the pinned `@moreih29/nexus-core` version from the currently executed `codex-nexus` package.
 
 ## Notes
 
-- Versions below `0.3.0` are intentionally blocked by the current installer.
 - Hooks are merged into Codex config-layer `hooks.json`.
 - For project installs, the installer adds a minimal local-config ignore set to `.gitignore`.
 

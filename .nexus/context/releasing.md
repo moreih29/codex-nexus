@@ -59,11 +59,11 @@ CI 기준으로는 아래 워크플로우가 준비되어 있어야 한다.
 
 아래 항목은 자동 테스트와 별도로 사람이 직접 확인한다.
 
-### 3-1. Installer 호환 버전 확인
+### 3-1. Installer 실행 버전 확인
 
-- interactive install 에서 호환되는 버전만 보여야 한다
-- `0.3.0` 미만 버전은 선택지에 나오면 안 된다
-- `0.3.0` 미만 버전을 직접 `--version` 으로 넣으면 호환 불가 에러가 나야 한다
+- installer는 현재 실행 중인 `codex-nexus` 버전만 설치해야 한다
+- installer 내부에서 별도 버전 선택 UI가 없어야 한다
+- 특정 버전을 설치하려면 `npx -y codex-nexus@<version> install` 또는 `bunx codex-nexus@<version> install` 로 호출해야 한다
 
 ### 3-2. User scope 스모크 테스트
 
@@ -82,7 +82,7 @@ CI 기준으로는 아래 워크플로우가 준비되어 있어야 한다.
 
 - `model_instructions_file` 이 절대경로가 아니라 상대경로인가
 - hooks 가 개발 레포 경로가 아니라 설치된 package store 경로를 바라보는가
-- `mcp_servers.nx` 가 선택한 `codex-nexus` 버전에 맞는 `@moreih29/nexus-core` pin을 쓰는가
+- `mcp_servers.nx` 가 실행한 `codex-nexus` 버전에 맞는 `@moreih29/nexus-core` pin을 쓰는가
 
 ### 3-3. Project scope 스모크 테스트
 
@@ -142,4 +142,4 @@ CI 기준으로는 아래 워크플로우가 준비되어 있어야 한다.
 - 설치된 hooks 가 개발 레포 경로를 바라봄
 - `model_instructions_file` 이 머신 의존 절대경로로 기록됨
 - `package.json`, README 예시, git tag 사이에 버전 불일치가 있음
-- 선택한 `codex-nexus` 버전과 실제 적용된 `@moreih29/nexus-core` 버전이 어긋남
+- 실행한 `codex-nexus` 버전과 실제 적용된 `@moreih29/nexus-core` 버전이 어긋남

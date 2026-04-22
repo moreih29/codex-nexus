@@ -16,40 +16,9 @@ const PACKAGE_VERSION = PACKAGE_JSON.version;
 const PLUGIN_NAME = "codex-nexus";
 const LEAD_INSTRUCTIONS_FILE = "lead.instructions.md";
 const TEST_PACKAGE_ROOT_ENV = "CODEX_NEXUS_TEST_PACKAGE_ROOT";
-const TEST_VERSIONS_ENV = "CODEX_NEXUS_TEST_VERSIONS";
-const MIN_COMPATIBLE_VERSION = "0.3.0";
 
 function safeObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-}
-
-function parseSemver(version) {
-  const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(version.trim());
-  if (!match) {
-    return null;
-  }
-
-  return {
-    major: Number(match[1]),
-    minor: Number(match[2]),
-    patch: Number(match[3])
-  };
-}
-
-function compareSemver(left, right) {
-  const a = parseSemver(left);
-  const b = parseSemver(right);
-  if (!a || !b) {
-    throw new Error(`Unable to compare versions "${left}" and "${right}".`);
-  }
-
-  if (a.major !== b.major) return a.major - b.major;
-  if (a.minor !== b.minor) return a.minor - b.minor;
-  return a.patch - b.patch;
-}
-
-function isCompatibleVersion(version) {
-  return compareSemver(version, MIN_COMPATIBLE_VERSION) >= 0;
 }
 
 function npmExecutable() {
@@ -166,22 +135,6 @@ function resolveScopePaths(scope, cwd = process.cwd(), env = process.env) {
   };
 }
 
-function parseVersionsOverride(raw) {
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) {
-      return parsed.filter((value) => typeof value === "string" && value.trim().length > 0);
-    }
-  } catch {
-    // Fall through to comma-delimited parsing.
-  }
-
-  return raw
-    .split(",")
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0);
-}
-
 async function runCommand(command, args, cwd, env = process.env) {
   return await new Promise((resolve, reject) => {
     const child = spawn(command, args, {
@@ -207,27 +160,6 @@ async function runCommand(command, args, cwd, env = process.env) {
       reject(new Error(stderrText.trim() || `${command} ${args.join(" ")} exited with code ${code}`));
     });
   });
-}
-
-async function fetchPublishedVersions(runtime = {}) {
-  const env = runtime.env ?? process.env;
-  const override = env[TEST_VERSIONS_ENV];
-  if (override) {
-    return parseVersionsOverride(override).filter((value) => isCompatibleVersion(value));
-  }
-
-  const raw = await runCommand(npmExecutable(), ["view", PACKAGE_NAME, "versions", "--json"], runtime.cwd ?? process.cwd(), env);
-  const parsed = JSON.parse(raw);
-
-  if (Array.isArray(parsed)) {
-    return parsed
-      .filter((value) => typeof value === "string" && value.trim().length > 0)
-      .filter((value) => isCompatibleVersion(value));
-  }
-  if (typeof parsed === "string" && parsed.trim().length > 0 && isCompatibleVersion(parsed)) {
-    return [parsed];
-  }
-  return [];
 }
 
 async function readInstalledPackageVersion(packageRoot) {
@@ -477,24 +409,9 @@ async function installCommand(options = {}, runtime = {}) {
   const cwd = runtime.cwd ?? process.cwd();
   const env = runtime.env ?? process.env;
   const scopePaths = resolveScopePaths(scope, cwd, env);
-  const requestedVersion = typeof options.version === "string" && options.version.trim().length > 0
-    ? options.version.trim()
-    : "latest";
-
-  if (requestedVersion !== "latest" && !isCompatibleVersion(requestedVersion)) {
-    throw new Error(
-      `codex-nexus ${requestedVersion} is not compatible with this installer. Minimum compatible version is ${MIN_COMPATIBLE_VERSION}.`
-    );
-  }
-
+  const requestedVersion = PACKAGE_VERSION;
   const installedPackageRoot = await resolveInstalledPackageRoot(scopePaths, requestedVersion, runtime);
   const installedVersion = await readInstalledPackageVersion(installedPackageRoot);
-
-  if (!isCompatibleVersion(installedVersion)) {
-    throw new Error(
-      `Resolved codex-nexus ${installedVersion}, but this installer requires ${MIN_COMPATIBLE_VERSION} or newer. Publish or select a compatible version first.`
-    );
-  }
 
   const assets = await installManagedSurfaces(installedPackageRoot, scopePaths);
 
@@ -598,19 +515,11 @@ function parseArgs(argv) {
       options.scope = token.slice("--scope=".length);
       continue;
     }
-    if (token === "--version" && rest[index + 1]) {
-      options.version = rest[index + 1];
-      index += 1;
-      continue;
-    }
-    if (token.startsWith("--version=")) {
-      options.version = token.slice("--version=".length);
-      continue;
-    }
     if (token === "--help" || token === "-h") {
       options.help = true;
       continue;
     }
+    throw new Error(`Unknown option "${token}". Version selection should be done at invocation time, for example: npx -y codex-nexus@${PACKAGE_VERSION} install`);
   }
 
   return {
@@ -637,71 +546,12 @@ async function promptScope(command, defaultValue = "user") {
   return selection;
 }
 
-async function promptVersion(versions) {
-  if (versions.length === 0) {
-    throw new Error(
-      `No compatible published codex-nexus versions were found. Minimum compatible version is ${MIN_COMPATIBLE_VERSION}.`
-    );
-  }
-
-  const descending = [...versions].reverse();
-  const latestVersion = descending[0];
-
-  const mode = await select({
-    message: "Which codex-nexus version do you want to install?",
-    initialValue: "latest",
-    options: [
-      { value: "latest", label: "latest", hint: latestVersion },
-      { value: "specific", label: "choose a published version" }
-    ]
-  });
-
-  if (isCancel(mode)) {
-    throw new Error("Interrupted");
-  }
-
-  if (mode === "latest") {
-    return "latest";
-  }
-
-  const selectedVersion = await select({
-    message: "Select a published codex-nexus version",
-    initialValue: latestVersion,
-    options: descending.map((version, index) => ({
-      value: version,
-      label: version,
-      hint: index === 0 ? "Latest published" : undefined
-    }))
-  });
-
-  if (isCancel(selectedVersion)) {
-    throw new Error("Interrupted");
-  }
-
-  return selectedVersion;
-}
-
 async function resolveInstallOptions(parsed, runtime = {}) {
   const interactive = isInteractiveTerminal();
   const options = { ...parsed.options };
 
   if (options.scope && !normalizeScope(options.scope)) {
     throw new Error(`Invalid --scope value "${options.scope}". Expected "user" or "project".`);
-  }
-
-  if (!options.version && interactive) {
-    const s = spinner();
-    s.start("Fetching published codex-nexus versions");
-    try {
-      const versions = await fetchPublishedVersions(runtime);
-      s.stop("Fetched published versions");
-      options.version = await promptVersion(versions);
-    } catch (error) {
-      s.stop("Failed to fetch published versions");
-      throw error;
-    }
-  } else if (!options.version) {
-    options.version = PACKAGE_VERSION;
   }
 
   if (!options.scope && interactive) {
@@ -734,7 +584,7 @@ function printHelp() {
   process.stdout.write(`codex-nexus
 
 Usage:
-  codex-nexus install [--scope user|project] [--version <version|latest>]
+  codex-nexus install [--scope user|project]
   codex-nexus doctor [--scope user|project]
 `);
 }
@@ -788,7 +638,7 @@ async function runCli(argv = process.argv, runtime = {}) {
   return 1;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (import.meta.main) {
   try {
     process.exitCode = await runCli();
   } catch (error) {
@@ -799,7 +649,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 
 export {
   doctorCommand,
-  fetchPublishedVersions,
   formatDoctorSummary,
   formatInstallSummary,
   installCommand,
