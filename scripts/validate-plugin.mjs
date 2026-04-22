@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { readAgentNxServerConfigs } from "./lib/nx-agent-mcp.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const packageJsonPath = path.join(repoRoot, "package.json");
@@ -50,6 +51,7 @@ assert(pkg.bin?.["codex-nexus-hook"] === "./scripts/codex-nexus-hook.mjs", "pack
 assert(pkg.bin?.["codex-nexus"] === "./scripts/codex-nexus.mjs", "package bin must expose codex-nexus.");
 assert(Array.isArray(pkg.files), "package.json files must be an array.");
 assert(pkg.files.includes("plugins"), "package.json files must include the publishable plugins directory.");
+assert(pkg.files.includes("scripts/lib/nx-agent-mcp.mjs"), "package.json files must include the shared nx agent MCP helper.");
 assert(!pkg.files.includes(".codex"), "package.json files must not include local .codex install artifacts.");
 assert(!pkg.files.includes(".agents"), "package.json files must not include local .agents install artifacts.");
 
@@ -63,6 +65,9 @@ for (const skillName of requiredSkills) {
 
 assert(existsSync(path.join(agentsPath, "lead.toml")), "Missing generated lead agent.");
 assert(readdirSync(agentsPath).length >= 3, "Expected multiple generated agents in plugins/codex-nexus/agents.");
+for (const agent of readAgentNxServerConfigs(agentsPath)) {
+  assert(agent.command !== "nexus-mcp", `Agent ${agent.file} must not use bare nexus-mcp.`);
+}
 
 for (const assetPath of [manifest.interface.composerIcon, manifest.interface.logo]) {
   assert(existsSync(path.join(pluginRoot, assetPath.replace(/^\.\//, ""))), `Missing asset referenced by plugin manifest: ${assetPath}`);

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { readAgentNxServerConfigs } from "../scripts/lib/nx-agent-mcp.mjs";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
 const pluginRoot = path.join(repoRoot, "plugins", "codex-nexus");
@@ -26,6 +27,7 @@ test("wrapper metadata stays aligned", () => {
   expect(pkg.bin["codex-nexus"]).toBe("./scripts/codex-nexus.mjs");
   expect(existsSync(path.join(pluginRoot, "lead.instructions.md"))).toBe(true);
   expect(pkg.files).toContain("plugins");
+  expect(pkg.files).toContain("scripts/lib/nx-agent-mcp.mjs");
   expect(pkg.files).not.toContain(".codex");
   expect(pkg.files).not.toContain(".agents");
 });
@@ -35,4 +37,16 @@ test("generated nexus-core artifacts are present", () => {
   expect(existsSync(path.join(pluginRoot, "skills", "nx-plan", "SKILL.md"))).toBe(true);
   expect(existsSync(path.join(pluginRoot, "skills", "nx-run", "SKILL.md"))).toBe(true);
   expect(existsSync(path.join(pluginRoot, "agents", "lead.toml"))).toBe(true);
+});
+
+test("generated subagent nx MCP config stays launchable", () => {
+  const pkg = readJson(path.join(repoRoot, "package.json"));
+  const agentNxConfigs = readAgentNxServerConfigs(path.join(pluginRoot, "agents"));
+
+  expect(agentNxConfigs.length).toBeGreaterThan(0);
+  for (const agent of agentNxConfigs) {
+    expect(agent.command).not.toBe("nexus-mcp");
+    expect(agent.command).toBe("npx");
+    expect(agent.args).toEqual(["-y", "-p", `@moreih29/nexus-core@${pkg.dependencies["@moreih29/nexus-core"]}`, "nexus-mcp"]);
+  }
 });

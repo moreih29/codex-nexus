@@ -209,5 +209,11 @@ Artifact: <saved review report filename or "inline">
 model = "gpt-5.3-codex"
 
 [mcp_servers.nx]
-command = "nexus-mcp"
-disabled_tools = ["nx_task_add", "nx_task_close", "spawn_agent", "request_user_input"]
+command = "npx"
+args = [ "-y", "-p", "@moreih29/nexus-core@0.19.0", "nexus-mcp" ]
+disabled_tools = [
+  "nx_task_add",
+  "nx_task_close",
+  "spawn_agent",
+  "request_user_input"
+]

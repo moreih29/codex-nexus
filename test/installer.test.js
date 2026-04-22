@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { doctorCommand, installCommand, resolveNexusCorePackageRoot } from "../scripts/codex-nexus.mjs";
+import { readAgentNxServerConfigs } from "../scripts/lib/nx-agent-mcp.mjs";
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
@@ -33,6 +34,13 @@ test("project install wires plugin, config, hooks, agents, and skills", async ()
     expect(readFileSync(path.join(repoRoot, ".codex", "hooks.json"), "utf8")).toContain(path.resolve(path.join(import.meta.dir, "..", "scripts", "codex-nexus-hook.mjs")));
     expect(readFileSync(path.join(repoRoot, ".gitignore"), "utf8")).toContain(".codex/");
     expect(readFileSync(path.join(repoRoot, ".gitignore"), "utf8")).toContain(".agents/");
+    const installedAgentNxConfigs = readAgentNxServerConfigs(path.join(repoRoot, ".codex", "agents"));
+    expect(installedAgentNxConfigs.length).toBeGreaterThan(0);
+    for (const agent of installedAgentNxConfigs) {
+      expect(agent.command).not.toBe("nexus-mcp");
+      expect(agent.command).toBe(process.execPath);
+      expect(agent.args[0]).toContain("dist/mcp/server.js");
+    }
 
     const marketplace = readJson(path.join(repoRoot, ".agents", "plugins", "marketplace.json"));
     expect(marketplace.plugins[0].source.path).toBe("./plugins/codex-nexus");
@@ -59,6 +67,13 @@ test("user install targets home-scoped marketplace and codex directories", async
     expect(existsSync(path.join(homeDir, ".agents", "skills", "nx-run", "SKILL.md"))).toBe(true);
     expect(readFileSync(path.join(homeDir, ".codex", "config.toml"), "utf8")).not.toContain('command = "npx"');
     expect(readFileSync(path.join(homeDir, ".codex", "config.toml"), "utf8")).toContain("dist/mcp/server.js");
+    const installedAgentNxConfigs = readAgentNxServerConfigs(path.join(homeDir, ".codex", "agents"));
+    expect(installedAgentNxConfigs.length).toBeGreaterThan(0);
+    for (const agent of installedAgentNxConfigs) {
+      expect(agent.command).not.toBe("nexus-mcp");
+      expect(agent.command).toBe(process.execPath);
+      expect(agent.args[0]).toContain("dist/mcp/server.js");
+    }
 
     const marketplace = readJson(path.join(homeDir, ".agents", "plugins", "marketplace.json"));
     expect(marketplace.plugins[0].source.path).toBe("./.codex/plugins/codex-nexus");
@@ -88,6 +103,7 @@ test("published-style install includes nexus-core dependency", () => {
     const installedPackageRoot = path.join(installDir, "node_modules", "codex-nexus");
     const nexusCoreRoot = resolveNexusCorePackageRoot(installedPackageRoot);
 
+    expect(existsSync(path.join(installedPackageRoot, "scripts", "lib", "nx-agent-mcp.mjs"))).toBe(true);
     expect(existsSync(path.join(nexusCoreRoot, "package.json"))).toBe(true);
     expect(existsSync(path.join(nexusCoreRoot, "dist", "mcp", "server.js"))).toBe(true);
   } finally {

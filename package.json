@@ -38,6 +38,7 @@
     "README.en.md",
     "plugins",
     "scripts/codex-nexus.mjs",
+    "scripts/lib/nx-agent-mcp.mjs",
     "scripts/codex-nexus-hook.mjs",
     "README.md"
   ],

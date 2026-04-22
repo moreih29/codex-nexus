@@ -35,6 +35,112 @@
           "created_at": "2026-04-22T12:05:19.648Z"
         }
       ]
+    },
+    {
+      "schema_version": "1.0",
+      "completed_at": "2026-04-22T13:03:46.870Z",
+      "branch": "fix/subagent-nx-mcp-startup",
+      "plan": {
+        "id": 2,
+        "topic": "Fix recurring subagent nx MCP startup failure in codex-nexus installs",
+        "issues": [
+          {
+            "id": 1,
+            "title": "Identify the precise root cause and authoritative fix shape for subagent nx MCP configuration",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "lead",
+                "summary": "Root cause is a configuration mismatch between the main Codex session and spawned subagents. The installer writes `.codex/config.toml` so the main session launches the `nx` MCP server through the current runtime plus an absolute `@moreih29/nexus-core/dist/mcp/server.js` path, explicitly avoiding PATH-dependent commands. But every generated non-lead subagent TOML overrides `[mcp_servers.nx]` with `command = \"nexus-mcp\"`, which requires a bare executable on PATH. In this repo, `command -v nexus-mcp` is empty, matching the observed `MCP startup failed: No such file or directory (os error 2)`. Official Codex docs say MCP servers are configured under `config.toml`, and custom agent files are configuration layers; optional fields like `mcp_servers` inherit from the parent when omitted. Public Codex issue reports (#2945, #4754) show the same class of failure when the configured MCP command cannot be launched.",
+                "recorded_at": "2026-04-22T12:59:28.769Z"
+              }
+            ],
+            "decision": "Selected approach: treat the failure as a bad subagent MCP launcher configuration, not as an nx MCP server defect. The authoritative fix should make subagent agent files launch `nx` with a resolvable command instead of bare `nexus-mcp`, while preserving the existing `disabled_tools` restrictions for each role. Rationale: official Codex docs define MCP launch through `mcp_servers.<id>.command/args` in config, and the current installer already uses a concrete runtime + absolute server path for the main session; the bug appears only because spawned subagents override that with an unresolved command. Rejected alternatives: (1) ask users to install `nexus-mcp` globally or patch PATH — rejected because it contradicts the package’s documented promise to avoid PATH dependence and would remain fragile across environments; (2) leave source files unchanged and only document the limitation — rejected because the failure is deterministic and breaks a core workflow; (3) remove subagent `mcp_servers.nx` sections entirely and rely on inheritance — rejected because it would also remove current per-role `disabled_tools` restrictions unless we rely on subtler merge behavior than needed."
+          },
+          {
+            "id": 2,
+            "title": "Implement the code change so installed subagents no longer depend on a missing bare `nexus-mcp` executable",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "lead",
+                "summary": "The safest repair is two-stage normalization. First, normalize tracked plugin agent specs after `sync:core` so they no longer ship a bare `nexus-mcp` command; instead they should use the same pinned package-based launcher shape as the plugin `.mcp.json` (`command = \"npx\"` plus `-y -p @moreih29/nexus-core@<version> nexus-mcp`). Second, during `codex-nexus install`, rewrite the copied agent TOMLs in both the installed plugin copy and `.codex/agents` to the already-proven local-runtime shape (`command = <process.execPath>`, `args = [<absolute dist/mcp/server.js>]`). This preserves disabled tool lists, keeps publishable source self-consistent, and preserves the installer’s stronger PATH-independent guarantee for real user installs.",
+                "recorded_at": "2026-04-22T12:59:40.580Z"
+              }
+            ],
+            "decision": "Selected implementation: introduce shared helper logic that rewrites the `[mcp_servers.nx]` block in generated agent TOMLs while preserving each file’s `disabled_tools`. Use that helper in two places: (a) `sync-from-nexus-core.mjs` to rewrite publishable plugin agent specs to a pinned `npx -y -p @moreih29/nexus-core@<version> nexus-mcp` launcher, and (b) `codex-nexus.mjs` install flow to rewrite copied agent specs to the stronger runtime-specific launcher (`process.execPath` + absolute installed `dist/mcp/server.js` path). Also teach install health checks to catch regressions. Rationale: this matches official Codex MCP configuration semantics, aligns source/plugin/install layers, and avoids reliance on a globally installed executable. Rejected alternatives: (1) patch only `.codex/config.toml` — rejected because subagent agent files currently override the server and would still win; (2) patch only source plugin files to `npx` and stop there — rejected because it still leaves installed subagents PATH-dependent when the installer already promises a stronger invariant; (3) patch only installed `.codex/agents` and ignore plugin copies/source — rejected because it leaves the package’s publishable artifacts internally inconsistent and easier to regress on the next sync."
+          },
+          {
+            "id": 3,
+            "title": "Add regression coverage so future syncs or releases do not reintroduce PATH-dependent subagent MCP launch behavior",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "lead",
+                "summary": "Current tests verify the main `.codex/config.toml` uses a resolved server path, but they never assert anything about installed subagent TOMLs. That gap allowed the regression. Coverage should assert both layers: source plugin agent specs should not contain `command = \"nexus-mcp\"`, and installed `.codex/agents/*.toml` should inherit the installer’s runtime-specific command plus absolute server path. A lightweight doctor/validation check can fail fast on broken installs before the user reaches a subagent flow.",
+                "recorded_at": "2026-04-22T12:59:54.975Z"
+              }
+            ],
+            "decision": "Selected regression strategy: expand automated tests and lightweight validation to cover subagent MCP launch configuration explicitly. Add assertions that tracked plugin agent specs do not use a bare `nexus-mcp` command, and that installed `.codex/agents` use the installer runtime plus absolute `dist/mcp/server.js` path. Add a doctor/validation signal for malformed installed agent MCP blocks. Rationale: the bug only manifested in spawned subagents, so config-level coverage on both source and installed artifacts is the right permanent guardrail. Rejected alternatives: (1) rely only on manual reproduction with spawned agents — rejected because it is slow, brittle, and hard to automate in CI; (2) add only README guidance — rejected because documentation cannot prevent silent regression in generated config; (3) add only one source-side test — rejected because the real failure happened after installation, so both source and installed outputs must be checked."
+          }
+        ],
+        "research_summary": "Local repo evidence: the installer intentionally writes .codex/config.toml with an absolute runtime command plus the installed @moreih29/nexus-core dist/mcp/server.js path, explicitly avoiding PATH-dependent npx/nexus-mcp launch. However every generated non-lead subagent TOML under plugins/codex-nexus/agents hardcodes [mcp_servers.nx] command = \"nexus-mcp\" plus disabled_tools. In this repo, `command -v nexus-mcp` returns nothing, while node_modules/.bin/nexus-mcp and node_modules/@moreih29/nexus-core/dist/mcp/server.js do exist. README also promises that nx MCP is wired through the installer runtime and absolute server path rather than relying on PATH. Official Codex docs say custom agent files are configuration layers and optional fields such as mcp_servers inherit from the parent session when omitted; Codex MCP docs define command/args/cwd on [mcp_servers.<id>] and note project/user config.toml is the canonical MCP config surface. OpenAI Codex docs: https://developers.openai.com/codex/subagents, https://developers.openai.com/codex/mcp, https://developers.openai.com/codex/config-reference. Similar public cases exist in openai/codex issue tracker where MCP startup fails with program not found / os error 2 when the configured command cannot be launched, e.g. issue #2945 and #4754.",
+        "created_at": "2026-04-22T12:58:04.094Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Add reusable nx subagent MCP normalization and apply it during install",
+          "status": "completed",
+          "context": "Subagent agent TOMLs currently hardcode `[mcp_servers.nx] command = \"nexus-mcp\"`, which fails with `No such file or directory (os error 2)` when Codex spawns child agents and the bare executable is not on PATH. The installer already knows the correct runtime command and absolute `@moreih29/nexus-core/dist/mcp/server.js` path.",
+          "acceptance": "`codex-nexus install` rewrites installed subagent TOMLs so they no longer contain `command = \"nexus-mcp\"`; installed `.codex/agents/*.toml` use the runtime command and absolute installed server path; role-specific `disabled_tools` entries remain intact.",
+          "approach": "Introduce helper logic to rewrite the `[mcp_servers.nx]` block in agent TOMLs while preserving each file’s `disabled_tools`. Use it during `codex-nexus install` so both the installed plugin copy and `.codex/agents` point to `process.execPath` plus the resolved `dist/mcp/server.js` path.",
+          "risk": "If TOML rewriting is too broad it could accidentally disturb long instruction blocks or unrelated agent configuration.",
+          "plan_issue": 2,
+          "owner": {
+            "role": "lead",
+            "resume_tier": "ephemeral"
+          },
+          "created_at": "2026-04-22T13:00:14.289Z"
+        },
+        {
+          "id": 2,
+          "title": "Normalize tracked plugin agent specs and add install-time validation",
+          "status": "completed",
+          "context": "The publishable plugin artifacts under `plugins/codex-nexus/agents` are the tracked source of truth for generated Nexus agent files. They currently embed a PATH-dependent nx launcher and can regress again on the next sync if the sync step does not normalize them.",
+          "acceptance": "Tracked plugin agent TOMLs no longer contain bare `command = \"nexus-mcp\"`; sync output is normalized automatically; validation/doctor catches malformed installed agent nx MCP blocks.",
+          "approach": "Teach the sync pipeline to rewrite tracked plugin agent TOMLs to a pinned `npx -y -p @moreih29/nexus-core@<version> nexus-mcp` launcher, and extend validation/doctor checks so broken installed agent MCP wiring is reported before users hit a subagent flow.",
+          "risk": "If publishable source and installed output normalization diverge, the package may become internally inconsistent again.",
+          "plan_issue": 2,
+          "deps": [
+            1
+          ],
+          "owner": {
+            "role": "lead",
+            "resume_tier": "ephemeral"
+          },
+          "created_at": "2026-04-22T13:00:19.636Z"
+        },
+        {
+          "id": 3,
+          "title": "Add regression tests for source and installed subagent nx MCP config",
+          "status": "completed",
+          "context": "Current test coverage checks the main Codex config but not the child-agent TOMLs that actually fail when Nexus spawns subagents.",
+          "acceptance": "Automated tests fail if tracked plugin agent TOMLs regress to `command = \"nexus-mcp\"`; automated tests fail if installed `.codex/agents` omit the runtime command or server path; the existing test suite passes after the fix.",
+          "approach": "Extend plugin layout and installer tests to assert that source plugin agent specs do not use bare `nexus-mcp`, and that installed `.codex/agents` use the installer runtime command and absolute `dist/mcp/server.js` path.",
+          "risk": "Assertions may be too brittle if they depend on formatting rather than the semantic config content.",
+          "plan_issue": 3,
+          "deps": [
+            1,
+            2
+          ],
+          "owner": {
+            "role": "lead",
+            "resume_tier": "ephemeral"
+          },
+          "created_at": "2026-04-22T13:00:24.843Z"
+        }
+      ]
     }
   ]
 }
