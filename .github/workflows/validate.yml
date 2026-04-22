@@ -1,0 +1,47 @@
+name: Validate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3"
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Sync generated assets
+        run: bun run sync:core
+
+      - name: Run project checks
+        run: bun run check
+
+      - name: Verify CLI help
+        run: node scripts/codex-nexus.mjs --help
+
+      - name: Verify local doctor
+        run: node scripts/codex-nexus.mjs doctor --scope project
+
+      - name: Verify npm package contents
+        run: npm pack --dry-run
