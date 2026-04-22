@@ -6,19 +6,8 @@ import path from "node:path";
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const packageJsonPath = path.join(repoRoot, "package.json");
 const pluginRoot = path.join(repoRoot, "plugins", "codex-nexus");
-const projectCodexRoot = path.join(repoRoot, ".codex");
-const projectAgentsSkillRoot = path.join(repoRoot, ".agents", "skills");
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 const nexusCoreVersion = packageJson.dependencies?.["@moreih29/nexus-core"];
-const nexusCoreServerPath = path.join(
-  repoRoot,
-  "node_modules",
-  "@moreih29",
-  "nexus-core",
-  "dist",
-  "mcp",
-  "server.js"
-);
 const nexusCoreSpecLeadPath = path.join(
   repoRoot,
   "node_modules",
@@ -65,23 +54,6 @@ function writeLeadInstructions() {
   const leadInstructions = stripFrontmatter(leadSpec).trim() + "\n";
 
   writeFile(path.join(pluginRoot, "lead.instructions.md"), leadInstructions);
-  writeFile(path.join(projectCodexRoot, "lead.instructions.md"), leadInstructions);
-}
-
-function writeProjectCodexConfig() {
-  const config = `model_instructions_file = "lead.instructions.md"
-
-[features]
-multi_agent = true
-child_agents_md = true
-codex_hooks = true
-
-[mcp_servers.nx]
-command = "${process.execPath}"
-args = ["${nexusCoreServerPath}"]
-`;
-
-  writeFile(path.join(projectCodexRoot, "config.toml"), config);
 }
 
 const stagingRoot = mkdtempSync(path.join(tmpdir(), "codex-nexus-sync-"));
@@ -98,10 +70,7 @@ try {
 
   replaceDirectory(path.join(stagingRoot, ".codex", "skills"), path.join(pluginRoot, "skills"));
   replaceDirectory(path.join(stagingRoot, ".codex", "agents"), path.join(pluginRoot, "agents"));
-  replaceDirectory(path.join(stagingRoot, ".codex", "agents"), path.join(projectCodexRoot, "agents"));
-  replaceDirectory(path.join(stagingRoot, ".codex", "skills"), projectAgentsSkillRoot);
   writeLeadInstructions();
-  writeProjectCodexConfig();
 
   console.log(`Synced Codex artifacts from @moreih29/nexus-core@${nexusCoreVersion}.`);
 } finally {

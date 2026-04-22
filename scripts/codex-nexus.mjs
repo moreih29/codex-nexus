@@ -78,9 +78,8 @@ function ensureProjectGitignore(projectRoot) {
   const gitignorePath = path.join(projectRoot, ".gitignore");
   const requiredLines = [
     ".nexus/state/",
-    ".codex/config.toml",
-    ".codex/hooks.json",
-    ".codex/packages/"
+    ".codex/",
+    ".agents/"
   ];
 
   const existing = readTextIfExists(gitignorePath) ?? "";

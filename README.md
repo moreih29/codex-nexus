@@ -132,13 +132,13 @@ installer는 현재 실행 중인 `codex-nexus` 버전에 맞춰 `@moreih29/nexu
 
 - 훅은 Codex의 config-layer `hooks.json`에 병합된다.
 - `nx` MCP는 `npx`가 아니라 설치 시점 런타임 절대경로를 사용한다.
-- project scope 설치 시 `.gitignore`에는 로컬 설정 파일용 최소 항목만 자동으로 추가된다.
+- project scope 설치 시 `.gitignore`에는 로컬 install artifact 디렉터리용 ignore 항목이 자동으로 추가된다.
 
-## 배포 저장소로서의 구조
+## 저장소 구조
 
-이 저장소는 Codex marketplace 스타일 구조를 따른다.
+추적되는 publishable source of truth는 `plugins/codex-nexus` 아래에 있다.
 
-- `.agents/plugins/marketplace.json`
 - `plugins/codex-nexus/.codex-plugin/plugin.json`
 
-하지만 최종 사용자는 보통 이 경로를 직접 만질 필요가 없다. 실제 사용은 `codex-nexus install` 기준으로 보면 된다.
+반면 repo root의 `.codex`, `.agents`는 project scope 설치 시 생기는 로컬 산출물이며, 소스로 추적하지 않는다.
+최종 사용자는 보통 이 경로를 직접 만질 필요가 없다. 실제 사용은 `codex-nexus install` 기준으로 보면 된다.

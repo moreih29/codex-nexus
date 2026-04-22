@@ -1,0 +1,40 @@
+{
+  "cycles": [
+    {
+      "schema_version": "1.0",
+      "completed_at": "2026-04-22T12:10:32.953Z",
+      "branch": "chore/nexus-core-0.19.0",
+      "plan": {
+        "id": 1,
+        "topic": "Restructure codex-nexus repo to stop tracking project-scope install artifacts in .codex/.agents",
+        "issues": [
+          {
+            "id": 1,
+            "title": "Separate publishable plugin sources from project-scope install artifacts so repo-root .codex/.agents no longer need to be tracked while sync, validate, and install guarantees remain intact.",
+            "status": "decided",
+            "decision": "Selected approach: treat plugins/codex-nexus/** as the only tracked publishable plugin source, stop using repo-root .codex/.agents as tracked validation fixtures, narrow sync-from-nexus-core.mjs to sync publishable plugin assets only, and move install-behavior verification to tests that create temporary installs. Update validation and layout tests so they verify publishable assets plus installer behavior instead of requiring tracked repo-root .codex/.agents. Rejected alternative A: keep the current mixed model and only untrack .codex/config.toml and .codex/hooks.json; dismissed because .agents/.codex would remain semantically ambiguous and repo self-install artifacts would still leak into source control. Rejected alternative B: keep tracked fixtures but move them to test/fixtures/project-install; dismissed because stable fixture snapshots would still duplicate installer behavior already covered by installer tests and would add more sync surface to maintain."
+          }
+        ],
+        "research_summary": "Inspected scripts/sync-from-nexus-core.mjs, scripts/validate-plugin.mjs, test/plugin-layout.test.js, test/installer.test.js, README, package manifest, and current git state. Findings: (1) plugins/codex-nexus/** is the publishable source of truth; package.files excludes .codex and .agents. (2) Repo-root .codex/.agents are currently treated as tracked generated fixtures: sync-from-nexus-core.mjs writes .codex/agents, .codex/lead.instructions.md, .codex/config.toml, and .agents/skills into the repo root. (3) validate-plugin.mjs and plugin-layout.test.js assert repo-root .codex/.agents exist, while installer.test already validates true project-scope and user-scope installs in temporary directories. (4) .codex/config.toml, .codex/hooks.json, and .codex/packages are local install outputs and create git noise; current branch already has local modifications there. (5) No prior Nexus history exists for this topic.",
+        "created_at": "2026-04-22T12:04:54.723Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Refactor repo to stop tracking project-scope install artifacts under .codex/.agents",
+          "status": "completed",
+          "context": "Repo currently mixes publishable plugin sources (plugins/codex-nexus/**) with tracked project-scope install outputs under .codex and .agents. sync-from-nexus-core.mjs writes repo-root .codex/.agents, validate-plugin.mjs and plugin-layout.test.js require them, and local installs create git noise. installer.test already covers real project/user installs in temp directories.",
+          "acceptance": "1. Repo no longer requires tracked repo-root .codex/.agents artifacts for validate/check/test. 2. scripts/sync-from-nexus-core.mjs syncs publishable plugin assets without rewriting repo-root project-install outputs. 3. .gitignore ignores repo-root .codex/ and .agents/ as local install artifacts. 4. Previously tracked repo-root .codex/.agents files are removed from git index but remain ignored locally. 5. bun run validate and bun run check both pass after the refactor.",
+          "approach": "Make plugins/codex-nexus/** the tracked source of truth. Update sync-from-nexus-core.mjs to stop writing repo-root .codex/.agents. Narrow validate-plugin.mjs and plugin-layout.test.js to publishable/plugin-source checks, relying on installer.test for install-path behavior. Update .gitignore and repo docs accordingly, then untrack repo-root .codex/.agents artifacts from git while leaving local files on disk.",
+          "risk": "Validation/test assumptions may still implicitly depend on repo-root .codex/.agents, causing breakage until all references are removed.",
+          "plan_issue": 1,
+          "owner": {
+            "role": "lead",
+            "resume_tier": "ephemeral"
+          },
+          "created_at": "2026-04-22T12:05:19.648Z"
+        }
+      ]
+    }
+  ]
+}

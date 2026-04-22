@@ -31,7 +31,8 @@ test("project install wires plugin, config, hooks, agents, and skills", async ()
     expect(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8")).not.toContain('command = "npx"');
     expect(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8")).toContain("dist/mcp/server.js");
     expect(readFileSync(path.join(repoRoot, ".codex", "hooks.json"), "utf8")).toContain(path.resolve(path.join(import.meta.dir, "..", "scripts", "codex-nexus-hook.mjs")));
-    expect(readFileSync(path.join(repoRoot, ".gitignore"), "utf8")).toContain(".codex/config.toml");
+    expect(readFileSync(path.join(repoRoot, ".gitignore"), "utf8")).toContain(".codex/");
+    expect(readFileSync(path.join(repoRoot, ".gitignore"), "utf8")).toContain(".agents/");
 
     const marketplace = readJson(path.join(repoRoot, ".agents", "plugins", "marketplace.json"));
     expect(marketplace.plugins[0].source.path).toBe("./plugins/codex-nexus");

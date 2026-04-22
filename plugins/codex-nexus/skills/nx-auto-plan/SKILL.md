@@ -96,7 +96,7 @@ Use `nx_plan_decide` to mark the issue as decided. The decision text MUST includ
 - The selected approach and its rationale
 - The rejected alternatives and their dismissal reasons
 
-If HOW subagents participated in the issue, bundle their contribution information so it can be referenced in future resumes and Step 7 task decomposition.
+`nx_plan_decide` records only the final decision text and decision state — it does **not** append to `analysis`. If HOW subagents participated, their analysis and resume-routing records must already have been written via `nx_plan_analysis_add` in Step 4, and Step 7 should reference those records directly.
 
 If the decision creates follow-up questions or derived issues, add them with `nx_plan_update` and move to Step 6. Do not ask the user for confirmation.
 

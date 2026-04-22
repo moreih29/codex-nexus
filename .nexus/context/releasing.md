@@ -128,7 +128,9 @@ CI 기준으로는 아래 워크플로우가 준비되어 있어야 한다.
 
 추가 확인:
 
-- `.gitignore` 에 필요한 최소 항목만 추가되었는가
+- `.gitignore` 에 project-local install artifact 용 ignore 항목이 추가되었는가
+  - `.codex/`
+  - `.agents/`
 
 ### 3-4. npm / Trusted Publishing 확인
 

@@ -130,13 +130,13 @@ The installer also aligns the pinned `@moreih29/nexus-core` version from the cur
 
 - Hooks are merged into Codex config-layer `hooks.json`.
 - `nx` MCP uses the installer runtime path rather than a bare `npx` command.
-- For project installs, the installer adds a minimal local-config ignore set to `.gitignore`.
+- For project installs, the installer adds ignore entries for local install artifact directories to `.gitignore`.
 
-## Marketplace layout
+## Repository layout
 
-This repository follows the Codex marketplace layout:
+The tracked publishable source of truth lives under `plugins/codex-nexus`.
 
-- `.agents/plugins/marketplace.json`
 - `plugins/codex-nexus/.codex-plugin/plugin.json`
 
+By contrast, repo-root `.codex` and `.agents` are local outputs created by project-scope installs and are not tracked as source.
 Most users do not need to manage those files directly. In practice, `codex-nexus install` is the entry point that matters.

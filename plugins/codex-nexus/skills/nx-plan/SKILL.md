@@ -111,7 +111,7 @@ Issues must be processed one at a time. For each issue:
 
 ### Step 5: Record Decision
 
-When a decision is reached, use `nx_plan_decide` to mark the issue as decided. If HOW subagents participated in the issue, bundle their contribution information so it can be referenced in future resumes and Step 7 task decomposition.
+When a decision is reached, use `nx_plan_decide` to mark the issue as decided. `nx_plan_decide` records only the final decision text and decision state — it does **not** add to `analysis`. All HOW analysis and resume routing records must already be stored via `nx_plan_analysis_add` in Step 4.
 
 - Immediately after recording, check overall progress with `nx_plan_status` and announce the next issue in one line.
 - Check whether new follow-up questions have emerged, and if so, add follow-up issues with `nx_plan_update`.
