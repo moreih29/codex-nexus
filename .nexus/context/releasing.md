@@ -82,6 +82,7 @@ CI 기준으로는 아래 워크플로우가 준비되어 있어야 한다.
 
 - `model_instructions_file` 이 절대경로가 아니라 상대경로인가
 - hooks 가 개발 레포 경로가 아니라 설치된 package store 경로를 바라보는가
+- `mcp_servers.nx` 가 bare `npx` 가 아니라 설치된 런타임 절대경로 + 설치된 `nexus-core` server.js 절대경로를 쓰는가
 - `mcp_servers.nx` 가 실행한 `codex-nexus` 버전에 맞는 `@moreih29/nexus-core` pin을 쓰는가
 
 ### 3-3. Project scope 스모크 테스트

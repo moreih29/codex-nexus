@@ -27,6 +27,8 @@ test("project install wires plugin, config, hooks, agents, and skills", async ()
     expect(existsSync(path.join(repoRoot, ".agents", "skills", "nx-plan", "SKILL.md"))).toBe(true);
     expect(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8")).toContain('model_instructions_file = "lead.instructions.md"');
     expect(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8")).toContain("multi_agent = true");
+    expect(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8")).not.toContain('command = "npx"');
+    expect(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8")).toContain("dist/mcp/server.js");
     expect(readFileSync(path.join(repoRoot, ".codex", "hooks.json"), "utf8")).toContain(path.resolve(path.join(import.meta.dir, "..", "scripts", "codex-nexus-hook.mjs")));
     expect(readFileSync(path.join(repoRoot, ".gitignore"), "utf8")).toContain(".codex/config.toml");
 
@@ -53,6 +55,8 @@ test("user install targets home-scoped marketplace and codex directories", async
     expect(existsSync(path.join(homeDir, ".codex", "plugins", "codex-nexus", ".codex-plugin", "plugin.json"))).toBe(true);
     expect(existsSync(path.join(homeDir, ".codex", "agents", "lead.toml"))).toBe(true);
     expect(existsSync(path.join(homeDir, ".agents", "skills", "nx-run", "SKILL.md"))).toBe(true);
+    expect(readFileSync(path.join(homeDir, ".codex", "config.toml"), "utf8")).not.toContain('command = "npx"');
+    expect(readFileSync(path.join(homeDir, ".codex", "config.toml"), "utf8")).toContain("dist/mcp/server.js");
 
     const marketplace = readJson(path.join(homeDir, ".agents", "plugins", "marketplace.json"));
     expect(marketplace.plugins[0].source.path).toBe("./.codex/plugins/codex-nexus");

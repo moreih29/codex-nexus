@@ -82,6 +82,7 @@ The installer writes or updates:
 - the marketplace entry
 
 This is the important distinction: it does not just copy a plugin folder. It wires the final-user config paths that Codex actually reads.
+It also wires `nx` MCP through the installed runtime plus the installed `nexus-core` server entry, instead of relying on `npx` being present on PATH.
 
 ## Verify the install
 
@@ -128,6 +129,7 @@ The installer also aligns the pinned `@moreih29/nexus-core` version from the cur
 ## Notes
 
 - Hooks are merged into Codex config-layer `hooks.json`.
+- `nx` MCP uses the installer runtime path rather than a bare `npx` command.
 - For project installs, the installer adds a minimal local-config ignore set to `.gitignore`.
 
 ## Marketplace layout

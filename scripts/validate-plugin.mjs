@@ -76,6 +76,14 @@ assert(
   ".codex/config.toml must register mcp_servers.nx."
 );
 assert(
+  !readFileSync(projectCodexConfigPath, "utf8").includes('command = "npx"'),
+  ".codex/config.toml must not rely on npx for nx MCP."
+);
+assert(
+  readFileSync(projectCodexConfigPath, "utf8").includes("dist/mcp/server.js"),
+  ".codex/config.toml must point at the installed nexus-mcp server entry."
+);
+assert(
   readFileSync(projectCodexConfigPath, "utf8").includes("multi_agent = true"),
   ".codex/config.toml must enable features.multi_agent."
 );

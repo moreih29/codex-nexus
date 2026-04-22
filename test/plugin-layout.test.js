@@ -36,6 +36,8 @@ test("wrapper metadata stays aligned", () => {
   expect(projectConfig).toContain("multi_agent = true");
   expect(projectConfig).toContain("child_agents_md = true");
   expect(projectConfig).toContain("[mcp_servers.nx]");
+  expect(projectConfig).not.toContain('command = "npx"');
+  expect(projectConfig).toContain("dist/mcp/server.js");
 });
 
 test("generated nexus-core artifacts are present", () => {

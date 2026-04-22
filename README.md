@@ -84,6 +84,7 @@ installer는 선택한 버전을 기준으로 아래를 맞춰 준다.
 - marketplace entry
 
 즉, 플러그인만 복사하는 것이 아니라 Codex가 실제로 읽는 최종 사용자 경로까지 함께 정리한다.
+또한 `nx` MCP는 `npx` PATH에 의존하지 않도록, 설치된 런타임과 설치된 `nexus-core` server.js 절대경로로 연결한다.
 
 ## 설치 확인
 
@@ -130,6 +131,7 @@ installer는 현재 실행 중인 `codex-nexus` 버전에 맞춰 `@moreih29/nexu
 ## 주의할 점
 
 - 훅은 Codex의 config-layer `hooks.json`에 병합된다.
+- `nx` MCP는 `npx`가 아니라 설치 시점 런타임 절대경로를 사용한다.
 - project scope 설치 시 `.gitignore`에는 로컬 설정 파일용 최소 항목만 자동으로 추가된다.
 
 ## 배포 저장소로서의 구조

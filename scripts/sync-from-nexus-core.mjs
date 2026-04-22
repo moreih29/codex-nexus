@@ -10,6 +10,15 @@ const projectCodexRoot = path.join(repoRoot, ".codex");
 const projectAgentsSkillRoot = path.join(repoRoot, ".agents", "skills");
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 const nexusCoreVersion = packageJson.devDependencies?.["@moreih29/nexus-core"];
+const nexusCoreServerPath = path.join(
+  repoRoot,
+  "node_modules",
+  "@moreih29",
+  "nexus-core",
+  "dist",
+  "mcp",
+  "server.js"
+);
 const nexusCoreSpecLeadPath = path.join(
   repoRoot,
   "node_modules",
@@ -68,8 +77,8 @@ child_agents_md = true
 codex_hooks = true
 
 [mcp_servers.nx]
-command = "npx"
-args = ["-y", "-p", "@moreih29/nexus-core@${nexusCoreVersion}", "nexus-mcp"]
+command = "${process.execPath}"
+args = ["${nexusCoreServerPath}"]
 `;
 
   writeFile(path.join(projectCodexRoot, "config.toml"), config);

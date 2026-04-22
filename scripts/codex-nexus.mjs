@@ -16,6 +16,7 @@ const PACKAGE_VERSION = PACKAGE_JSON.version;
 const PLUGIN_NAME = "codex-nexus";
 const LEAD_INSTRUCTIONS_FILE = "lead.instructions.md";
 const TEST_PACKAGE_ROOT_ENV = "CODEX_NEXUS_TEST_PACKAGE_ROOT";
+const NEXUS_CORE_SERVER_RELATIVE_PATH = path.join("dist", "mcp", "server.js");
 
 function safeObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -30,6 +31,10 @@ function normalizeScope(scope) {
     return scope;
   }
   return null;
+}
+
+function resolveRuntimeCommand() {
+  return process.execPath;
 }
 
 function isInteractiveTerminal() {
@@ -102,6 +107,32 @@ function copyDirectory(sourceDir, destinationDir) {
 
 function resolveHomeDir(env) {
   return env.HOME ?? os.homedir();
+}
+
+function resolveNexusCorePackageRoot(packageRoot) {
+  const candidates = [
+    path.join(packageRoot, "node_modules", "@moreih29", "nexus-core"),
+    path.join(packageRoot, "..", "@moreih29", "nexus-core")
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(path.join(candidate, "package.json"))) {
+      return path.resolve(candidate);
+    }
+  }
+
+  throw new Error(`Unable to resolve installed @moreih29/nexus-core package root from ${packageRoot}`);
+}
+
+function resolveNexusCoreServerPath(packageRoot) {
+  const nexusCorePackageRoot = resolveNexusCorePackageRoot(packageRoot);
+  const serverPath = path.join(nexusCorePackageRoot, NEXUS_CORE_SERVER_RELATIVE_PATH);
+
+  if (!existsSync(serverPath)) {
+    throw new Error(`Unable to resolve installed nexus-mcp server entry at ${serverPath}`);
+  }
+
+  return path.resolve(serverPath);
 }
 
 function resolveScopePaths(scope, cwd = process.cwd(), env = process.env) {
@@ -319,7 +350,14 @@ function managedNxServerConfig(nexusCoreVersion) {
   };
 }
 
-function mergeConfigToml(existingContent, nexusCoreVersion) {
+function managedInstalledNxServerConfig(runtimeCommand, serverPath) {
+  return {
+    command: runtimeCommand,
+    args: [serverPath]
+  };
+}
+
+function mergeConfigToml(existingContent, runtimeCommand, serverPath) {
   const parsed = existingContent ? TOML.parse(existingContent) : {};
   const features = safeObject(parsed.features);
   const mcpServers = safeObject(parsed.mcp_servers);
@@ -333,7 +371,7 @@ function mergeConfigToml(existingContent, nexusCoreVersion) {
   };
   parsed.mcp_servers = {
     ...mcpServers,
-    nx: managedNxServerConfig(nexusCoreVersion)
+    nx: managedInstalledNxServerConfig(runtimeCommand, serverPath)
   };
 
   return TOML.stringify(parsed);
@@ -375,6 +413,8 @@ function mergeMarketplaceJson(existingContent, pluginSourcePath) {
 async function installManagedSurfaces(installedPackageRoot, scopePaths) {
   const pluginSourceRoot = path.join(installedPackageRoot, "plugins", PLUGIN_NAME);
   const nexusCoreVersion = resolveNexusCoreVersion(installedPackageRoot);
+  const runtimeCommand = resolveRuntimeCommand();
+  const nexusCoreServerPath = resolveNexusCoreServerPath(installedPackageRoot);
 
   copyDirectory(pluginSourceRoot, scopePaths.pluginInstallDir);
   copyDirectory(path.join(pluginSourceRoot, "agents"), scopePaths.agentsDir);
@@ -385,7 +425,7 @@ async function installManagedSurfaces(installedPackageRoot, scopePaths) {
   );
   writeText(
     scopePaths.configTomlPath,
-    mergeConfigToml(readTextIfExists(scopePaths.configTomlPath), nexusCoreVersion)
+    mergeConfigToml(readTextIfExists(scopePaths.configTomlPath), runtimeCommand, nexusCoreServerPath)
   );
   writeText(
     scopePaths.hooksJsonPath,
@@ -400,7 +440,9 @@ async function installManagedSurfaces(installedPackageRoot, scopePaths) {
   }
 
   return {
-    nexusCoreVersion
+    nexusCoreVersion,
+    runtimeCommand,
+    nexusCoreServerPath
   };
 }
 
@@ -430,7 +472,9 @@ async function installCommand(options = {}, runtime = {}) {
     leadInstructionsPath: scopePaths.leadInstructionsPath,
     agentsDir: scopePaths.agentsDir,
     skillsDir: scopePaths.skillsDir,
-    nexusCoreVersion: assets.nexusCoreVersion
+    nexusCoreVersion: assets.nexusCoreVersion,
+    runtimeCommand: assets.runtimeCommand,
+    nexusCoreServerPath: assets.nexusCoreServerPath
   };
 }
 
@@ -446,13 +490,25 @@ function doctorCommand(options = {}, runtime = {}) {
   const packageStoreRoot = env[TEST_PACKAGE_ROOT_ENV]
     ? path.resolve(env[TEST_PACKAGE_ROOT_ENV])
     : path.join(paths.packageStoreDir, "node_modules", PACKAGE_NAME);
+  const expectedRuntimeCommand = resolveRuntimeCommand();
+  const expectedNexusCoreServerPath = existsSync(path.join(packageStoreRoot, "package.json"))
+    ? resolveNexusCoreServerPath(packageStoreRoot)
+    : null;
   const usesLocalDevelopmentHooks = hooks.includes(path.join(PACKAGE_ROOT, "scripts", "codex-nexus-hook.mjs")) ||
     hooks.includes("node ./scripts/codex-nexus-hook.mjs");
 
   const checks = [
     { label: "plugin install dir", ok: existsSync(path.join(paths.pluginInstallDir, ".codex-plugin", "plugin.json")) },
     { label: "lead instructions", ok: existsSync(paths.leadInstructionsPath) },
-    { label: "config.toml", ok: existsSync(paths.configTomlPath) && config.includes('model_instructions_file = "lead.instructions.md"') && config.includes("[mcp_servers.nx]") },
+    {
+      label: "config.toml",
+      ok:
+        existsSync(paths.configTomlPath) &&
+        config.includes('model_instructions_file = "lead.instructions.md"') &&
+        config.includes("[mcp_servers.nx]") &&
+        config.includes(`command = "${expectedRuntimeCommand}"`) &&
+        (expectedNexusCoreServerPath === null || config.includes(expectedNexusCoreServerPath))
+    },
     { label: "hooks.json", ok: existsSync(paths.hooksJsonPath) && hasManagedHooks },
     { label: "marketplace.json", ok: existsSync(paths.marketplacePath) && marketplace.includes(paths.pluginSourcePath) },
     { label: ".codex/agents/lead.toml", ok: existsSync(path.join(paths.agentsDir, "lead.toml")) },
@@ -474,6 +530,8 @@ function formatInstallSummary(result) {
     `requested version: ${result.requestedVersion}`,
     `installed version: ${result.installedVersion}`,
     `nexus-core version: ${result.nexusCoreVersion}`,
+    `runtime command: ${result.runtimeCommand}`,
+    `nexus-mcp entry: ${result.nexusCoreServerPath}`,
     `package store: ${result.packageStoreDir}`,
     `plugin: ${result.pluginInstallDir}`,
     `config: ${result.configTomlPath}`,
@@ -656,6 +714,8 @@ export {
   mergeHooksJson,
   mergeMarketplaceJson,
   resolveInstalledPackageRoot,
+  resolveNexusCorePackageRoot,
+  resolveNexusCoreServerPath,
   resolveNexusCoreVersion,
   resolveScopePaths,
   runCli
