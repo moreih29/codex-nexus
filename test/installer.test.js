@@ -2,7 +2,8 @@ import { expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { doctorCommand, installCommand } from "../scripts/codex-nexus.mjs";
+import { execFileSync } from "node:child_process";
+import { doctorCommand, installCommand, resolveNexusCorePackageRoot } from "../scripts/codex-nexus.mjs";
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
@@ -66,5 +67,30 @@ test("user install targets home-scoped marketplace and codex directories", async
   } finally {
     rmSync(homeDir, { recursive: true, force: true });
     rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test("published-style install includes nexus-core dependency", () => {
+  const packDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-pack-"));
+  const installDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-install-"));
+
+  try {
+    const tarballName = execFileSync("npm", ["pack", path.resolve(path.join(import.meta.dir, ".."))], {
+      cwd: packDir,
+      encoding: "utf8"
+    }).trim().split("\n").pop();
+
+    execFileSync("npm", ["install", "--prefix", installDir, path.join(packDir, tarballName)], {
+      encoding: "utf8"
+    });
+
+    const installedPackageRoot = path.join(installDir, "node_modules", "codex-nexus");
+    const nexusCoreRoot = resolveNexusCorePackageRoot(installedPackageRoot);
+
+    expect(existsSync(path.join(nexusCoreRoot, "package.json"))).toBe(true);
+    expect(existsSync(path.join(nexusCoreRoot, "dist", "mcp", "server.js"))).toBe(true);
+  } finally {
+    rmSync(packDir, { recursive: true, force: true });
+    rmSync(installDir, { recursive: true, force: true });
   }
 });

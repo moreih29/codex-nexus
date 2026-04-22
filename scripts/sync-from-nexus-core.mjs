@@ -9,7 +9,7 @@ const pluginRoot = path.join(repoRoot, "plugins", "codex-nexus");
 const projectCodexRoot = path.join(repoRoot, ".codex");
 const projectAgentsSkillRoot = path.join(repoRoot, ".agents", "skills");
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
-const nexusCoreVersion = packageJson.devDependencies?.["@moreih29/nexus-core"];
+const nexusCoreVersion = packageJson.dependencies?.["@moreih29/nexus-core"];
 const nexusCoreServerPath = path.join(
   repoRoot,
   "node_modules",

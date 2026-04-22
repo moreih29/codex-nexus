@@ -7,8 +7,6 @@
       "dependencies": {
         "@clack/prompts": "^0.11.0",
         "@iarna/toml": "^2.2.5",
-      },
-      "devDependencies": {
         "@moreih29/nexus-core": "0.18.2",
       },
     },
