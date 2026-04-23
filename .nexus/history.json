@@ -501,6 +501,79 @@
           "created_at": "2026-04-23T06:45:24.211Z"
         }
       ]
+    },
+    {
+      "schema_version": "1.0",
+      "completed_at": "2026-04-23T08:44:35.212Z",
+      "branch": "fix/preserve-plugin-agent-mcp-source",
+      "plan": {
+        "id": 6,
+        "topic": "Stop rewriting installed plugin bundle agent TOMLs while preserving Codex runtime behavior",
+        "issues": [
+          {
+            "id": 1,
+            "title": "Should installer stop rewriting pluginInstallDir/agents and only rewrite runtime .codex/agents?",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "lead",
+                "summary": "Specific installer-scope issue. Evidence from scripts/codex-nexus.mjs shows project and user installs rewrite both pluginInstallDir/agents and .codex/agents. OpenAI docs place custom agent runtime config under .codex/agents or ~/.codex/agents, while plugin bundle manifest exposes skills/.mcp.json rather than agents. No repo code path was found that consumes rewritten pluginInstallDir/agents at runtime; identified consumers are installer rewrite itself, doctor checks, and tests.",
+                "recorded_at": "2026-04-23T08:41:52.913Z"
+              }
+            ],
+            "decision": "Selected: stop rewriting pluginInstallDir/agents during install and preserve the plugin bundle agent TOMLs as distributed source, while continuing to rewrite runtime .codex/agents. Rationale: the verified Codex runtime surface for custom agents is .codex/agents / ~/.codex/agents, and no identified runtime path in this repo depends on rewritten pluginInstallDir/agents. This removes tracked-source churn and better separates publishable plugin source from runtime-installed agent config. Rejected alternative 1: keep rewriting both locations for symmetry; rejected because the symmetry serves only local installer assumptions, not a verified Codex contract, and it is the direct cause of repo churn/confusion. Rejected alternative 2: move project plugin install path now; rejected because the user explicitly asked to keep the rest unchanged and only stop plugin-bundle agent rewrite. Assumptions: preserved pluginInstallDir/agents remain acceptable because plugin manifest/runtime use of these files is not evidenced in docs or repo runtime code."
+          },
+          {
+            "id": 2,
+            "title": "What repo changes are required in doctor/tests/docs to align with preserved plugin bundle agent TOMLs?",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "lead",
+                "summary": "Specific repo-alignment issue. Evidence from doctor/tests/docs: doctor currently asserts 'plugin agents use resolved nx MCP launcher'; installer tests require pluginInstallDir/agents nx command/args be rewritten; README and releasing docs describe project plugin install dir as part of install output and smoke-test surface. These assumptions must be narrowed so preserved plugin bundle agent TOMLs remain bare nexus-mcp while .codex/agents and config/hooks/marketplace remain validated.",
+                "recorded_at": "2026-04-23T08:41:52.936Z"
+              }
+            ],
+            "decision": "Selected: update repo verification and documentation to validate only runtime-managed surfaces for resolved nx launcher behavior, while treating pluginInstallDir/agents as preserved source/bundle content. Required scope: remove pluginInstallDir/agents rewrite from installer; remove doctor assertion that plugin agents use resolved nx launcher; update installer tests to expect .codex/agents rewritten but pluginInstallDir/agents left bare; update README/releasing guidance to state that plugin bundle copies into pluginInstallDir but its agent TOMLs remain source-shaped while .codex/agents are the rewritten runtime copies. Rejected alternative 1: leave doctor/tests/docs unchanged; rejected because they would falsely fail after the intended behavior change. Rejected alternative 2: delete pluginInstallDir/agents entirely; rejected because it changes plugin bundle contents and exceeds the requested minimal adjustment. Assumptions: preserving plugin bundle agents is still useful as distributed source/template content even if runtime consumes .codex/agents."
+          }
+        ],
+        "research_summary": "Reviewed local repo code, docs, and tests plus OpenAI Codex docs. Verified: project/user session config precedence comes from .codex/config.toml over ~/.codex/config.toml for trusted projects; plugin marketplaces are read from repo and personal marketplace files; custom agents are defined under .codex/agents and ~/.codex/agents. In this repo, installer currently rewrites both .codex/agents and pluginInstallDir/agents. Runtime-facing custom-agent surface is .codex/agents, while plugin bundle manifest exposes skills and .mcp.json, not agents. Current pluginInstallDir agent rewrite is consumed only by this repo's installer/doctor/tests/docs assumptions, not by an identified Codex runtime integration path. Releasing docs currently warn that project install can collide with tracked plugins/codex-nexus source. User-requested direction: keep plugin bundle agent TOMLs as source/bare nexus-mcp and stop rewriting them during install, while preserving .codex/agents rewrite and plugin behavior.",
+        "created_at": "2026-04-23T08:41:42.643Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Stop rewriting plugin install-dir agent TOMLs and realign repo assumptions",
+          "status": "completed",
+          "context": "Current installer rewrites both pluginInstallDir/agents and .codex/agents. The agreed change is to keep plugin bundle agents at pluginInstallDir (project: <repo>/plugins/codex-nexus, user: ~/.codex/plugins/codex-nexus) in their source/bare nexus-mcp form while continuing to rewrite only runtime .codex/agents. Repo verification and docs currently assume both locations are rewritten.",
+          "acceptance": "- installCommand no longer rewrites pluginInstallDir/agents TOMLs\n- .codex/agents TOMLs are still rewritten to resolved runtime/node + server path\n- doctor no longer fails on preserved plugin bundle agents\n- installer tests cover preserved plugin bundle agents and rewritten runtime agents\n- README/releasing guidance reflects the new behavior",
+          "approach": "Update scripts/codex-nexus.mjs to stop rewriting pluginInstallDir/agents and narrow doctor checks to runtime-managed surfaces. Update tests and documentation to expect preserved plugin bundle agents and rewritten .codex/agents.",
+          "risk": "Project-scope install still copies into tracked plugins/codex-nexus in this repo; this change removes agent-TOML churn but does not solve the larger path-collision design.",
+          "plan_issue": 1,
+          "owner": {
+            "role": "lead",
+            "resume_tier": "ephemeral"
+          },
+          "created_at": "2026-04-23T08:42:17.774Z"
+        },
+        {
+          "id": 2,
+          "title": "Run focused validation and archive the cycle",
+          "status": "completed",
+          "context": "After the code/docs changes, validate the installer behavior and repo assumptions against the new contract.",
+          "acceptance": "- relevant tests and validation commands pass\n- no remaining code/docs references claim plugin install-dir agents are rewritten runtime launchers\n- cycle is ready to close and summarize",
+          "approach": "Run targeted tests and validation commands, confirm preserved plugin bundle agents vs rewritten runtime agents, then archive the cycle.",
+          "plan_issue": 2,
+          "deps": [
+            1
+          ],
+          "owner": {
+            "role": "lead",
+            "resume_tier": "ephemeral"
+          },
+          "created_at": "2026-04-23T08:42:17.799Z"
+        }
+      ]
     }
   ]
 }

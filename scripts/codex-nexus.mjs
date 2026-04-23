@@ -963,7 +963,6 @@ async function installManagedSurfaces(installedPackageRoot, scopePaths) {
   const nexusCoreServerPath = resolveNexusCoreServerPath(installedPackageRoot);
 
   copyDirectory(pluginSourceRoot, scopePaths.pluginInstallDir);
-  rewriteManagedAgentNxServerConfigs(path.join(scopePaths.pluginInstallDir, "agents"), runtimeCommand, nexusCoreServerPath);
   copyDirectory(path.join(pluginSourceRoot, "agents"), scopePaths.agentsDir);
   rewriteManagedAgentNxServerConfigs(scopePaths.agentsDir, runtimeCommand, nexusCoreServerPath);
   copyDirectory(path.join(pluginSourceRoot, "skills"), scopePaths.skillsDir);
@@ -1122,7 +1121,6 @@ function doctorCommand(options = {}, runtime = {}) {
   const usesLocalDevelopmentHooks = hooks.includes(path.join(PACKAGE_ROOT, "scripts", "codex-nexus-hook.mjs")) ||
     hooks.includes("node ./scripts/codex-nexus-hook.mjs");
   const installedAgentNxConfigs = readAgentNxServerConfigs(paths.agentsDir);
-  const installedPluginAgentNxConfigs = readAgentNxServerConfigs(path.join(paths.pluginInstallDir, "agents"));
   const usesResolvedNxLauncher = (agentConfigs) => agentConfigs.length > 0 &&
     agentConfigs.every((agent) =>
       agent.command.length > 0 &&
@@ -1151,7 +1149,6 @@ function doctorCommand(options = {}, runtime = {}) {
     { label: "marketplace.json", ok: existsSync(paths.marketplacePath) && marketplace.includes(paths.pluginSourcePath) },
     { label: ".codex/agents/lead.toml", ok: existsSync(path.join(paths.agentsDir, "lead.toml")) },
     { label: ".codex/agents use resolved nx MCP launcher", ok: usesResolvedNxLauncher(installedAgentNxConfigs) },
-    { label: "plugin agents use resolved nx MCP launcher", ok: usesResolvedNxLauncher(installedPluginAgentNxConfigs) },
     { label: ".agents/skills/nx-plan", ok: existsSync(path.join(paths.skillsDir, "nx-plan", "SKILL.md")) },
     { label: "package store", ok: usesLocalDevelopmentHooks || existsSync(path.join(packageStoreRoot, "package.json")) }
   ];

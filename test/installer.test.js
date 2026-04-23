@@ -89,8 +89,8 @@ test("project install wires plugin, config, hooks, agents, and skills", async ()
     const installedPluginAgentNxConfigs = readAgentNxConfigs(path.join(repoRoot, "plugins", "codex-nexus", "agents"));
     expect(installedPluginAgentNxConfigs.length).toBeGreaterThan(0);
     for (const agent of installedPluginAgentNxConfigs) {
-      expect(agent.nx.command).toBe(result.runtimeCommand);
-      expect(agent.nx.args).toEqual([result.nexusCoreServerPath]);
+      expect(agent.nx.command).toBe("nexus-mcp");
+      expect(agent.nx.args).toBeUndefined();
       expect(Array.isArray(agent.nx.disabled_tools)).toBe(true);
     }
 
@@ -125,8 +125,8 @@ test("user install targets home-scoped marketplace and codex directories", async
     const installedPluginAgentNxConfigs = readAgentNxConfigs(path.join(homeDir, ".codex", "plugins", "codex-nexus", "agents"));
     expect(installedPluginAgentNxConfigs.length).toBeGreaterThan(0);
     for (const agent of installedPluginAgentNxConfigs) {
-      expect(agent.nx.command).toBe(result.runtimeCommand);
-      expect(agent.nx.args).toEqual([result.nexusCoreServerPath]);
+      expect(agent.nx.command).toBe("nexus-mcp");
+      expect(agent.nx.args).toBeUndefined();
       expect(Array.isArray(agent.nx.disabled_tools)).toBe(true);
     }
 

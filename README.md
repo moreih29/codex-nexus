@@ -102,6 +102,7 @@ installer는 선택한 버전을 기준으로 아래를 맞춰 준다.
 
 즉, 플러그인만 복사하는 것이 아니라 Codex가 실제로 읽는 최종 사용자 경로까지 함께 정리한다.
 또한 `nx` MCP는 `npx` PATH에 의존하지 않도록, 설치된 런타임과 설치된 `nexus-core` server.js 절대경로로 연결한다.
+반면 설치된 plugin bundle 내부의 `agents/*.toml`은 배포 소스 형태(`nexus-mcp`)를 유지하고, 실제 실행용 agent 사본은 `.codex/agents/*` 쪽에 절대경로 launcher로 써 넣는다.
 
 ## uninstall
 

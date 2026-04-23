@@ -100,6 +100,7 @@ The installer writes or updates:
 
 This is the important distinction: it does not just copy a plugin folder. It wires the final-user config paths that Codex actually reads.
 It also wires `nx` MCP through the installed runtime plus the installed `nexus-core` server entry, instead of relying on `npx` being present on PATH.
+By contrast, the installed plugin bundle keeps its `agents/*.toml` files in their distributed `nexus-mcp` source form, while the runtime agent copies under `.codex/agents/*` get the resolved absolute launcher.
 
 ## Uninstall
 
