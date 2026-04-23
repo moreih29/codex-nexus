@@ -34,6 +34,29 @@
           }
         ]
       }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx -y -p codex-nexus@0.3.11 codex-nexus-hook permission-request",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx -y -p codex-nexus@0.3.11 codex-nexus-hook stop",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   }
 }
