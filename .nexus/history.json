@@ -574,6 +574,68 @@
           "created_at": "2026-04-23T08:42:17.799Z"
         }
       ]
+    },
+    {
+      "schema_version": "1.0",
+      "completed_at": "2026-04-23T09:19:13.680Z",
+      "branch": "fix/cmux-hook-notify-flow",
+      "plan": {
+        "id": 7,
+        "topic": "cmux hook UX update and duplicate-hook mitigation",
+        "issues": [
+          {
+            "id": 1,
+            "title": "Update cmux hook behavior so Running/Needs Input use cmux internal icon names and notifications show a snippet of the assistant output, ideally skipping a leading [Pre-check] block.",
+            "status": "decided",
+            "decision": "Selected approach: update scripts/codex-nexus-hook.mjs so cmux status pills use validated cmux internal icon names (`oct-zap` for Running and `oct-bell_fill` for Needs Input), and replace static notification bodies with a snippet extracted from hook payload text. The snippet logic should prefer assistant-response fields (for Stop and other interaction-style events), strip a leading `[Pre-check]` block when present, normalize whitespace, and truncate to a fixed preview length with a safe fallback string when no usable text is present. Rationale: this directly satisfies the requested UX while staying inside the existing hook integration surface and test file. Rejected alternative 1: keep static bodies like `Response ready` / `Permission requested`; dismissed because it loses the concrete response context the user explicitly asked for. Rejected alternative 2: try to parse only one exact payload field; dismissed because observed tests already show field-shape variation (`tool_input` vs `toolInput`) and hook payloads may differ by event, so a tolerant extractor is safer. Assumptions: Stop payload continues to provide a response-like field such as `last_assistant_message`, and PermissionRequest may require fallback to approval/request text when no assistant message is available."
+          },
+          {
+            "id": 2,
+            "title": "Mitigate duplicate hook effects in this repository so UserPromptSubmit and related hook effects do not surface twice when both config-layer hooks and plugin hooks are active.",
+            "status": "decided",
+            "decision": "Selected approach: keep the existing install surfaces in place for now, but add runtime duplicate suppression inside scripts/codex-nexus-hook.mjs so identical hook events from the same workspace/prompt/turn collapse into a single visible effect within a short time window. Rationale: current repo evidence shows two active sources for the same hooks — generated config-layer hooks in .codex/hooks.json and the local plugin source hooks in plugins/codex-nexus/hooks.json made reachable through .agents/plugins/marketplace.json — so users see duplicated UserPromptSubmit output even though the hook script itself is correct. A small runtime dedupe layer removes the double warnings/notifications immediately without changing packaging/install contracts. Rejected alternative 1: remove config-layer hooks and rely only on plugin hooks; dismissed because installer/tests/docs currently treat config-layer hooks as a managed surface and changing that would be a larger contract change. Rejected alternative 2: keep behavior as-is and document that this repo is special; dismissed because the duplicate warnings are already harming the development workflow and the user asked for a fix, not just an explanation. Assumptions: duplicate executions for the same hook event arrive nearly back-to-back, so a short fingerprint+TTL gate can suppress only accidental duplicates while leaving later legitimate repeated prompts intact."
+          }
+        ],
+        "research_summary": "Existing knowledge: .nexus/context/releasing.md warns that project-scope smoke tests must not reuse the repo root because install target <repo>/plugins/codex-nexus overlaps publishable source paths. Current repo state shows .codex/hooks.json contains managed UserPromptSubmit/PreToolUse/PermissionRequest/Stop hooks calling the installed script under .codex/packages/node_modules/codex-nexus/scripts/codex-nexus-hook.mjs. The project marketplace file .agents/plugins/marketplace.json points to ./plugins/codex-nexus, whose plugins/codex-nexus/hooks.json also defines the same hook events. scripts/codex-nexus.mjs installManagedSurfaces() copies the plugin into projectRoot/plugins/codex-nexus and also merges managed hooks into .codex/hooks.json. scripts/codex-nexus-hook.mjs currently uses bolt/bell icons, sends static notification bodies ('Response ready', 'Permission requested'), and emits additionalContext JSON for [run] in UserPromptSubmit. test/hooks.test.js covers current cmux behavior and can be extended to verify new icon names, message snippet extraction, and duplicate suppression behavior.",
+        "created_at": "2026-04-23T09:04:20.568Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Implement cmux hook preview extraction, icon updates, and duplicate suppression",
+          "status": "completed",
+          "context": "Modify the codex hook runtime so UserPromptSubmit/PreToolUse/PermissionRequest/Stop produce the requested cmux UX: Running uses the validated internal lightning icon, Needs Input uses the filled bell icon, notifications derive their body from assistant/output text when available (prefer skipping a leading [Pre-check] block and truncating to a compact preview), and duplicate hook executions from overlapping config/plugin registrations collapse to one visible effect. Update tests alongside the implementation. Because this repo's active .codex/hooks.json points to the installed package copy under .codex/packages/node_modules/codex-nexus, refresh the local managed hook script after source changes so the current workspace exercises the new runtime.",
+          "acceptance": "- scripts/codex-nexus-hook.mjs derives notification bodies from assistant/request text when available, strips a leading [Pre-check] block if present, truncates previews safely, and falls back gracefully when text is unavailable.\n- Running status uses oct-zap and Needs Input uses oct-bell_fill.\n- Duplicate back-to-back executions of the same hook event do not produce duplicate visible outputs.\n- Automated tests cover the updated icon names, notification preview behavior, and duplicate suppression.\n- The current workspace's installed hook runtime under .codex/packages/node_modules/codex-nexus is refreshed to match the updated source for manual validation.",
+          "approach": "Edit scripts/codex-nexus-hook.mjs to add notification text extraction/normalization helpers, use oct-zap and oct-bell_fill icons, and introduce a short-window fingerprint dedupe guard backed by an ephemeral temp-file cache keyed by workspace/project. Extend test/hooks.test.js to cover icon names, response preview extraction, [Pre-check] stripping, and duplicate suppression. After implementation, refresh the local installed hook script used by this workspace so manual cmux behavior matches source.",
+          "risk": "Over-aggressive dedupe could suppress legitimate repeated prompts if the fingerprint or TTL is too broad; preview extraction could also miss actual payload fields if the hook payload shape varies more than expected.",
+          "plan_issue": 1,
+          "owner": {
+            "role": "engineer",
+            "resume_tier": "bounded",
+            "agent_id": "019db996-ee87-7210-a73e-1fe15819115a"
+          },
+          "created_at": "2026-04-23T09:05:37.380Z"
+        },
+        {
+          "id": 2,
+          "title": "Verify updated cmux hook behavior and duplicate suppression",
+          "status": "completed",
+          "context": "Run the relevant automated tests and targeted manual checks for the updated hook runtime. Verification should confirm the new icon names, preview extraction (including [Pre-check] skipping), duplicate suppression, and that the current workspace can exercise the refreshed installed hook script.",
+          "acceptance": "- The hook tests pass after the implementation changes.\n- Verification confirms duplicate back-to-back hook invocations collapse to one visible effect while normal single invocations still work.\n- Verification confirms the notification body preview uses assistant text and skips a leading [Pre-check] block when present.",
+          "approach": "Execute the focused hook test suite plus any targeted command checks needed to validate the refreshed local installed script behavior. Confirm no regression in existing hook JSON outputs.",
+          "risk": "A passing unit test could still miss a real Codex payload shape difference, so verification should explicitly note which fields were exercised.",
+          "plan_issue": 2,
+          "deps": [
+            1
+          ],
+          "owner": {
+            "role": "tester",
+            "resume_tier": "ephemeral",
+            "agent_id": "019db99e-a4f5-70a3-9c64-5ce52eca2100"
+          },
+          "created_at": "2026-04-23T09:05:44.460Z"
+        }
+      ]
     }
   ]
 }

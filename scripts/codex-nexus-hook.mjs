@@ -1,8 +1,18 @@
 #!/usr/bin/env node
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  unlinkSync,
+  writeFileSync
+} from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
 
 const NEXUS_GITIGNORE = `# Nexus: whitelist tracked files, ignore everything else
 *
@@ -48,10 +58,15 @@ const BLOCKED_GIT_PATTERNS = [
 
 const CMUX_STATUS_KEY = "nexus-state";
 const CMUX_STATUS_COLOR = "#007AFF";
-const CMUX_RUNNING_ICON = "bolt";
+const CMUX_RUNNING_ICON = "oct-zap";
 const CMUX_RUNNING_VALUE = "Running";
-const CMUX_NEEDS_INPUT_ICON = "bell";
+const CMUX_NEEDS_INPUT_ICON = "bell.fill";
 const CMUX_NEEDS_INPUT_VALUE = "Needs Input";
+const CMUX_DEDUPE_WINDOW_MS = 1500;
+const CMUX_DEDUPE_RETENTION_MS = 5 * 60 * 1000;
+const CMUX_NOTIFICATION_PREVIEW_MAX_CHARS = 96;
+const CMUX_PERMISSION_FALLBACK = "Permission requested";
+const CMUX_STOP_FALLBACK = "Response ready";
 
 async function readStdin() {
   const chunks = [];
@@ -122,6 +137,219 @@ function isSubagentEvent(input) {
   return typeof input?.agent_id === "string" && input.agent_id.length > 0;
 }
 
+function hashText(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function getCmuxDedupeDir(input) {
+  const workspaceId = process.env.CMUX_WORKSPACE_ID ?? "workspace";
+  const scope = `${workspaceId}:${input?.cwd ?? process.cwd()}`;
+  return path.join(tmpdir(), "codex-nexus", "cmux-dedupe", hashText(scope).slice(0, 16));
+}
+
+function pruneCmuxDedupeEntries(cacheDir, nowMs) {
+  let entries;
+  try {
+    entries = readdirSync(cacheDir);
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    const entryPath = path.join(cacheDir, entry);
+    let stats;
+    try {
+      stats = statSync(entryPath);
+    } catch {
+      continue;
+    }
+
+    if (nowMs - stats.mtimeMs > CMUX_DEDUPE_RETENTION_MS) {
+      try {
+        unlinkSync(entryPath);
+      } catch {}
+    }
+  }
+}
+
+function shouldEmitCmuxEffect(input, signature) {
+  const cacheDir = getCmuxDedupeDir(input);
+  const nowMs = Date.now();
+  const markerPath = path.join(cacheDir, `${hashText(signature)}.json`);
+  const markerPayload = JSON.stringify({ timestamp: nowMs });
+
+  try {
+    mkdirSync(cacheDir, { recursive: true });
+    pruneCmuxDedupeEntries(cacheDir, nowMs);
+  } catch {
+    return true;
+  }
+
+  try {
+    writeFileSync(markerPath, markerPayload, { encoding: "utf8", flag: "wx" });
+    return true;
+  } catch (error) {
+    if (error?.code !== "EEXIST") {
+      return true;
+    }
+  }
+
+  let previousTimestamp = Number.NaN;
+  try {
+    previousTimestamp = Number(JSON.parse(readFileSync(markerPath, "utf8"))?.timestamp);
+  } catch {}
+
+  if (Number.isFinite(previousTimestamp) && nowMs - previousTimestamp < CMUX_DEDUPE_WINDOW_MS) {
+    return false;
+  }
+
+  try {
+    writeFileSync(markerPath, markerPayload, "utf8");
+  } catch {}
+
+  return true;
+}
+
+function firstNonEmptyString(candidates) {
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") {
+      continue;
+    }
+    const trimmed = candidate.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  return null;
+}
+
+function extractText(value, depth = 0) {
+  if (depth > 4 || value == null) {
+    return null;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = extractText(item, depth + 1);
+      if (found) {
+        return found;
+      }
+    }
+    return null;
+  }
+
+  if (typeof value !== "object") {
+    return null;
+  }
+
+  for (const key of ["text", "output_text", "outputText", "content", "message"]) {
+    if (!Object.hasOwn(value, key)) {
+      continue;
+    }
+    const found = extractText(value[key], depth + 1);
+    if (found) {
+      return found;
+    }
+  }
+
+  return null;
+}
+
+function isPreCheckParagraph(paragraph) {
+  const firstLine = paragraph
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+
+  if (!firstLine) {
+    return false;
+  }
+
+  if (/^\d+\)\s/.test(firstLine)) {
+    return true;
+  }
+
+  return /^-\s*(First impression|Doubts|Action)\b/i.test(firstLine);
+}
+
+function stripLeadingPreCheckBlock(text) {
+  const trimmed = text.trim();
+  if (!/^\[Pre-check\]/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  const withoutHeading = trimmed.replace(/^\[Pre-check\]\s*/i, "").trim();
+  if (!withoutHeading) {
+    return "";
+  }
+
+  const paragraphs = withoutHeading
+    .split(/\r?\n\s*\r?\n+/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
+  let skipCount = 0;
+  while (skipCount < paragraphs.length && isPreCheckParagraph(paragraphs[skipCount])) {
+    skipCount += 1;
+  }
+
+  const remainder = paragraphs.slice(skipCount).join("\n\n").trim();
+  return remainder || withoutHeading;
+}
+
+function truncatePreview(text, maxChars = CMUX_NOTIFICATION_PREVIEW_MAX_CHARS) {
+  const chars = Array.from(text);
+  if (chars.length <= maxChars) {
+    return text;
+  }
+  return `${chars.slice(0, Math.max(1, maxChars - 1)).join("")}…`;
+}
+
+function buildNotificationPreview(sourceText, fallback) {
+  if (typeof sourceText !== "string" || !sourceText.trim()) {
+    return fallback;
+  }
+
+  const withoutPreCheck = stripLeadingPreCheckBlock(sourceText);
+  const normalized = (withoutPreCheck || sourceText).replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return fallback;
+  }
+
+  return truncatePreview(normalized);
+}
+
+function buildPermissionNotificationBody(input) {
+  const source = firstNonEmptyString([
+    input?.request_text,
+    input?.requestText,
+    input?.tool_input?.description,
+    input?.toolInput?.description,
+    input?.tool_input?.command,
+    input?.toolInput?.command
+  ]);
+  return buildNotificationPreview(source, CMUX_PERMISSION_FALLBACK);
+}
+
+function buildStopNotificationBody(input) {
+  const source = firstNonEmptyString([
+    input?.last_assistant_message,
+    input?.lastAssistantMessage,
+    input?.output_text,
+    input?.outputText,
+    extractText(input?.assistant_response),
+    extractText(input?.assistantResponse),
+    extractText(input?.response),
+    extractText(input?.output)
+  ]);
+  return buildNotificationPreview(source, CMUX_STOP_FALLBACK);
+}
+
 function cmuxSpawn(args) {
   if (!isCmuxEnabled()) {
     return;
@@ -136,27 +364,33 @@ function cmuxSpawn(args) {
   } catch {}
 }
 
-function cmuxSetStatus(value, icon) {
+function cmuxSetStatus(input, sourceEvent, value, icon) {
+  if (!shouldEmitCmuxEffect(input, `${sourceEvent}:set-status:${value}:${icon}`)) {
+    return;
+  }
   cmuxSpawn(["set-status", CMUX_STATUS_KEY, value, "--icon", icon, "--color", CMUX_STATUS_COLOR]);
 }
 
-function cmuxNotify(body) {
+function cmuxNotify(input, sourceEvent, body) {
+  if (!shouldEmitCmuxEffect(input, `${sourceEvent}:notify:${body}`)) {
+    return;
+  }
   cmuxSpawn(["notify", "--title", "codex-nexus", "--body", body]);
 }
 
-function maybeSetRunning(input) {
+function maybeSetRunning(input, sourceEvent) {
   if (isSubagentEvent(input)) {
     return;
   }
-  cmuxSetStatus(CMUX_RUNNING_VALUE, CMUX_RUNNING_ICON);
+  cmuxSetStatus(input, sourceEvent, CMUX_RUNNING_VALUE, CMUX_RUNNING_ICON);
 }
 
-function maybeSetNeedsInput(input, body) {
+function maybeSetNeedsInput(input, sourceEvent, body) {
   if (isSubagentEvent(input)) {
     return;
   }
-  cmuxNotify(body);
-  cmuxSetStatus(CMUX_NEEDS_INPUT_VALUE, CMUX_NEEDS_INPUT_ICON);
+  cmuxNotify(input, sourceEvent, body);
+  cmuxSetStatus(input, sourceEvent, CMUX_NEEDS_INPUT_VALUE, CMUX_NEEDS_INPUT_ICON);
 }
 
 function handleSessionStart(input) {
@@ -164,7 +398,7 @@ function handleSessionStart(input) {
 }
 
 function handleUserPromptSubmit(input) {
-  maybeSetRunning(input);
+  maybeSetRunning(input, "user-prompt-submit");
 
   const tag = detectLeadingTag(input.prompt ?? "");
   if (!tag) {
@@ -200,15 +434,15 @@ function handlePreToolUse(input) {
     }
   }
 
-  maybeSetRunning(input);
+  maybeSetRunning(input, "pre-tool-use");
 }
 
 function handlePermissionRequest(input) {
-  maybeSetNeedsInput(input, "Permission requested");
+  maybeSetNeedsInput(input, "permission-request", buildPermissionNotificationBody(input));
 }
 
 function handleStop(input) {
-  maybeSetNeedsInput(input, "Response ready");
+  maybeSetNeedsInput(input, "stop", buildStopNotificationBody(input));
   printJson({ continue: true });
 }
 

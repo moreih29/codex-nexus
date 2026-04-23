@@ -1,11 +1,13 @@
 import { expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
 const hookScript = path.join(repoRoot, "scripts", "codex-nexus-hook.mjs");
+const CMUX_RUNNING_ICON = "oct-zap";
+const CMUX_NEEDS_INPUT_ICON = "bell.fill";
 
 function runHook(mode, payload, cwd, env = process.env) {
   return spawnSync(process.execPath, [hookScript, mode], {
@@ -24,6 +26,15 @@ function writeFakeCmux(binDir, logPath) {
     "utf8"
   );
   chmodSync(cmuxPath, 0o755);
+}
+
+function buildCmuxEnv(binDir, logPath, workspaceId) {
+  return {
+    ...process.env,
+    PATH: `${binDir}:${process.env.PATH}`,
+    CMUX_WORKSPACE_ID: workspaceId,
+    CMUX_TEST_LOG: logPath
+  };
 }
 
 async function waitForLogEntries(logPath, expectedCount) {
@@ -46,6 +57,16 @@ function readLogEntries(logPath) {
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => JSON.parse(line));
+}
+
+function findNotifyBodies(entries) {
+  return entries
+    .filter((entry) => entry[0] === "notify")
+    .map((entry) => {
+      const bodyIndex = entry.indexOf("--body");
+      return bodyIndex >= 0 ? entry[bodyIndex + 1] : null;
+    })
+    .filter((value) => typeof value === "string");
 }
 
 test("session-start creates the nexus directory layout", () => {
@@ -127,12 +148,7 @@ test("user-prompt-submit sets a cmux Running status when cmux integration is ena
 
   try {
     writeFakeCmux(binDir, logPath);
-    const env = {
-      ...process.env,
-      PATH: `${binDir}:${process.env.PATH}`,
-      CMUX_WORKSPACE_ID: "workspace-1",
-      CMUX_TEST_LOG: logPath
-    };
+    const env = buildCmuxEnv(binDir, logPath, path.basename(cwd));
 
     const result = runHook(
       "user-prompt-submit",
@@ -147,7 +163,7 @@ test("user-prompt-submit sets a cmux Running status when cmux integration is ena
     expect(result.status).toBe(0);
     expect(result.stdout).toBe("");
     const entries = await waitForLogEntries(logPath, 1);
-    expect(entries).toContainEqual(["set-status", "nexus-state", "Running", "--icon", "bolt", "--color", "#007AFF"]);
+    expect(entries).toContainEqual(["set-status", "nexus-state", "Running", "--icon", CMUX_RUNNING_ICON, "--color", "#007AFF"]);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
     rmSync(binDir, { recursive: true, force: true });
@@ -161,12 +177,7 @@ test("permission-request sends a cmux notification and Needs Input status", asyn
 
   try {
     writeFakeCmux(binDir, logPath);
-    const env = {
-      ...process.env,
-      PATH: `${binDir}:${process.env.PATH}`,
-      CMUX_WORKSPACE_ID: "workspace-1",
-      CMUX_TEST_LOG: logPath
-    };
+    const env = buildCmuxEnv(binDir, logPath, path.basename(cwd));
 
     const result = runHook(
       "permission-request",
@@ -185,8 +196,8 @@ test("permission-request sends a cmux notification and Needs Input status", asyn
     expect(result.status).toBe(0);
     expect(result.stdout).toBe("");
     const entries = await waitForLogEntries(logPath, 2);
-    expect(entries).toContainEqual(["notify", "--title", "codex-nexus", "--body", "Permission requested"]);
-    expect(entries).toContainEqual(["set-status", "nexus-state", "Needs Input", "--icon", "bell", "--color", "#007AFF"]);
+    expect(entries).toContainEqual(["notify", "--title", "codex-nexus", "--body", "Need approval"]);
+    expect(entries).toContainEqual(["set-status", "nexus-state", "Needs Input", "--icon", CMUX_NEEDS_INPUT_ICON, "--color", "#007AFF"]);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
     rmSync(binDir, { recursive: true, force: true });
@@ -200,12 +211,7 @@ test("stop sends a cmux notification and returns JSON continue output", async ()
 
   try {
     writeFakeCmux(binDir, logPath);
-    const env = {
-      ...process.env,
-      PATH: `${binDir}:${process.env.PATH}`,
-      CMUX_WORKSPACE_ID: "workspace-1",
-      CMUX_TEST_LOG: logPath
-    };
+    const env = buildCmuxEnv(binDir, logPath, path.basename(cwd));
 
     const result = runHook(
       "stop",
@@ -221,8 +227,90 @@ test("stop sends a cmux notification and returns JSON continue output", async ()
     expect(result.status).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual({ continue: true });
     const entries = await waitForLogEntries(logPath, 2);
-    expect(entries).toContainEqual(["notify", "--title", "codex-nexus", "--body", "Response ready"]);
-    expect(entries).toContainEqual(["set-status", "nexus-state", "Needs Input", "--icon", "bell", "--color", "#007AFF"]);
+    expect(entries).toContainEqual(["notify", "--title", "codex-nexus", "--body", "Done"]);
+    expect(entries).toContainEqual(["set-status", "nexus-state", "Needs Input", "--icon", CMUX_NEEDS_INPUT_ICON, "--color", "#007AFF"]);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
+test("stop notification preview skips leading [Pre-check] and truncates long assistant output", async () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "codex-nexus-hook-"));
+  const binDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-hook-bin-"));
+  const logPath = path.join(cwd, "cmux.log");
+
+  try {
+    writeFakeCmux(binDir, logPath);
+    const env = buildCmuxEnv(binDir, logPath, path.basename(cwd));
+    const longAssistantMessage = `[Pre-check]
+
+- First impression / evidence level: verified
+- Action: respond now
+
+Deployment succeeded for every region and the canary checks are stable with no retries needed across the fleet overnight.`;
+
+    const result = runHook(
+      "stop",
+      {
+        cwd,
+        turn_id: "turn-1",
+        last_assistant_message: longAssistantMessage
+      },
+      cwd,
+      env
+    );
+
+    expect(result.status).toBe(0);
+    const entries = await waitForLogEntries(logPath, 2);
+    const [notifyBody] = findNotifyBodies(entries);
+    expect(notifyBody).toBeDefined();
+    expect(notifyBody).not.toContain("[Pre-check]");
+    expect(notifyBody).toStartWith("Deployment succeeded for every region");
+    expect(notifyBody).toEndWith("…");
+    expect(Array.from(notifyBody).length).toBeLessThanOrEqual(96);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
+test("duplicate back-to-back permission-request hook events are suppressed", async () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "codex-nexus-hook-"));
+  const binDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-hook-bin-"));
+  const logPath = path.join(cwd, "cmux.log");
+
+  try {
+    writeFakeCmux(binDir, logPath);
+    const env = buildCmuxEnv(binDir, logPath, path.basename(cwd));
+    const payload = {
+      cwd,
+      tool_name: "Bash",
+      tool_input: {
+        command: "npm test",
+        description: "Need approval"
+      }
+    };
+
+    const first = runHook("permission-request", payload, cwd, env);
+    const second = runHook("permission-request", payload, cwd, env);
+    expect(first.status).toBe(0);
+    expect(second.status).toBe(0);
+
+    await waitForLogEntries(logPath, 2);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const finalEntries = readLogEntries(logPath);
+    expect(finalEntries).toHaveLength(2);
+    expect(finalEntries).toContainEqual(["notify", "--title", "codex-nexus", "--body", "Need approval"]);
+    expect(finalEntries).toContainEqual([
+      "set-status",
+      "nexus-state",
+      "Needs Input",
+      "--icon",
+      CMUX_NEEDS_INPUT_ICON,
+      "--color",
+      "#007AFF"
+    ]);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
     rmSync(binDir, { recursive: true, force: true });
@@ -237,10 +325,7 @@ test("cmux integration can be disabled with CODEX_NEXUS_CMUX=0", async () => {
   try {
     writeFakeCmux(binDir, logPath);
     const env = {
-      ...process.env,
-      PATH: `${binDir}:${process.env.PATH}`,
-      CMUX_WORKSPACE_ID: "workspace-1",
-      CMUX_TEST_LOG: logPath,
+      ...buildCmuxEnv(binDir, logPath, path.basename(cwd)),
       CODEX_NEXUS_CMUX: "0"
     };
 
