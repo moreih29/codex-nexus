@@ -4,6 +4,15 @@
 
 형식은 Keep a Changelog 스타일을 느슨하게 따르며, 버전 표기는 SemVer 기준으로 관리한다.
 
+## [0.3.13] - 2026-04-23
+
+### Fixed
+
+- cmux 상태 pill 갱신이 hook 프로세스 종료 전에 유실되지 않도록 `cmux` 호출을 동기 실행으로 변경
+- `Running` 상태는 비어있는 번개 아이콘(`bolt`), `Needs Input` 상태는 채워진 종 아이콘(`bell.fill`)을 사용하도록 조정
+- 응답 완료 알림 body가 assistant preview를 사용하되, 선두 `[Pre-check]` 블록을 가능한 경우 제외하도록 개선
+- 같은 hook 이벤트 중복 실행만 억제하고 서로 다른 turn/status 업데이트는 유지하도록 dedupe 기준을 보강
+
 ## [0.3.12] - 2026-04-23
 
 ### Added

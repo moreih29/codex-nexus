@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
 const hookScript = path.join(repoRoot, "scripts", "codex-nexus-hook.mjs");
-const CMUX_RUNNING_ICON = "oct-zap";
+const CMUX_RUNNING_ICON = "bolt";
 const CMUX_NEEDS_INPUT_ICON = "bell.fill";
 
 function runHook(mode, payload, cwd, env = process.env) {
@@ -311,6 +311,49 @@ test("duplicate back-to-back permission-request hook events are suppressed", asy
       "--color",
       "#007AFF"
     ]);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
+test("different stop events within the dedupe window still emit status updates", async () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "codex-nexus-hook-"));
+  const binDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-hook-bin-"));
+  const logPath = path.join(cwd, "cmux.log");
+
+  try {
+    writeFakeCmux(binDir, logPath);
+    const env = buildCmuxEnv(binDir, logPath, path.basename(cwd));
+
+    const first = runHook(
+      "stop",
+      {
+        cwd,
+        turn_id: "turn-1",
+        last_assistant_message: "First reply"
+      },
+      cwd,
+      env
+    );
+    const second = runHook(
+      "stop",
+      {
+        cwd,
+        turn_id: "turn-2",
+        last_assistant_message: "Second reply"
+      },
+      cwd,
+      env
+    );
+
+    expect(first.status).toBe(0);
+    expect(second.status).toBe(0);
+    const entries = await waitForLogEntries(logPath, 4);
+    expect(entries.filter((entry) => entry[0] === "notify")).toHaveLength(2);
+    expect(entries.filter((entry) => entry[0] === "set-status")).toHaveLength(2);
+    expect(entries).toContainEqual(["notify", "--title", "codex-nexus", "--body", "First reply"]);
+    expect(entries).toContainEqual(["notify", "--title", "codex-nexus", "--body", "Second reply"]);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
     rmSync(binDir, { recursive: true, force: true });

@@ -10,7 +10,7 @@ import {
   writeFileSync
 } from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 
@@ -58,7 +58,7 @@ const BLOCKED_GIT_PATTERNS = [
 
 const CMUX_STATUS_KEY = "nexus-state";
 const CMUX_STATUS_COLOR = "#007AFF";
-const CMUX_RUNNING_ICON = "oct-zap";
+const CMUX_RUNNING_ICON = "bolt";
 const CMUX_RUNNING_VALUE = "Running";
 const CMUX_NEEDS_INPUT_ICON = "bell.fill";
 const CMUX_NEEDS_INPUT_VALUE = "Needs Input";
@@ -145,6 +145,26 @@ function getCmuxDedupeDir(input) {
   const workspaceId = process.env.CMUX_WORKSPACE_ID ?? "workspace";
   const scope = `${workspaceId}:${input?.cwd ?? process.cwd()}`;
   return path.join(tmpdir(), "codex-nexus", "cmux-dedupe", hashText(scope).slice(0, 16));
+}
+
+function getCmuxEventFingerprint(input) {
+  if (typeof input?.__cmuxDedupeKey === "string" && input.__cmuxDedupeKey.length > 0) {
+    return input.__cmuxDedupeKey;
+  }
+
+  const fallback = firstNonEmptyString([
+    input?.turn_id,
+    input?.turnId,
+    input?.request_text,
+    input?.requestText,
+    input?.last_assistant_message,
+    input?.lastAssistantMessage,
+    input?.prompt,
+    input?.tool_input?.command,
+    input?.toolInput?.command
+  ]);
+
+  return fallback ? hashText(fallback) : "no-input-fingerprint";
 }
 
 function pruneCmuxDedupeEntries(cacheDir, nowMs) {
@@ -355,24 +375,24 @@ function cmuxSpawn(args) {
     return;
   }
   try {
-    const child = spawn("cmux", args, {
+    spawnSync("cmux", args, {
       stdio: "ignore",
-      detached: true
+      timeout: 2000
     });
-    child.on("error", () => {});
-    child.unref();
   } catch {}
 }
 
 function cmuxSetStatus(input, sourceEvent, value, icon) {
-  if (!shouldEmitCmuxEffect(input, `${sourceEvent}:set-status:${value}:${icon}`)) {
+  const eventFingerprint = getCmuxEventFingerprint(input);
+  if (!shouldEmitCmuxEffect(input, `${sourceEvent}:${eventFingerprint}:set-status:${value}:${icon}`)) {
     return;
   }
   cmuxSpawn(["set-status", CMUX_STATUS_KEY, value, "--icon", icon, "--color", CMUX_STATUS_COLOR]);
 }
 
 function cmuxNotify(input, sourceEvent, body) {
-  if (!shouldEmitCmuxEffect(input, `${sourceEvent}:notify:${body}`)) {
+  const eventFingerprint = getCmuxEventFingerprint(input);
+  if (!shouldEmitCmuxEffect(input, `${sourceEvent}:${eventFingerprint}:notify:${body}`)) {
     return;
   }
   cmuxSpawn(["notify", "--title", "codex-nexus", "--body", body]);
@@ -455,6 +475,9 @@ async function main() {
 
   const rawInput = await readStdin();
   const input = rawInput.trim() ? JSON.parse(rawInput) : {};
+  if (input && typeof input === "object" && !Array.isArray(input)) {
+    input.__cmuxDedupeKey = hashText(rawInput.trim() || "{}");
+  }
 
   switch (mode) {
     case "session-start":
