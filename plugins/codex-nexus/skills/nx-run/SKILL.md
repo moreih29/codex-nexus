@@ -85,7 +85,12 @@ Execute in order.
 
 1. **`nx_task_close`**: archives plan+tasks to `.nexus/history.json`. `plan.json` and `tasks.json` are removed.
 2. **git commit**: bundle source changes, build artifacts (`bridge/`, `scripts/`), `.nexus/history.json`, and any modified `.nexus/memory/` or `.nexus/context/` into a single commit to maintain 1:1 cycle-commit mapping. Use explicit paths instead of `git add -A`.
-3. **Report**: summarize to the user — changed files, key decisions applied, and suggested next steps. Merge/push is the user's decision and outside this skill's scope.
+3. **Report**: summarize to the user using the items below. Merge/push is the user's decision and outside this skill's scope.
+   - **Changes**: file paths and summary
+   - **Key decisions**: scope, approach, trade-offs
+   - **Next steps**: follow-up actions
+   - **Open questions**: when applicable
+   - **Risks / uncertainties**: express in the form "X may fail under Y condition", when applicable
 
 ---
 

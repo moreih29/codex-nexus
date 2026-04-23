@@ -7,22 +7,29 @@ triggers:
 ---
 ## Role
 
-Performs the same research and analysis process as nx-plan, but Lead makes decisions autonomously without presenting options or waiting for user responses. HOW subagent usage, researcher/explore investigations, prior-knowledge lookup, and issue decomposition are identical to nx-plan. The only difference is at decision time — instead of emitting a comparison table and awaiting user response, Lead deliberates internally and records the decision immediately.
+Performs the same research and analysis process as nx-plan, but **Lead makes decisions autonomously without presenting options or waiting for user responses** to produce an execution plan. HOW subagent usage, researcher/explore investigations, prior-knowledge lookup, and issue decomposition are identical to nx-plan. The only difference is at decision time — instead of emitting a comparison table and awaiting user response, Lead deliberates internally and records the decision immediately.
 
 This skill does not execute. Execution is handled separately by the `[run]` flow. It is also the path `[run]` invokes internally when tasks.json is absent.
 
-## Constraints
+## Core Rules — Absolute Rules
 
-- **NEVER request user confirmation.** All decisions MUST be made by Lead autonomously and recorded directly.
-- **MUST maintain the same research and analysis depth as nx-plan.** HOW subagent spawning, researcher/explore investigations, and the existing-knowledge-first principle all apply.
-- **MUST record both the selected approach with rationale AND rejected alternatives with dismissal reasons in every decision.** Comparison tables are not output, but internal deliberation is mandatory.
-- **MUST brief all decisions at once after completion.** NEVER notify the user per-decision.
+The three rules below are the identity of this skill. **Violating even one makes this plan, not auto-plan.**
+
+1. **Lead decides autonomously.** NEVER ask the user for option choices, delegate decision authority, or request acceptance. All decisions are recorded directly by Lead via `nx_plan_decide` after internal deliberation.
+2. **NEVER produce output that elicits a decision.** Do not emit comparison tables, A/B/C option enumerations, or questions like "which option would you prefer?" to the user. All candidate comparison happens entirely in Lead's internal deliberation; external output is limited to progress status or the final briefing.
+3. **NEVER stop between issues.** Proceed **without interruption** from issue analysis → `nx_plan_decide` → next issue. Do not seek confirmation or give intermediate reports immediately after individual decisions. Reporting happens once in Step 7 after all decisions are made.
+
+## Supplementary Rules
+
+- NEVER execute — this skill's purpose is planning; execution is handled by `[run]`.
+- Research and analysis depth MUST match nx-plan. HOW subagent spawning, researcher/explore investigations, and the existing-knowledge-first principle all apply.
+- Each decision MUST record **both the selected rationale and the rejected alternatives.** Comparison tables are not output, but deliberation record within the decision text is mandatory.
 
 ## Procedure
 
 ### Step 1: Intent Discovery
 
-Determine issue scope and complexity from the request itself. Do not conduct additional user interviews.
+Determine issue scope and complexity from the request itself. **Do NOT conduct additional user interviews or clarification questions.** When information is insufficient, supplement with research; if ambiguity remains unresolved, note it in the decision text's "assumptions" field and proceed in the direction Lead judges most reasonable.
 
 | Level | Signal | Exploration Scope |
 |---|---|---|
@@ -66,15 +73,15 @@ Once research is complete, open the planning session with `nx_plan_start`. Any e
 
 ### Step 4: Issue-by-Issue Analysis
 
-Issues must be processed one at a time. For each issue:
+Process issues one at a time. For each issue:
 
 1. Lead summarizes the current state and the problem.
 2. If needed, spawn HOW subagents for independent analysis.
    - If reusing context from a prior HOW session for the same role is advantageous, check resume routing information with `nx_plan_resume` first.
    - If resumable, invoke `resume_agent({ id: "<id>" }) then send_input({ target: "<id>", message: "<resume prompt>" })` with the `agent_id` returned by `nx_plan_resume`; otherwise, spawn fresh.
 3. When HOW results return, record them on the issue with `nx_plan_analysis_add(issue_id, role, agent_id=<id from spawn>, summary)`. The `agent_id` is the value `nx_plan_resume` will return on a future resume request for the same role, so always pass the agent id obtained from the spawn tool response. Do not substitute a human-readable assigned name; names are only for messaging a currently running subagent and are not a safe resume identifier for a completed session.
-4. **Lead internal deliberation**: enumerate candidate options, compare pros/cons and trade-offs, and select the most reasonable one. Do not output comparison tables or option presentations.
-5. Proceed immediately to Step 5 to record the decision.
+4. **Lead internal deliberation**: enumerate candidate options, compare pros/cons and trade-offs, and select the most reasonable one. **The outputs of this process (comparison tables, option lists, recommendation questions) MUST NOT be shown to the user.** All comparison happens entirely inside Lead; the conclusion and dismissal rationale are recorded in prose form in the Step 5 decision text.
+5. **⚡ Never stop.** Do not wait for user response; proceed immediately to Step 5 to record the decision. Do NOT send intermediate confirmation messages.
 
 #### HOW Domain Mapping
 
@@ -91,20 +98,21 @@ Issues must be processed one at a time. For each issue:
 
 ### Step 5: Record Decision
 
-Use `nx_plan_decide` to mark the issue as decided. The decision text MUST include:
+Use `nx_plan_decide` to mark the issue as decided. **Lead records directly without requesting user confirmation.** The decision text MUST include:
 
 - The selected approach and its rationale
 - The rejected alternatives and their dismissal reasons
+- (When applicable) assumptions made due to insufficient information
 
 `nx_plan_decide` records only the final decision text and decision state — it does **not** append to `analysis`. If HOW subagents participated, their analysis and resume-routing records must already have been written via `nx_plan_analysis_add` in Step 4, and Step 7 should reference those records directly.
 
-If the decision creates follow-up questions or derived issues, add them with `nx_plan_update` and move to Step 6. Do not ask the user for confirmation.
+If the decision creates follow-up questions or derived issues, add them with `nx_plan_update` and move to Step 6. Again, do NOT ask the user for confirmation.
 
 ### Step 6: Dynamic Agenda Management
 
-- If derived issues emerge, add them via `nx_plan_update` and return to Step 4.
-- If unresolved issues remain, move on to the next issue.
-- Once all issues are decided, Lead checks for gaps against the original request.
+- If derived issues emerge, add them via `nx_plan_update` and return to Step 4. **Do NOT ask the user for permission to add.**
+- If unresolved issues remain, move on to the next issue. Do NOT issue intermediate status reports.
+- Once all issues are decided, Lead checks for gaps against the original request. This check is performed internally only.
 - If gaps exist, register new issues with `nx_plan_update` and return to Step 4.
 
 ### Step 7: Briefing and Plan Document Generation

@@ -8,6 +8,17 @@ const packageJsonPath = path.join(repoRoot, "package.json");
 const pluginRoot = path.join(repoRoot, "plugins", "codex-nexus");
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 const nexusCoreVersion = packageJson.dependencies?.["@moreih29/nexus-core"];
+const downstreamManagedAgentFiles = [
+  "architect.toml",
+  "designer.toml",
+  "engineer.toml",
+  "postdoc.toml",
+  "researcher.toml",
+  "reviewer.toml",
+  "strategist.toml",
+  "tester.toml",
+  "writer.toml"
+];
 const nexusCoreSpecLeadPath = path.join(
   repoRoot,
   "node_modules",
@@ -49,6 +60,29 @@ function writeFile(destinationPath, content) {
   writeFileSync(destinationPath, content, "utf8");
 }
 
+function ensureBareNxLauncherInPublishableAgent(agentPath) {
+  const current = readFileSync(agentPath, "utf8");
+  if (current.includes('[mcp_servers.nx]\ncommand = "nexus-mcp"\n')) {
+    return;
+  }
+
+  const next = current.replace("[mcp_servers.nx]\n", '[mcp_servers.nx]\ncommand = "nexus-mcp"\n');
+  if (next === current) {
+    throw new Error(`Unable to patch [mcp_servers.nx] block for ${agentPath}`);
+  }
+  writeFile(agentPath, next);
+}
+
+function applyDownstreamAgentLauncherCompatibilityFix(agentDir) {
+  for (const agentFile of downstreamManagedAgentFiles) {
+    const agentPath = path.join(agentDir, agentFile);
+    if (!existsSync(agentPath)) {
+      continue;
+    }
+    ensureBareNxLauncherInPublishableAgent(agentPath);
+  }
+}
+
 function writeLeadInstructions() {
   const leadSpec = readFileSync(nexusCoreSpecLeadPath, "utf8");
   const leadInstructions = stripFrontmatter(leadSpec).trim() + "\n";
@@ -70,6 +104,7 @@ try {
 
   replaceDirectory(path.join(stagingRoot, ".codex", "skills"), path.join(pluginRoot, "skills"));
   replaceDirectory(path.join(stagingRoot, ".codex", "agents"), path.join(pluginRoot, "agents"));
+  applyDownstreamAgentLauncherCompatibilityFix(path.join(pluginRoot, "agents"));
   writeLeadInstructions();
 
   console.log(`Synced Codex artifacts from @moreih29/nexus-core@${nexusCoreVersion}.`);

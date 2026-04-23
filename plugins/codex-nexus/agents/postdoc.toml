@@ -181,4 +181,5 @@ model = "gpt-5.4"
 sandbox_mode = "read-only"
 
 [mcp_servers.nx]
+command = "nexus-mcp"
 disabled_tools = ["nx_task_add", "nx_task_update", "nx_task_close", "spawn_agent", "request_user_input"]

@@ -69,10 +69,11 @@ for (const skillName of requiredSkills) {
 
 assert(existsSync(path.join(agentsPath, "lead.toml")), "Missing generated lead agent.");
 assert(readdirSync(agentsPath).length >= 3, "Expected multiple generated agents in plugins/codex-nexus/agents.");
-for (const agentFile of readdirSync(agentsPath).filter((entry) => entry.endsWith(".toml"))) {
+for (const agentFile of ["architect.toml", "designer.toml", "engineer.toml", "postdoc.toml", "researcher.toml", "reviewer.toml", "strategist.toml", "tester.toml", "writer.toml"].filter((entry) => existsSync(path.join(agentsPath, entry)))) {
   const parsed = TOML.parse(readFileSync(path.join(agentsPath, agentFile), "utf8"));
   const nxConfig = parsed?.mcp_servers?.nx ?? {};
-  assert(nxConfig.command !== "nexus-mcp", `Agent ${agentFile} must not use bare nexus-mcp.`);
+  assert(nxConfig.command === "nexus-mcp", `Agent ${agentFile} must keep bare nexus-mcp in publishable source.`);
+  assert(Array.isArray(nxConfig.disabled_tools), `Agent ${agentFile} must define nx disabled_tools.`);
 }
 
 for (const assetPath of [manifest.interface.composerIcon, manifest.interface.logo]) {

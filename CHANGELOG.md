@@ -4,6 +4,20 @@
 
 형식은 Keep a Changelog 스타일을 느슨하게 따르며, 버전 표기는 SemVer 기준으로 관리한다.
 
+## [0.3.11] - 2026-04-23
+
+### Changed
+
+- `@moreih29/nexus-core`를 `0.20.0`으로 올리고 Codex generated Lead / `nx-auto-plan` / `nx-plan` / `nx-run` 자산을 최신 upstream 계약에 맞게 다시 동기화
+- publishable subagent source는 upstream의 bare `nexus-mcp` 메타데이터를 유지하되, installer가 실제 설치 결과물에서는 런타임 절대경로 + 설치된 `nexus-core` `server.js` 경로로 rewrite 하도록 정리
+- `sync:core`가 generated subagent를 다시 받아와도 downstream launcher compatibility line(`command = "nexus-mcp"`)을 자동으로 복구하도록 갱신
+
+### Fixed
+
+- install 결과의 child-agent TOML이 부분 `mcp_servers` 상속에 기대지 않고 항상 launchable한 MCP transport를 갖도록 수정
+- `doctor`와 테스트가 bare launcher 회피만 보는 대신, 설치된 agent MCP launcher가 실제 존재하는 실행 경로와 server path를 가리키는지 확인하도록 강화하고, `validate`는 publishable source contract를 별도로 점검하도록 정리
+- clean user-scope install 기준으로 malformed agent role / `invalid transport` 경고로 이어지던 child-agent launcher 구성을 installer에서 launchable 경로로 재작성하도록 정리
+
 ## [0.3.10] - 2026-04-22
 
 ### Changed

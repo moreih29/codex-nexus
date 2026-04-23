@@ -264,6 +264,152 @@
           "created_at": "2026-04-22T13:37:32.108Z"
         }
       ]
+    },
+    {
+      "schema_version": "1.0",
+      "completed_at": "2026-04-23T06:18:42.374Z",
+      "branch": "chore/update-nexus-core",
+      "plan": {
+        "id": 4,
+        "topic": "Update codex-nexus to upstream nexus-core 0.20.0 and ship a compatible release",
+        "issues": [
+          {
+            "id": 1,
+            "title": "Decide the upgrade scope and versioning strategy for moving codex-nexus from nexus-core 0.19.2 to 0.20.0",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "lead",
+                "summary": "Specific execution request. No HOW spawn: npm metadata, upstream git diff, and local package structure provide sufficient evidence. Observed change surface from nexus-core 0.19.2 -> 0.20.0 is limited to generated Lead/plan-skill artifacts, with no dist/mcp or harness contract changes. Therefore codex-nexus can treat this as a compatibility sync + local wrapper release, not a broader redesign.",
+                "recorded_at": "2026-04-23T06:02:55.795Z"
+              }
+            ],
+            "decision": "Selected: upgrade codex-nexus from @moreih29/nexus-core 0.19.2 to 0.20.0 and ship codex-nexus as a patch release (0.3.11), because the upstream delta is confined to generated Lead/skill artifacts and does not change installer CLI shape, package layout, or MCP server implementation. Rejected alternative 1: stay on 0.19.2 — dismissed because 0.20.0 is already published and contains spec/skill updates that this wrapper is supposed to track. Rejected alternative 2: treat this as a minor/major codex-nexus bump — dismissed because there is no new user-facing command surface or intended breaking compatibility; the work is an upstream sync plus wrapper hardening. Assumption: runtime compatibility remains within patch expectations because the upstream diff does not touch harness layout or dist/mcp server code."
+          },
+          {
+            "id": 2,
+            "title": "Decide how to sync upstream-generated Lead/skill artifacts while preserving local installer compatibility fixes",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "lead",
+                "summary": "Technical issue with sufficient local evidence; no HOW spawn needed. codex-nexus installer already has a local agent-MCP rewrite fix in progress, and codex-cli 0.122.0 was previously reproduced to reject agent TOMLs that rely on partial mcp_servers inheritance ('invalid transport'). Upstream 0.20.0 sync output changes only lead.toml and the three plan skills, so the safe path is to sync those upstream artifacts while keeping launcher resolution as an explicitly downstream install-time concern.",
+                "recorded_at": "2026-04-23T06:03:06.915Z"
+              }
+            ],
+            "decision": "Selected: sync upstream-generated Lead and plan-skill artifacts from nexus-core 0.20.0, but preserve and complete the downstream installer strategy that rewrites installed agent MCP launchers to the resolved runtime path and installed nexus-core server.js path. Publishable source agents may keep upstream bare 'nexus-mcp' metadata, while the installed .codex/agents and installed plugin agent copies are rewritten to launchable absolute paths. Rejected alternative 1: rely on partial mcp_servers inheritance in installed agent TOMLs — dismissed because local runtime evidence shows codex-cli 0.122.0 rejects that shape with 'invalid transport'. Rejected alternative 2: ship installed agents with bare 'nexus-mcp' and no downstream rewrite — dismissed because codex-nexus explicitly promises PATH-independent launcher wiring and doctor/installer should verify real executable paths, not bare command assumptions. Rejected alternative 3: fork or locally edit upstream-generated Lead/skill text beyond the required sync — dismissed because the observed 0.20.0 upstream delta is exactly in those generated artifacts, so the wrapper should stay aligned unless a concrete downstream incompatibility is proven."
+          },
+          {
+            "id": 3,
+            "title": "Decide the release/readiness changes needed in codex-nexus before shipping the updated package",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "lead",
+                "summary": "Release workflow evidence is available locally: publish-npm is trusted-publishing on tag push after validate.yml, and releasing.md requires changelog, full validation, doctor checks, npm pack dry-run, and post-publish smoke verification. No strategist/postdoc spawn needed because this is procedural release execution, not a business-choice ambiguity.",
+                "recorded_at": "2026-04-23T06:03:27.666Z"
+              }
+            ],
+            "decision": "Selected: perform the full release-readiness set locally — version bump, changelog update, dependency update, upstream sync, validation, doctor, npm pack dry-run, and release commit — then attempt the repository's normal publish path only if the environment is already configured for it (tag-driven trusted publishing and usable git remote auth). If that final external step is unavailable, stop at a verified release-ready state and report the remaining external blocker explicitly. Rejected alternative 1: change code without release metadata or changelog updates — dismissed because releasing.md treats version/changelog alignment as mandatory. Rejected alternative 2: treat local tests alone as sufficient and skip doctor/npm-pack smoke checks — dismissed because this repo's release checklist requires install-path and package-contents validation, not source-only tests. Rejected alternative 3: force a manual npm publish path regardless of the repository's workflow — dismissed because the documented release path is trusted publishing on tag push, so bypassing it would diverge from the project's own release contract unless the existing path proves unusable."
+          }
+        ],
+        "research_summary": "Current codex-nexus depends on @moreih29/nexus-core 0.19.2. npm latest is 0.20.0, published 2026-04-23T05:57:09Z. Comparing 0.19.2 -> 0.20.0 shows no harness layout or dist/mcp implementation changes; the upstream delta is concentrated in spec-generated artifacts: spec/agents/lead body and nx-auto-plan / nx-plan / nx-run skill bodies. Running nexus-sync for both versions shows generated Codex output changes only in .codex/agents/lead.toml and .codex/skills/{nx-auto-plan,nx-plan,nx-run}/SKILL.md. Separately, codex-nexus has a local install-time fix in progress for rewriting installed agent MCP launchers to resolved runtime/server paths; that fix must be preserved while upgrading. No prior matching cycle was found in .nexus/history.json.",
+        "created_at": "2026-04-23T06:02:07.687Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Sync nexus-core 0.20.0 generated assets and preserve install-time agent launcher rewriting",
+          "status": "completed",
+          "context": "codex-nexus currently pins @moreih29/nexus-core 0.19.2. Upstream 0.20.0 changes are limited to generated Lead/plan-skill artifacts, while codex-nexus also needs the local fix that rewrites installed agent MCP launchers to resolved runtime/server paths for Codex CLI compatibility.",
+          "acceptance": "- package.json pins @moreih29/nexus-core to 0.20.0 and lockfile is updated consistently\n- publishable generated artifacts in plugins/codex-nexus are synced to upstream 0.20.0 where the diff applies\n- installed .codex/agents and installed plugin agent copies are rewritten to resolved runtime + installed nexus-core server.js paths\n- code/tests/validation reflect the launchable installed-agent contract rather than partial mcp_servers inheritance assumptions",
+          "approach": "Update the dependency pin to 0.20.0, refresh generated Codex artifacts from upstream (lead.instructions.md, lead.toml, nx-auto-plan/nx-plan/nx-run skills, and any dependent generated source metadata), and keep the downstream installer/test logic that rewrites installed agent TOMLs to absolute runtime/server paths.",
+          "risk": "A blind sync could overwrite downstream compatibility fixes or reintroduce PATH-dependent launcher assumptions.",
+          "plan_issue": 2,
+          "owner": {
+            "role": "engineer",
+            "resume_tier": "bounded",
+            "agent_id": "019db8f2-6ea2-75c0-85fa-5a15a34a52a1"
+          },
+          "created_at": "2026-04-23T06:05:01.492Z"
+        },
+        {
+          "id": 2,
+          "title": "Update release metadata and changelog for codex-nexus 0.3.11",
+          "status": "completed",
+          "context": "The wrapper update should ship as codex-nexus 0.3.11. Release metadata must reflect the new nexus-core pin and the install/runtime compatibility fix so publish and release notes stay aligned.",
+          "acceptance": "- package.json, plugin manifest, and any version-pinned release metadata are aligned at 0.3.11\n- CHANGELOG.md contains a new 0.3.11 section describing upstream sync, compatibility implications, and installer/runtime behavior changes\n- README examples stay consistent if they mention explicit codex-nexus versions",
+          "approach": "Bump codex-nexus package/plugin metadata from 0.3.10 to 0.3.11, ensure any version-pinned hook or manifest content is aligned, and add a changelog entry summarizing the nexus-core 0.20.0 sync plus the installed-agent MCP launcher hardening.",
+          "risk": "Release notes that omit the compatibility fix or upstream scope could make the update look like a trivial dependency bump when it changes runtime behavior.",
+          "plan_issue": 3,
+          "deps": [
+            1
+          ],
+          "owner": {
+            "role": "lead",
+            "resume_tier": "ephemeral"
+          },
+          "created_at": "2026-04-23T06:05:08.876Z"
+        },
+        {
+          "id": 3,
+          "title": "Review version alignment and release notes accuracy",
+          "status": "completed",
+          "context": "After code and metadata updates, release-facing files need an independent pass to confirm version alignment and that the changelog accurately describes the shipped behavior.",
+          "acceptance": "- reviewer confirms version numbers are aligned across release-facing files\n- reviewer confirms changelog text matches the actual code/install behavior changes\n- reviewer flags any misleading or missing release note content before release execution",
+          "approach": "Review package/versioned metadata, changelog wording, and any version-pinned manifest/hook content for consistency with the implemented changes and the selected 0.3.11 release scope.",
+          "risk": "A technically correct build with inconsistent release metadata can still publish a misleading package.",
+          "plan_issue": 3,
+          "deps": [
+            2
+          ],
+          "owner": {
+            "role": "reviewer",
+            "resume_tier": "bounded",
+            "agent_id": "019db8f8-2565-7030-b3a4-4a32b6b29935"
+          },
+          "created_at": "2026-04-23T06:05:15.969Z"
+        },
+        {
+          "id": 4,
+          "title": "Run release checklist and verify install/runtime behavior in clean environments",
+          "status": "completed",
+          "context": "Before shipping, codex-nexus must pass the repo's release checklist: sync, validation, tests, CLI help, doctor checks, npm pack dry-run, and clean install smoke verification for the updated package behavior.",
+          "acceptance": "- bun install, bun run sync:core, bun run validate, bun test, and node scripts/codex-nexus.mjs --help all succeed\n- doctor passes for a clean project-scope install and a clean user-scope install\n- npm pack --dry-run succeeds and includes expected installer/plugin assets\n- a Codex startup against a freshly installed user-scope layout does not emit malformed agent role / invalid transport warnings",
+          "approach": "Execute the required release commands, verify doctor in clean project/user installs, confirm installed agent TOMLs resolve to real runtime/server paths, and confirm no malformed-agent warning appears during Codex startup against an installed user-scope layout.",
+          "risk": "The package can look correct in source but still fail in clean install paths or packaged form.",
+          "plan_issue": 3,
+          "deps": [
+            1,
+            2
+          ],
+          "owner": {
+            "role": "tester",
+            "resume_tier": "bounded",
+            "agent_id": "019db8f8-67d1-7e32-be02-5d462f1d5168"
+          },
+          "created_at": "2026-04-23T06:05:23.980Z"
+        },
+        {
+          "id": 5,
+          "title": "Execute the repository release path if environment permits",
+          "status": "completed",
+          "context": "The documented publish path is trusted publishing from GitHub Actions on tag push. The user requested deployment, but external release execution depends on available git remote auth and release environment readiness.",
+          "acceptance": "- release execution is attempted only after review and verification tasks pass\n- if git remote/auth and release trigger are available, the normal tag-driven publish path is initiated\n- if the environment cannot perform that external step, the exact blocker is captured for the final report",
+          "approach": "After code, metadata, review, and verification tasks pass, prepare the release state and attempt the repository's normal release trigger only if the local environment is already configured for it. If the external trigger cannot be executed from this environment, stop cleanly with the blocker identified instead of forcing an alternate publish path.",
+          "risk": "Attempting to bypass the documented release path could create a release that diverges from the repository's trusted-publishing contract.",
+          "plan_issue": 3,
+          "deps": [
+            3,
+            4
+          ],
+          "owner": {
+            "role": "lead",
+            "resume_tier": "ephemeral"
+          },
+          "created_at": "2026-04-23T06:05:42.388Z"
+        }
+      ]
     }
   ]
 }

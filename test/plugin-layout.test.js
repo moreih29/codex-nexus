@@ -39,7 +39,7 @@ test("generated nexus-core artifacts are present", () => {
   expect(existsSync(path.join(pluginRoot, "agents", "lead.toml"))).toBe(true);
 });
 
-test("generated subagent nx MCP config stays launchable", () => {
+test("generated subagent nx MCP config stays aligned with upstream launcher metadata", () => {
   const agentFiles = ["architect.toml", "designer.toml", "engineer.toml", "postdoc.toml", "researcher.toml", "reviewer.toml", "strategist.toml", "tester.toml", "writer.toml"]
     .filter((entry) => existsSync(path.join(pluginRoot, "agents", entry)));
 
@@ -47,7 +47,7 @@ test("generated subagent nx MCP config stays launchable", () => {
   for (const agentFile of agentFiles) {
     const parsed = TOML.parse(readFileSync(path.join(pluginRoot, "agents", agentFile), "utf8"));
     const nx = parsed?.mcp_servers?.nx ?? {};
-    expect(nx.command).toBeUndefined();
+    expect(nx.command).toBe("nexus-mcp");
     expect(nx.args).toBeUndefined();
     expect(Array.isArray(nx.disabled_tools)).toBe(true);
   }

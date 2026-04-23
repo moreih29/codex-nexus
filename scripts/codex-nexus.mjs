@@ -349,6 +349,42 @@ function managedInstalledNxServerConfig(runtimeCommand, serverPath) {
   };
 }
 
+function mergeAgentNxServerConfigToml(content, runtimeCommand, serverPath) {
+  const parsed = TOML.parse(content);
+  const mcpServers = safeObject(parsed.mcp_servers);
+  const nxConfig = safeObject(mcpServers.nx);
+
+  if (Object.keys(nxConfig).length === 0) {
+    return content;
+  }
+
+  parsed.mcp_servers = {
+    ...mcpServers,
+    nx: {
+      ...nxConfig,
+      ...managedInstalledNxServerConfig(runtimeCommand, serverPath)
+    }
+  };
+
+  return TOML.stringify(parsed);
+}
+
+function rewriteManagedAgentNxServerConfigs(agentDir, runtimeCommand, serverPath) {
+  if (!existsSync(agentDir)) {
+    return;
+  }
+
+  for (const entry of readdirSync(agentDir).filter((name) => name.endsWith(".toml"))) {
+    const filePath = path.join(agentDir, entry);
+    const current = readFileSync(filePath, "utf8");
+    const next = mergeAgentNxServerConfigToml(current, runtimeCommand, serverPath);
+
+    if (next !== current) {
+      writeText(filePath, next);
+    }
+  }
+}
+
 function readAgentNxServerConfigs(agentDir) {
   if (!existsSync(agentDir)) {
     return [];
@@ -431,7 +467,9 @@ async function installManagedSurfaces(installedPackageRoot, scopePaths) {
   const nexusCoreServerPath = resolveNexusCoreServerPath(installedPackageRoot);
 
   copyDirectory(pluginSourceRoot, scopePaths.pluginInstallDir);
+  rewriteManagedAgentNxServerConfigs(path.join(scopePaths.pluginInstallDir, "agents"), runtimeCommand, nexusCoreServerPath);
   copyDirectory(path.join(pluginSourceRoot, "agents"), scopePaths.agentsDir);
+  rewriteManagedAgentNxServerConfigs(scopePaths.agentsDir, runtimeCommand, nexusCoreServerPath);
   copyDirectory(path.join(pluginSourceRoot, "skills"), scopePaths.skillsDir);
   writeText(
     scopePaths.leadInstructionsPath,
@@ -512,8 +550,16 @@ function doctorCommand(options = {}, runtime = {}) {
   const usesLocalDevelopmentHooks = hooks.includes(path.join(PACKAGE_ROOT, "scripts", "codex-nexus-hook.mjs")) ||
     hooks.includes("node ./scripts/codex-nexus-hook.mjs");
   const installedAgentNxConfigs = readAgentNxServerConfigs(paths.agentsDir);
-  const agentsAvoidBareNxLauncher = installedAgentNxConfigs.length > 0 &&
-    installedAgentNxConfigs.every((agent) => agent.command !== "nexus-mcp");
+  const installedPluginAgentNxConfigs = readAgentNxServerConfigs(path.join(paths.pluginInstallDir, "agents"));
+  const usesResolvedNxLauncher = (agentConfigs) => agentConfigs.length > 0 &&
+    agentConfigs.every((agent) =>
+      agent.command.length > 0 &&
+      agent.command !== "nexus-mcp" &&
+      existsSync(agent.command) &&
+      agent.args.length > 0 &&
+      typeof agent.args[0] === "string" &&
+      existsSync(agent.args[0])
+    );
 
   const checks = [
     { label: "plugin install dir", ok: existsSync(path.join(paths.pluginInstallDir, ".codex-plugin", "plugin.json")) },
@@ -532,7 +578,8 @@ function doctorCommand(options = {}, runtime = {}) {
     { label: "hooks.json", ok: existsSync(paths.hooksJsonPath) && hasManagedHooks },
     { label: "marketplace.json", ok: existsSync(paths.marketplacePath) && marketplace.includes(paths.pluginSourcePath) },
     { label: ".codex/agents/lead.toml", ok: existsSync(path.join(paths.agentsDir, "lead.toml")) },
-    { label: ".codex/agents avoid bare nx MCP launcher", ok: agentsAvoidBareNxLauncher },
+    { label: ".codex/agents use resolved nx MCP launcher", ok: usesResolvedNxLauncher(installedAgentNxConfigs) },
+    { label: "plugin agents use resolved nx MCP launcher", ok: usesResolvedNxLauncher(installedPluginAgentNxConfigs) },
     { label: ".agents/skills/nx-plan", ok: existsSync(path.join(paths.skillsDir, "nx-plan", "SKILL.md")) },
     { label: "package store", ok: usesLocalDevelopmentHooks || existsSync(path.join(packageStoreRoot, "package.json")) }
   ];

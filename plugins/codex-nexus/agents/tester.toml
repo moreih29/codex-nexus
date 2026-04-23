@@ -262,4 +262,5 @@ Recommendations: <request immediate fix for CRITICAL issues; request Lead judgme
 model = "gpt-5.3-codex"
 
 [mcp_servers.nx]
+command = "nexus-mcp"
 disabled_tools = ["nx_task_add", "nx_task_close", "spawn_agent", "request_user_input"]
