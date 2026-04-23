@@ -2,6 +2,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { spawn } from "node:child_process";
 
 const NEXUS_GITIGNORE = `# Nexus: whitelist tracked files, ignore everything else
 *
@@ -19,7 +20,7 @@ const TAG_INSTRUCTIONS = new Map([
   ["[run]", "Activate the nx-run skill."],
   ["[m]", "Save the following content into `.nexus/memory/` using the proper empirical-/external-/pattern- filename convention."],
   ["[m:gc]", "Clean up `.nexus/memory/` by merging duplicates and removing stale entries."],
-  ["[d]", "Record the current plan issue decision with `nx_plan_decide`."]
+  ["[d]", "Record the current plan issue decision with `nx_plan_decide`." ]
 ]);
 
 const BLOCKED_GIT_PATTERNS = [
@@ -44,6 +45,13 @@ const BLOCKED_GIT_PATTERNS = [
     reason: "Nexus policy: interactive rebase requires explicit user instruction."
   }
 ];
+
+const CMUX_STATUS_KEY = "nexus-state";
+const CMUX_STATUS_COLOR = "#007AFF";
+const CMUX_RUNNING_ICON = "bolt";
+const CMUX_RUNNING_VALUE = "Running";
+const CMUX_NEEDS_INPUT_ICON = "bell";
+const CMUX_NEEDS_INPUT_VALUE = "Needs Input";
 
 async function readStdin() {
   const chunks = [];
@@ -99,11 +107,65 @@ function buildUserPromptContext(tag, cwd) {
   return base;
 }
 
+function isCmuxEnabled() {
+  if (!process.env.CMUX_WORKSPACE_ID) {
+    return false;
+  }
+  const flag = process.env.CODEX_NEXUS_CMUX;
+  if (flag === "0" || flag === "false") {
+    return false;
+  }
+  return true;
+}
+
+function isSubagentEvent(input) {
+  return typeof input?.agent_id === "string" && input.agent_id.length > 0;
+}
+
+function cmuxSpawn(args) {
+  if (!isCmuxEnabled()) {
+    return;
+  }
+  try {
+    const child = spawn("cmux", args, {
+      stdio: "ignore",
+      detached: true
+    });
+    child.on("error", () => {});
+    child.unref();
+  } catch {}
+}
+
+function cmuxSetStatus(value, icon) {
+  cmuxSpawn(["set-status", CMUX_STATUS_KEY, value, "--icon", icon, "--color", CMUX_STATUS_COLOR]);
+}
+
+function cmuxNotify(body) {
+  cmuxSpawn(["notify", "--title", "codex-nexus", "--body", body]);
+}
+
+function maybeSetRunning(input) {
+  if (isSubagentEvent(input)) {
+    return;
+  }
+  cmuxSetStatus(CMUX_RUNNING_VALUE, CMUX_RUNNING_ICON);
+}
+
+function maybeSetNeedsInput(input, body) {
+  if (isSubagentEvent(input)) {
+    return;
+  }
+  cmuxNotify(body);
+  cmuxSetStatus(CMUX_NEEDS_INPUT_VALUE, CMUX_NEEDS_INPUT_ICON);
+}
+
 function handleSessionStart(input) {
   ensureNexusLayout(input.cwd);
 }
 
 function handleUserPromptSubmit(input) {
+  maybeSetRunning(input);
+
   const tag = detectLeadingTag(input.prompt ?? "");
   if (!tag) {
     return;
@@ -137,6 +199,17 @@ function handlePreToolUse(input) {
       return;
     }
   }
+
+  maybeSetRunning(input);
+}
+
+function handlePermissionRequest(input) {
+  maybeSetNeedsInput(input, "Permission requested");
+}
+
+function handleStop(input) {
+  maybeSetNeedsInput(input, "Response ready");
+  printJson({ continue: true });
 }
 
 async function main() {
@@ -158,6 +231,12 @@ async function main() {
       return;
     case "pre-tool-use":
       handlePreToolUse(input);
+      return;
+    case "permission-request":
+      handlePermissionRequest(input);
+      return;
+    case "stop":
+      handleStop(input);
       return;
     default:
       process.stderr.write(`Unsupported hook mode: ${mode}\n`);

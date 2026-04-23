@@ -38,6 +38,23 @@ In a TTY session, the installer lets you choose:
 The installed version is always the same as the currently executed `codex-nexus` package.
 If you want a different version, change the package version at invocation time.
 
+## CLI commands
+
+```bash
+codex-nexus install [--scope user|project]
+codex-nexus uninstall [--scope user|project]
+codex-nexus doctor [--scope user|project]
+codex-nexus version
+codex-nexus --version
+```
+
+Version examples:
+
+```bash
+npx -y codex-nexus version
+npx -y codex-nexus --version
+```
+
 ## Installation scopes
 
 ### user
@@ -84,6 +101,24 @@ The installer writes or updates:
 This is the important distinction: it does not just copy a plugin folder. It wires the final-user config paths that Codex actually reads.
 It also wires `nx` MCP through the installed runtime plus the installed `nexus-core` server entry, instead of relying on `npx` being present on PATH.
 
+## Uninstall
+
+To remove the setup, run uninstall with the same scope.
+
+```bash
+npx -y codex-nexus uninstall --scope user
+npx -y codex-nexus uninstall --scope project
+```
+
+Behavioral contract:
+
+- codex-nexus tries to revert or remove only the files and settings it manages
+- unrelated hook, marketplace, and config content should be preserved whenever possible
+- fresh installs persist rollback metadata so uninstall can restore more precisely later
+- older installs without metadata fall back to a conservative best-effort cleanup path
+
+In practice, uninstall is designed around **reverting only the codex-nexus-managed surfaces**, not blindly restoring whole merged files.
+
 ## Verify the install
 
 ```bash
@@ -92,6 +127,35 @@ npx -y codex-nexus doctor --scope project
 ```
 
 A healthy setup prints `Doctor passed.`.
+
+## cmux notifications
+
+`codex-nexus` also provides best-effort cmux status and notification updates through Codex hooks.
+
+Requirements:
+
+- Codex must be running inside cmux (`CMUX_WORKSPACE_ID` present)
+- the `cmux` CLI must be available on PATH
+
+Behavior:
+
+- when work starts or Bash execution resumes, it refreshes a `Running` status pill
+- when a response completes, it sends a `Response ready` notification and sets `Needs Input`
+- when Codex asks for approval, it sends a `Permission requested` notification and sets `Needs Input`
+
+The default cmux presentation matches:
+
+- icon: `bolt` / `bell`
+- status: `Running` / `Needs Input`
+- color: `#007AFF`
+
+To disable the cmux integration:
+
+```bash
+CODEX_NEXUS_CMUX=0 codex
+# or
+CODEX_NEXUS_CMUX=false codex
+```
 
 ## Example usage
 
@@ -131,6 +195,7 @@ The installer also aligns the pinned `@moreih29/nexus-core` version from the cur
 - Hooks are merged into Codex config-layer `hooks.json`.
 - `nx` MCP uses the installer runtime path rather than a bare `npx` command.
 - For project installs, the installer adds ignore entries for local install artifact directories to `.gitignore`.
+- Uninstall is designed to preserve unrelated settings, but old installs without rollback metadata can only be cleaned up on a best-effort basis.
 
 ## Repository layout
 

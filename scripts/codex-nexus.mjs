@@ -1,6 +1,15 @@
 #!/usr/bin/env node
 
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,9 +26,24 @@ const PLUGIN_NAME = "codex-nexus";
 const LEAD_INSTRUCTIONS_FILE = "lead.instructions.md";
 const TEST_PACKAGE_ROOT_ENV = "CODEX_NEXUS_TEST_PACKAGE_ROOT";
 const NEXUS_CORE_SERVER_RELATIVE_PATH = path.join("dist", "mcp", "server.js");
+const INSTALL_STATE_DIRNAME = ".codex-nexus";
+const INSTALL_STATE_FILENAME = "install-state.json";
+const INSTALL_STATE_VERSION = 1;
+const MANAGED_GITIGNORE_LINES = [
+  ".nexus/state/",
+  ".codex/",
+  ".agents/"
+];
+const MANAGED_FEATURE_KEYS = ["multi_agent", "child_agents_md", "codex_hooks"];
+const DEFAULT_MARKETPLACE_NAME = "codex-nexus";
+const DEFAULT_MARKETPLACE_DISPLAY_NAME = "Codex Nexus";
 
 function safeObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function objectHas(record, key) {
+  return Object.prototype.hasOwnProperty.call(record, key);
 }
 
 function npmExecutable() {
@@ -70,32 +94,21 @@ function writeText(filePath, content) {
   writeFileSync(filePath, content, "utf8");
 }
 
+function writeJson(filePath, value) {
+  writeText(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
 function readTextIfExists(filePath) {
   return existsSync(filePath) ? readFileSync(filePath, "utf8") : null;
 }
 
-function ensureProjectGitignore(projectRoot) {
-  const gitignorePath = path.join(projectRoot, ".gitignore");
-  const requiredLines = [
-    ".nexus/state/",
-    ".codex/",
-    ".agents/"
-  ];
+function readJsonIfExists(filePath) {
+  const content = readTextIfExists(filePath);
+  return content ? JSON.parse(content) : null;
+}
 
-  const existing = readTextIfExists(gitignorePath) ?? "";
-  const lines = new Set(existing.split(/\r?\n/).filter(Boolean));
-  let changed = false;
-
-  for (const line of requiredLines) {
-    if (!lines.has(line)) {
-      lines.add(line);
-      changed = true;
-    }
-  }
-
-  if (changed || !existsSync(gitignorePath)) {
-    writeText(gitignorePath, `${Array.from(lines).join("\n")}\n`);
-  }
+function removePath(filePath) {
+  rmSync(filePath, { recursive: true, force: true });
 }
 
 function copyDirectory(sourceDir, destinationDir) {
@@ -147,6 +160,7 @@ function resolveScopePaths(scope, cwd = process.cwd(), env = process.env) {
   const pluginInstallDir = scope === "user"
     ? path.join(codexHomeDir, "plugins", PLUGIN_NAME)
     : path.join(projectRoot, "plugins", PLUGIN_NAME);
+  const managedStateDir = path.join(codexHomeDir, INSTALL_STATE_DIRNAME);
 
   return {
     scope,
@@ -154,6 +168,7 @@ function resolveScopePaths(scope, cwd = process.cwd(), env = process.env) {
     codexHomeDir,
     agentsRootDir,
     packageStoreDir,
+    managedInstalledPackageRoot: path.join(packageStoreDir, "node_modules", PACKAGE_NAME),
     configTomlPath: path.join(codexHomeDir, "config.toml"),
     hooksJsonPath: path.join(codexHomeDir, "hooks.json"),
     leadInstructionsPath: path.join(codexHomeDir, LEAD_INSTRUCTIONS_FILE),
@@ -161,7 +176,10 @@ function resolveScopePaths(scope, cwd = process.cwd(), env = process.env) {
     skillsDir: path.join(agentsRootDir, "skills"),
     marketplacePath: path.join(agentsRootDir, "plugins", "marketplace.json"),
     pluginInstallDir,
-    pluginSourcePath: scope === "user" ? "./.codex/plugins/codex-nexus" : "./plugins/codex-nexus"
+    pluginSourcePath: scope === "user" ? "./.codex/plugins/codex-nexus" : "./plugins/codex-nexus",
+    projectGitignorePath: path.join(projectRoot, ".gitignore"),
+    managedStateDir,
+    managedStatePath: path.join(managedStateDir, INSTALL_STATE_FILENAME)
   };
 }
 
@@ -245,7 +263,7 @@ async function resolveInstalledPackageRoot(scopePaths, requestedVersion, runtime
     env
   );
 
-  const installedRoot = path.join(scopePaths.packageStoreDir, "node_modules", PACKAGE_NAME);
+  const installedRoot = scopePaths.managedInstalledPackageRoot;
   if (!existsSync(installedRoot)) {
     throw new Error(`Installed package not found at ${installedRoot}`);
   }
@@ -296,6 +314,29 @@ function buildManagedHooks(installedPackageRoot) {
             }
           ]
         }
+      ],
+      PermissionRequest: [
+        {
+          matcher: "Bash",
+          hooks: [
+            {
+              type: "command",
+              command: `node ${quotedHookScriptPath} permission-request`,
+              timeout: 30
+            }
+          ]
+        }
+      ],
+      Stop: [
+        {
+          hooks: [
+            {
+              type: "command",
+              command: `node ${quotedHookScriptPath} stop`,
+              timeout: 30
+            }
+          ]
+        }
       ]
     }
   };
@@ -337,6 +378,37 @@ function mergeHooksJson(existingContent, installedPackageRoot) {
       .map((group) => stripManagedHookGroup(group))
       .filter((group) => group !== null);
     next.hooks[eventName] = [...preserved, ...groups];
+  }
+
+  return JSON.stringify(next, null, 2) + "\n";
+}
+
+function stripManagedHooksJson(existingContent, fileExisted) {
+  const parsed = existingContent ? JSON.parse(existingContent) : {};
+  const next = {
+    ...parsed
+  };
+  const hooks = safeObject(parsed.hooks);
+  const nextHooks = {};
+
+  for (const [eventName, groups] of Object.entries(hooks)) {
+    const cleanedGroups = (Array.isArray(groups) ? groups : [])
+      .map((group) => stripManagedHookGroup(group))
+      .filter((group) => group !== null);
+
+    if (cleanedGroups.length > 0) {
+      nextHooks[eventName] = cleanedGroups;
+    }
+  }
+
+  if (Object.keys(nextHooks).length > 0) {
+    next.hooks = nextHooks;
+  } else {
+    delete next.hooks;
+  }
+
+  if (Object.keys(next).length === 0 && !fileExisted) {
+    return null;
   }
 
   return JSON.stringify(next, null, 2) + "\n";
@@ -407,37 +479,163 @@ function readAgentNxServerConfigs(agentDir) {
     .filter((entry) => entry.command.length > 0 || entry.args.length > 0 || entry.disabledTools.length > 0);
 }
 
+function managedConfigPatch(runtimeCommand, serverPath) {
+  return {
+    modelInstructionsFile: LEAD_INSTRUCTIONS_FILE,
+    features: {
+      multi_agent: true,
+      child_agents_md: true,
+      codex_hooks: true
+    },
+    mcpServerNx: managedInstalledNxServerConfig(runtimeCommand, serverPath)
+  };
+}
+
 function mergeConfigToml(existingContent, runtimeCommand, serverPath) {
   const parsed = existingContent ? TOML.parse(existingContent) : {};
   const features = safeObject(parsed.features);
   const mcpServers = safeObject(parsed.mcp_servers);
+  const managed = managedConfigPatch(runtimeCommand, serverPath);
 
-  parsed.model_instructions_file = LEAD_INSTRUCTIONS_FILE;
+  parsed.model_instructions_file = managed.modelInstructionsFile;
   parsed.features = {
     ...features,
-    multi_agent: true,
-    child_agents_md: true,
-    codex_hooks: true
+    ...managed.features
   };
   parsed.mcp_servers = {
     ...mcpServers,
-    nx: managedInstalledNxServerConfig(runtimeCommand, serverPath)
+    nx: managed.mcpServerNx
   };
 
   return TOML.stringify(parsed);
 }
 
-function mergeMarketplaceJson(existingContent, pluginSourcePath) {
-  const parsed = existingContent ? JSON.parse(existingContent) : {};
-  const marketplace = {
-    name: typeof parsed.name === "string" && parsed.name.trim().length > 0 ? parsed.name : "codex-nexus",
-    interface: {
-      displayName: safeObject(parsed.interface).displayName ?? "Codex Nexus"
-    },
-    plugins: Array.isArray(parsed.plugins) ? parsed.plugins : []
+function captureValueState(record, key) {
+  return objectHas(record, key)
+    ? { existed: true, value: record[key] }
+    : { existed: false };
+}
+
+function restoreValueState(record, key, state) {
+  if (state?.existed) {
+    record[key] = state.value;
+    return;
+  }
+  delete record[key];
+}
+
+function deleteIfEmptyObject(record, key) {
+  if (record[key] && typeof record[key] === "object" && !Array.isArray(record[key]) && Object.keys(record[key]).length === 0) {
+    delete record[key];
+  }
+}
+
+function stringifyTomlOrNull(parsed, fileExisted) {
+  if (Object.keys(parsed).length === 0 && !fileExisted) {
+    return null;
+  }
+  return TOML.stringify(parsed);
+}
+
+function captureConfigState(filePath) {
+  const content = readTextIfExists(filePath);
+  const parsed = content ? TOML.parse(content) : {};
+  const features = safeObject(parsed.features);
+  const mcpServers = safeObject(parsed.mcp_servers);
+
+  return {
+    fileExisted: content !== null,
+    modelInstructionsFile: captureValueState(parsed, "model_instructions_file"),
+    features: Object.fromEntries(MANAGED_FEATURE_KEYS.map((key) => [key, captureValueState(features, key)])),
+    mcpServerNx: captureValueState(mcpServers, "nx")
+  };
+}
+
+function restoreConfigToml(existingContent, configState) {
+  const parsed = existingContent ? TOML.parse(existingContent) : {};
+  const features = {
+    ...safeObject(parsed.features)
+  };
+  const mcpServers = {
+    ...safeObject(parsed.mcp_servers)
   };
 
-  const nextEntry = {
+  restoreValueState(parsed, "model_instructions_file", configState.modelInstructionsFile);
+
+  for (const key of MANAGED_FEATURE_KEYS) {
+    restoreValueState(features, key, configState.features?.[key]);
+  }
+  if (Object.keys(features).length > 0) {
+    parsed.features = features;
+  } else {
+    delete parsed.features;
+  }
+
+  restoreValueState(mcpServers, "nx", configState.mcpServerNx);
+  if (Object.keys(mcpServers).length > 0) {
+    parsed.mcp_servers = mcpServers;
+  } else {
+    delete parsed.mcp_servers;
+  }
+
+  deleteIfEmptyObject(parsed, "features");
+  deleteIfEmptyObject(parsed, "mcp_servers");
+
+  return stringifyTomlOrNull(parsed, configState.fileExisted);
+}
+
+function looksManagedNxServerConfig(nxConfig) {
+  const command = typeof nxConfig.command === "string" ? nxConfig.command : "";
+  const args = Array.isArray(nxConfig.args) ? nxConfig.args : [];
+  const serverPath = typeof args[0] === "string" ? args[0] : "";
+
+  return command.length > 0 &&
+    args.length === 1 &&
+    serverPath.includes(path.join("@moreih29", "nexus-core")) &&
+    serverPath.endsWith(NEXUS_CORE_SERVER_RELATIVE_PATH);
+}
+
+function removeExactManagedConfigToml(existingContent) {
+  const parsed = existingContent ? TOML.parse(existingContent) : {};
+  const features = {
+    ...safeObject(parsed.features)
+  };
+  const mcpServers = {
+    ...safeObject(parsed.mcp_servers)
+  };
+
+  if (parsed.model_instructions_file === LEAD_INSTRUCTIONS_FILE) {
+    delete parsed.model_instructions_file;
+  }
+
+  for (const key of MANAGED_FEATURE_KEYS) {
+    if (features[key] === true) {
+      delete features[key];
+    }
+  }
+  if (Object.keys(features).length > 0) {
+    parsed.features = features;
+  } else {
+    delete parsed.features;
+  }
+
+  if (looksManagedNxServerConfig(mcpServers.nx ?? {})) {
+    delete mcpServers.nx;
+  }
+  if (Object.keys(mcpServers).length > 0) {
+    parsed.mcp_servers = mcpServers;
+  } else {
+    delete parsed.mcp_servers;
+  }
+
+  deleteIfEmptyObject(parsed, "features");
+  deleteIfEmptyObject(parsed, "mcp_servers");
+
+  return stringifyTomlOrNull(parsed, false);
+}
+
+function marketplaceEntry(pluginSourcePath) {
+  return {
     name: PLUGIN_NAME,
     source: {
       source: "local",
@@ -449,7 +647,21 @@ function mergeMarketplaceJson(existingContent, pluginSourcePath) {
     },
     category: "Coding"
   };
+}
 
+function mergeMarketplaceJson(existingContent, pluginSourcePath) {
+  const parsed = existingContent ? JSON.parse(existingContent) : {};
+  const marketplace = {
+    ...parsed,
+    name: typeof parsed.name === "string" && parsed.name.trim().length > 0 ? parsed.name : DEFAULT_MARKETPLACE_NAME,
+    interface: {
+      ...safeObject(parsed.interface),
+      displayName: safeObject(parsed.interface).displayName ?? DEFAULT_MARKETPLACE_DISPLAY_NAME
+    },
+    plugins: Array.isArray(parsed.plugins) ? parsed.plugins : []
+  };
+
+  const nextEntry = marketplaceEntry(pluginSourcePath);
   const existingIndex = marketplace.plugins.findIndex((entry) => entry?.name === PLUGIN_NAME);
   if (existingIndex === -1) {
     marketplace.plugins.push(nextEntry);
@@ -458,6 +670,290 @@ function mergeMarketplaceJson(existingContent, pluginSourcePath) {
   }
 
   return JSON.stringify(marketplace, null, 2) + "\n";
+}
+
+function captureMarketplaceState(filePath) {
+  const content = readTextIfExists(filePath);
+  const parsed = content ? JSON.parse(content) : {};
+  const interfaceConfig = safeObject(parsed.interface);
+  const plugins = Array.isArray(parsed.plugins) ? parsed.plugins : [];
+  const currentEntry = plugins.find((entry) => entry?.name === PLUGIN_NAME) ?? null;
+
+  return {
+    fileExisted: content !== null,
+    name: captureValueState(parsed, "name"),
+    interfaceDisplayName: captureValueState(interfaceConfig, "displayName"),
+    pluginEntry: currentEntry
+  };
+}
+
+function cleanupMarketplaceTopLevel(parsed, marketplaceState) {
+  restoreValueState(parsed, "name", marketplaceState.name);
+
+  const interfaceConfig = {
+    ...safeObject(parsed.interface)
+  };
+  restoreValueState(interfaceConfig, "displayName", marketplaceState.interfaceDisplayName);
+  if (Object.keys(interfaceConfig).length > 0) {
+    parsed.interface = interfaceConfig;
+  } else {
+    delete parsed.interface;
+  }
+}
+
+function restoreMarketplaceJson(existingContent, marketplaceState) {
+  const parsed = existingContent ? JSON.parse(existingContent) : {};
+  const plugins = Array.isArray(parsed.plugins) ? [...parsed.plugins] : [];
+  const filteredPlugins = plugins.filter((entry) => entry?.name !== PLUGIN_NAME);
+
+  if (marketplaceState.pluginEntry) {
+    filteredPlugins.push(marketplaceState.pluginEntry);
+  }
+
+  if (filteredPlugins.length > 0) {
+    parsed.plugins = filteredPlugins;
+  } else {
+    delete parsed.plugins;
+  }
+
+  cleanupMarketplaceTopLevel(parsed, marketplaceState);
+
+  if (Object.keys(parsed).length === 0 && !marketplaceState.fileExisted) {
+    return null;
+  }
+
+  return JSON.stringify(parsed, null, 2) + "\n";
+}
+
+function removeExactManagedMarketplaceJson(existingContent) {
+  const parsed = existingContent ? JSON.parse(existingContent) : {};
+  const plugins = Array.isArray(parsed.plugins) ? parsed.plugins.filter((entry) => entry?.name !== PLUGIN_NAME) : [];
+
+  if (plugins.length > 0) {
+    parsed.plugins = plugins;
+  } else {
+    delete parsed.plugins;
+  }
+
+  if (parsed.name === DEFAULT_MARKETPLACE_NAME) {
+    delete parsed.name;
+  }
+
+  const interfaceConfig = {
+    ...safeObject(parsed.interface)
+  };
+  if (interfaceConfig.displayName === DEFAULT_MARKETPLACE_DISPLAY_NAME) {
+    delete interfaceConfig.displayName;
+  }
+  if (Object.keys(interfaceConfig).length > 0) {
+    parsed.interface = interfaceConfig;
+  } else {
+    delete parsed.interface;
+  }
+
+  if (Object.keys(parsed).length === 0) {
+    return null;
+  }
+
+  return JSON.stringify(parsed, null, 2) + "\n";
+}
+
+function captureGitignoreState(filePath) {
+  const existing = readTextIfExists(filePath);
+  const lines = new Set((existing ?? "").split(/\r?\n/).filter(Boolean));
+
+  return {
+    fileExisted: existing !== null,
+    addedLines: MANAGED_GITIGNORE_LINES.filter((line) => !lines.has(line))
+  };
+}
+
+function ensureProjectGitignore(projectRoot) {
+  const gitignorePath = path.join(projectRoot, ".gitignore");
+  const existing = readTextIfExists(gitignorePath) ?? "";
+  const lines = new Set(existing.split(/\r?\n/).filter(Boolean));
+  let changed = false;
+
+  for (const line of MANAGED_GITIGNORE_LINES) {
+    if (!lines.has(line)) {
+      lines.add(line);
+      changed = true;
+    }
+  }
+
+  if (changed || !existsSync(gitignorePath)) {
+    writeText(gitignorePath, `${Array.from(lines).join("\n")}\n`);
+  }
+}
+
+function restoreGitignore(existingContent, gitignoreState) {
+  const lines = (existingContent ?? "").split(/\r?\n/);
+  const kept = lines.filter((line) => !gitignoreState.addedLines.includes(line));
+  const normalized = kept.filter((line, index, array) => !(line === "" && index === array.length - 1));
+  const nonEmpty = normalized.filter((line) => line.length > 0);
+
+  if (nonEmpty.length === 0 && !gitignoreState.fileExisted) {
+    return null;
+  }
+
+  return nonEmpty.length > 0 ? `${nonEmpty.join("\n")}\n` : "";
+}
+
+function removeExactManagedGitignore(existingContent) {
+  const lines = (existingContent ?? "").split(/\r?\n/);
+  const kept = lines.filter((line) => !MANAGED_GITIGNORE_LINES.includes(line) && !(line === "" && line === lines.at(-1)));
+  const nonEmpty = kept.filter((line) => line.length > 0);
+  return nonEmpty.length > 0 ? `${nonEmpty.join("\n")}\n` : null;
+}
+
+function capturePathBackup(targetPath, managedStateDir, backupName) {
+  if (!existsSync(targetPath)) {
+    return {
+      existed: false
+    };
+  }
+
+  const backupPath = path.join(managedStateDir, "backup", backupName);
+  removePath(backupPath);
+  ensureDir(path.dirname(backupPath));
+  cpSync(targetPath, backupPath, { recursive: true });
+
+  return {
+    existed: true,
+    kind: statSync(targetPath).isDirectory() ? "directory" : "file",
+    backupPath: path.relative(managedStateDir, backupPath)
+  };
+}
+
+function restorePathBackup(targetPath, snapshot, managedStateDir) {
+  removePath(targetPath);
+
+  if (!snapshot?.existed || !snapshot.backupPath) {
+    return;
+  }
+
+  const backupPath = path.join(managedStateDir, snapshot.backupPath);
+  if (!existsSync(backupPath)) {
+    return;
+  }
+
+  ensureDir(path.dirname(targetPath));
+  cpSync(backupPath, targetPath, { recursive: true });
+}
+
+function cleanupEmptyAncestors(startPath, boundaryPath) {
+  let current = path.resolve(startPath);
+  const boundary = path.resolve(boundaryPath);
+
+  while (current.startsWith(boundary) && current !== boundary) {
+    if (!existsSync(current)) {
+      current = path.dirname(current);
+      continue;
+    }
+
+    const stats = statSync(current);
+    if (!stats.isDirectory()) {
+      return;
+    }
+    if (readdirSync(current).length > 0) {
+      return;
+    }
+
+    rmSync(current, { recursive: true, force: true });
+    current = path.dirname(current);
+  }
+}
+
+function detectExistingManagedInstall(scopePaths) {
+  const config = readTextIfExists(scopePaths.configTomlPath) ?? "";
+  const hooks = readTextIfExists(scopePaths.hooksJsonPath) ?? "";
+  const marketplace = readTextIfExists(scopePaths.marketplacePath) ?? "";
+  const pluginManifest = readJsonIfExists(path.join(scopePaths.pluginInstallDir, ".codex-plugin", "plugin.json"));
+
+  return config.includes(`model_instructions_file = "${LEAD_INSTRUCTIONS_FILE}"`) ||
+    hooks.includes("codex-nexus-hook") ||
+    marketplace.includes(`"name": "${PLUGIN_NAME}"`) ||
+    pluginManifest?.name === PLUGIN_NAME;
+}
+
+function createLegacyInstallState(scopePaths) {
+  return {
+    schemaVersion: INSTALL_STATE_VERSION,
+    packageName: PACKAGE_NAME,
+    scope: scopePaths.scope,
+    createdAt: new Date().toISOString(),
+    legacy: true
+  };
+}
+
+function captureInstallState(scopePaths) {
+  return {
+    schemaVersion: INSTALL_STATE_VERSION,
+    packageName: PACKAGE_NAME,
+    scope: scopePaths.scope,
+    createdAt: new Date().toISOString(),
+    legacy: false,
+    config: captureConfigState(scopePaths.configTomlPath),
+    hooks: {
+      fileExisted: readTextIfExists(scopePaths.hooksJsonPath) !== null
+    },
+    marketplace: captureMarketplaceState(scopePaths.marketplacePath),
+    gitignore: scopePaths.scope === "project" ? captureGitignoreState(scopePaths.projectGitignorePath) : null,
+    paths: {
+      pluginInstallDir: capturePathBackup(scopePaths.pluginInstallDir, scopePaths.managedStateDir, "plugin-install-dir"),
+      agentsDir: capturePathBackup(scopePaths.agentsDir, scopePaths.managedStateDir, "agents-dir"),
+      skillsDir: capturePathBackup(scopePaths.skillsDir, scopePaths.managedStateDir, "skills-dir"),
+      leadInstructions: capturePathBackup(scopePaths.leadInstructionsPath, scopePaths.managedStateDir, "lead-instructions")
+    },
+    packageStoreDirExisted: existsSync(scopePaths.packageStoreDir)
+  };
+}
+
+function readManagedInstallState(scopePaths) {
+  const parsed = readJsonIfExists(scopePaths.managedStatePath);
+  if (!parsed || typeof parsed !== "object") {
+    return null;
+  }
+  if (parsed.packageName !== PACKAGE_NAME) {
+    return null;
+  }
+  if (parsed.scope !== scopePaths.scope) {
+    return null;
+  }
+  return parsed;
+}
+
+function writeManagedInstallState(scopePaths, state) {
+  writeJson(scopePaths.managedStatePath, state);
+}
+
+function ensureManagedInstallState(scopePaths) {
+  const existingState = readManagedInstallState(scopePaths);
+  if (existingState) {
+    return existingState;
+  }
+
+  const state = detectExistingManagedInstall(scopePaths)
+    ? createLegacyInstallState(scopePaths)
+    : captureInstallState(scopePaths);
+
+  writeManagedInstallState(scopePaths, state);
+  return state;
+}
+
+function writeMaybeText(filePath, content) {
+  if (content === null) {
+    removePath(filePath);
+    return;
+  }
+  writeText(filePath, content);
+}
+
+function removeManagedPackageStore(scopePaths, packageStoreDirExisted) {
+  removePath(scopePaths.managedInstalledPackageRoot);
+  if (!packageStoreDirExisted) {
+    cleanupEmptyAncestors(path.join(scopePaths.packageStoreDir, "node_modules"), scopePaths.codexHomeDir);
+  }
 }
 
 async function installManagedSurfaces(installedPackageRoot, scopePaths) {
@@ -504,9 +1000,10 @@ async function installCommand(options = {}, runtime = {}) {
   const env = runtime.env ?? process.env;
   const scopePaths = resolveScopePaths(scope, cwd, env);
   const requestedVersion = PACKAGE_VERSION;
+
+  const managedState = ensureManagedInstallState(scopePaths);
   const installedPackageRoot = await resolveInstalledPackageRoot(scopePaths, requestedVersion, runtime);
   const installedVersion = await readInstalledPackageVersion(installedPackageRoot);
-
   const assets = await installManagedSurfaces(installedPackageRoot, scopePaths);
 
   return {
@@ -517,16 +1014,91 @@ async function installCommand(options = {}, runtime = {}) {
     projectRoot: scopePaths.projectRoot,
     codexHomeDir: scopePaths.codexHomeDir,
     packageStoreDir: scopePaths.packageStoreDir,
-    marketplacePath: scopePaths.marketplacePath,
     pluginInstallDir: scopePaths.pluginInstallDir,
     configTomlPath: scopePaths.configTomlPath,
     hooksJsonPath: scopePaths.hooksJsonPath,
+    marketplacePath: scopePaths.marketplacePath,
     leadInstructionsPath: scopePaths.leadInstructionsPath,
     agentsDir: scopePaths.agentsDir,
     skillsDir: scopePaths.skillsDir,
+    managedStatePath: scopePaths.managedStatePath,
+    uninstallMode: managedState.legacy ? "best-effort" : "restore",
     nexusCoreVersion: assets.nexusCoreVersion,
     runtimeCommand: assets.runtimeCommand,
     nexusCoreServerPath: assets.nexusCoreServerPath
+  };
+}
+
+async function uninstallCommand(options = {}, runtime = {}) {
+  const scope = normalizeScope(options.scope) ?? "user";
+  const cwd = runtime.cwd ?? process.cwd();
+  const env = runtime.env ?? process.env;
+  const scopePaths = resolveScopePaths(scope, cwd, env);
+  const managedState = readManagedInstallState(scopePaths);
+  const useManagedRestore = Boolean(managedState && !managedState.legacy);
+
+  if (useManagedRestore) {
+    writeMaybeText(
+      scopePaths.configTomlPath,
+      restoreConfigToml(readTextIfExists(scopePaths.configTomlPath), managedState.config)
+    );
+    writeMaybeText(
+      scopePaths.hooksJsonPath,
+      stripManagedHooksJson(readTextIfExists(scopePaths.hooksJsonPath), managedState.hooks.fileExisted)
+    );
+    writeMaybeText(
+      scopePaths.marketplacePath,
+      restoreMarketplaceJson(readTextIfExists(scopePaths.marketplacePath), managedState.marketplace)
+    );
+
+    if (scopePaths.scope === "project" && managedState.gitignore) {
+      writeMaybeText(
+        scopePaths.projectGitignorePath,
+        restoreGitignore(readTextIfExists(scopePaths.projectGitignorePath), managedState.gitignore)
+      );
+    }
+
+    restorePathBackup(scopePaths.pluginInstallDir, managedState.paths?.pluginInstallDir, scopePaths.managedStateDir);
+    restorePathBackup(scopePaths.agentsDir, managedState.paths?.agentsDir, scopePaths.managedStateDir);
+    restorePathBackup(scopePaths.skillsDir, managedState.paths?.skillsDir, scopePaths.managedStateDir);
+    restorePathBackup(scopePaths.leadInstructionsPath, managedState.paths?.leadInstructions, scopePaths.managedStateDir);
+    removeManagedPackageStore(scopePaths, Boolean(managedState.packageStoreDirExisted));
+    removePath(scopePaths.managedStateDir);
+
+    return {
+      scope,
+      mode: "restore",
+      managedStatePath: scopePaths.managedStatePath,
+      pluginInstallDir: scopePaths.pluginInstallDir,
+      configTomlPath: scopePaths.configTomlPath,
+      hooksJsonPath: scopePaths.hooksJsonPath,
+      marketplacePath: scopePaths.marketplacePath
+    };
+  }
+
+  writeMaybeText(scopePaths.configTomlPath, removeExactManagedConfigToml(readTextIfExists(scopePaths.configTomlPath)));
+  writeMaybeText(scopePaths.hooksJsonPath, stripManagedHooksJson(readTextIfExists(scopePaths.hooksJsonPath), false));
+  writeMaybeText(scopePaths.marketplacePath, removeExactManagedMarketplaceJson(readTextIfExists(scopePaths.marketplacePath)));
+
+  if (scopePaths.scope === "project") {
+    writeMaybeText(scopePaths.projectGitignorePath, removeExactManagedGitignore(readTextIfExists(scopePaths.projectGitignorePath)));
+  }
+
+  removePath(scopePaths.pluginInstallDir);
+  removePath(scopePaths.agentsDir);
+  removePath(scopePaths.skillsDir);
+  removePath(scopePaths.leadInstructionsPath);
+  removeManagedPackageStore(scopePaths, true);
+  removePath(scopePaths.managedStateDir);
+
+  return {
+    scope,
+    mode: "best-effort",
+    managedStatePath: scopePaths.managedStatePath,
+    pluginInstallDir: scopePaths.pluginInstallDir,
+    configTomlPath: scopePaths.configTomlPath,
+    hooksJsonPath: scopePaths.hooksJsonPath,
+    marketplacePath: scopePaths.marketplacePath
   };
 }
 
@@ -546,7 +1118,7 @@ function doctorCommand(options = {}, runtime = {}) {
   const hasManagedHooks = /codex-nexus-hook[^\n]*session-start/.test(hooks);
   const packageStoreRoot = env[TEST_PACKAGE_ROOT_ENV]
     ? path.resolve(env[TEST_PACKAGE_ROOT_ENV])
-    : path.join(paths.packageStoreDir, "node_modules", PACKAGE_NAME);
+    : paths.managedInstalledPackageRoot;
   const usesLocalDevelopmentHooks = hooks.includes(path.join(PACKAGE_ROOT, "scripts", "codex-nexus-hook.mjs")) ||
     hooks.includes("node ./scripts/codex-nexus-hook.mjs");
   const installedAgentNxConfigs = readAgentNxServerConfigs(paths.agentsDir);
@@ -568,7 +1140,7 @@ function doctorCommand(options = {}, runtime = {}) {
       label: "config.toml",
       ok:
         existsSync(paths.configTomlPath) &&
-        config.includes('model_instructions_file = "lead.instructions.md"') &&
+        config.includes(`model_instructions_file = "${LEAD_INSTRUCTIONS_FILE}"`) &&
         config.includes("[mcp_servers.nx]") &&
         nxCommand.length > 0 &&
         existsSync(nxCommand) &&
@@ -600,6 +1172,8 @@ function formatInstallSummary(result) {
     `nexus-core version: ${result.nexusCoreVersion}`,
     `runtime command: ${result.runtimeCommand}`,
     `nexus-mcp entry: ${result.nexusCoreServerPath}`,
+    `uninstall mode: ${result.uninstallMode}`,
+    `state: ${result.managedStatePath}`,
     `package store: ${result.packageStoreDir}`,
     `plugin: ${result.pluginInstallDir}`,
     `config: ${result.configTomlPath}`,
@@ -608,6 +1182,19 @@ function formatInstallSummary(result) {
     `lead instructions: ${result.leadInstructionsPath}`,
     `agents: ${result.agentsDir}`,
     `skills: ${result.skillsDir}`
+  ].join("\n");
+}
+
+function formatUninstallSummary(result) {
+  return [
+    "codex-nexus uninstall complete",
+    `scope: ${result.scope}`,
+    `mode: ${result.mode}`,
+    `state: ${result.managedStatePath}`,
+    `plugin: ${result.pluginInstallDir}`,
+    `config: ${result.configTomlPath}`,
+    `hooks: ${result.hooksJsonPath}`,
+    `marketplace: ${result.marketplacePath}`
   ].join("\n");
 }
 
@@ -622,12 +1209,24 @@ function formatDoctorSummary(result) {
 
 function parseArgs(argv) {
   const [, , command, ...rest] = argv;
+
   if (command === "--help" || command === "-h" || command === "help" || command === undefined) {
     return {
-      command,
+      command: "help",
       options: { help: true }
     };
   }
+
+  if (command === "--version" || command === "-V" || command === "version") {
+    if (rest.length > 0) {
+      throw new Error(`Unknown option "${rest[0]}".`);
+    }
+    return {
+      command: "version",
+      options: {}
+    };
+  }
+
   const options = {};
 
   for (let index = 0; index < rest.length; index += 1) {
@@ -658,7 +1257,9 @@ async function promptScope(command, defaultValue = "user") {
   const selection = await select({
     message: command === "doctor"
       ? "Which installation scope do you want to inspect?"
-      : "Which installation scope do you want to install into?",
+      : command === "uninstall"
+        ? "Which installation scope do you want to remove?"
+        : "Which installation scope do you want to install into?",
     initialValue: defaultValue,
     options: [
       { value: "user", label: "user", hint: "~/.codex and ~/.agents" },
@@ -672,13 +1273,17 @@ async function promptScope(command, defaultValue = "user") {
   return selection;
 }
 
-async function resolveInstallOptions(parsed, runtime = {}) {
-  const interactive = isInteractiveTerminal();
-  const options = { ...parsed.options };
-
+function validateScopedOptions(options) {
   if (options.scope && !normalizeScope(options.scope)) {
     throw new Error(`Invalid --scope value "${options.scope}". Expected "user" or "project".`);
   }
+}
+
+async function resolveInstallOptions(parsed) {
+  const interactive = isInteractiveTerminal();
+  const options = { ...parsed.options };
+
+  validateScopedOptions(options);
 
   if (!options.scope && interactive) {
     options.scope = await promptScope("install");
@@ -693,12 +1298,25 @@ async function resolveDoctorOptions(parsed) {
   const interactive = isInteractiveTerminal();
   const options = { ...parsed.options };
 
-  if (options.scope && !normalizeScope(options.scope)) {
-    throw new Error(`Invalid --scope value "${options.scope}". Expected "user" or "project".`);
-  }
+  validateScopedOptions(options);
 
   if (!options.scope && interactive) {
     options.scope = await promptScope("doctor");
+  } else if (!options.scope) {
+    options.scope = "user";
+  }
+
+  return options;
+}
+
+async function resolveUninstallOptions(parsed) {
+  const interactive = isInteractiveTerminal();
+  const options = { ...parsed.options };
+
+  validateScopedOptions(options);
+
+  if (!options.scope && interactive) {
+    options.scope = await promptScope("uninstall");
   } else if (!options.scope) {
     options.scope = "user";
   }
@@ -711,20 +1329,32 @@ function printHelp() {
 
 Usage:
   codex-nexus install [--scope user|project]
+  codex-nexus uninstall [--scope user|project]
   codex-nexus doctor [--scope user|project]
+  codex-nexus version
+  codex-nexus --version
 `);
+}
+
+function printVersion() {
+  process.stdout.write(`${PACKAGE_VERSION}\n`);
 }
 
 async function runCli(argv = process.argv, runtime = {}) {
   const parsed = parseArgs(argv);
 
-  if (parsed.options.help || parsed.command === "help" || parsed.command === undefined) {
+  if (parsed.options.help || parsed.command === "help") {
     printHelp();
     return 0;
   }
 
+  if (parsed.command === "version") {
+    printVersion();
+    return 0;
+  }
+
   if (parsed.command === "doctor") {
-    const options = await resolveDoctorOptions(parsed);
+    const options = await resolveDoctorOptions(parsed, runtime);
     const result = doctorCommand(options, runtime);
     process.stdout.write(formatDoctorSummary(result) + "\n");
     return result.failed === 0 ? 0 : 1;
@@ -759,6 +1389,35 @@ async function runCli(argv = process.argv, runtime = {}) {
     }
   }
 
+  if (parsed.command === "uninstall") {
+    const interactive = isInteractiveTerminal();
+    if (interactive) {
+      intro("codex-nexus uninstall");
+    }
+
+    const options = await resolveUninstallOptions(parsed, runtime);
+    const s = interactive ? spinner() : null;
+
+    try {
+      if (s) {
+        s.start("Uninstalling codex-nexus");
+      }
+      const result = await uninstallCommand(options, runtime);
+      if (s) {
+        s.stop("Uninstall complete");
+        outro(formatUninstallSummary(result));
+      } else {
+        process.stdout.write(formatUninstallSummary(result) + "\n");
+      }
+      return 0;
+    } catch (error) {
+      if (s) {
+        s.stop("Uninstall failed");
+      }
+      throw error;
+    }
+  }
+
   process.stderr.write(`Unknown command: ${parsed.command}\n`);
   printHelp();
   return 1;
@@ -774,9 +1433,11 @@ if (import.meta.main) {
 }
 
 export {
+  PACKAGE_VERSION,
   doctorCommand,
   formatDoctorSummary,
   formatInstallSummary,
+  formatUninstallSummary,
   installCommand,
   mergeConfigToml,
   mergeHooksJson,
@@ -786,5 +1447,6 @@ export {
   resolveNexusCoreServerPath,
   resolveNexusCoreVersion,
   resolveScopePaths,
-  runCli
+  runCli,
+  uninstallCommand
 };

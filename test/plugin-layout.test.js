@@ -24,6 +24,8 @@ test("wrapper metadata stays aligned", () => {
   expect(hooks.hooks.SessionStart.length).toBeGreaterThan(0);
   expect(hooks.hooks.UserPromptSubmit.length).toBeGreaterThan(0);
   expect(hooks.hooks.PreToolUse.length).toBeGreaterThan(0);
+  expect(hooks.hooks.PermissionRequest.length).toBeGreaterThan(0);
+  expect(hooks.hooks.Stop.length).toBeGreaterThan(0);
   expect(pkg.bin["codex-nexus-hook"]).toBe("./scripts/codex-nexus-hook.mjs");
   expect(pkg.bin["codex-nexus"]).toBe("./scripts/codex-nexus.mjs");
   expect(existsSync(path.join(pluginRoot, "lead.instructions.md"))).toBe(true);

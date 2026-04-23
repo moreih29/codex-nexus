@@ -43,10 +43,18 @@ assert(
 assert(Array.isArray(hooks.hooks?.SessionStart), "hooks.json must define SessionStart hooks.");
 assert(Array.isArray(hooks.hooks?.UserPromptSubmit), "hooks.json must define UserPromptSubmit hooks.");
 assert(Array.isArray(hooks.hooks?.PreToolUse), "hooks.json must define PreToolUse hooks.");
-assert(
-  hooks.hooks.UserPromptSubmit[0]?.hooks?.[0]?.command?.includes(`codex-nexus@${pkg.version}`),
-  "UserPromptSubmit hook must pin the current codex-nexus version."
-);
+assert(Array.isArray(hooks.hooks?.PermissionRequest), "hooks.json must define PermissionRequest hooks.");
+assert(Array.isArray(hooks.hooks?.Stop), "hooks.json must define Stop hooks.");
+for (const [eventName, expectedMode] of [["UserPromptSubmit", "user-prompt-submit"], ["PermissionRequest", "permission-request"], ["Stop", "stop"]]) {
+  assert(
+    hooks.hooks[eventName][0]?.hooks?.[0]?.command?.includes(`codex-nexus@${pkg.version}`),
+    `${eventName} hook must pin the current codex-nexus version.`
+  );
+  assert(
+    hooks.hooks[eventName][0]?.hooks?.[0]?.command?.includes(`codex-nexus-hook ${expectedMode}`),
+    `${eventName} hook must call codex-nexus-hook ${expectedMode}.`
+  );
+}
 assert(existsSync(pluginLeadInstructionsPath), "Plugin lead.instructions.md must exist.");
 assert(existsSync(cliPath), "CLI installer script must exist.");
 

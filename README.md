@@ -40,6 +40,23 @@ TTY 환경에서는 설치 중에:
 설치되는 버전은 항상 현재 실행 중인 `codex-nexus` 버전이다.
 즉, 버전을 바꾸고 싶다면 installer 안에서 고르는 것이 아니라 실행할 패키지 버전을 바꿔야 한다.
 
+## CLI 커맨드
+
+```bash
+codex-nexus install [--scope user|project]
+codex-nexus uninstall [--scope user|project]
+codex-nexus doctor [--scope user|project]
+codex-nexus version
+codex-nexus --version
+```
+
+버전 확인 예시:
+
+```bash
+npx -y codex-nexus version
+npx -y codex-nexus --version
+```
+
 ## 설치 범위
 
 ### user
@@ -86,6 +103,24 @@ installer는 선택한 버전을 기준으로 아래를 맞춰 준다.
 즉, 플러그인만 복사하는 것이 아니라 Codex가 실제로 읽는 최종 사용자 경로까지 함께 정리한다.
 또한 `nx` MCP는 `npx` PATH에 의존하지 않도록, 설치된 런타임과 설치된 `nexus-core` server.js 절대경로로 연결한다.
 
+## uninstall
+
+설치 후 되돌리고 싶으면 같은 scope로 uninstall 하면 된다.
+
+```bash
+npx -y codex-nexus uninstall --scope user
+npx -y codex-nexus uninstall --scope project
+```
+
+동작 원칙:
+
+- codex-nexus가 관리한 파일/설정만 되돌리거나 제거하려고 시도한다.
+- 다른 플러그인이나 사용자가 넣은 hook / marketplace / config 값은 최대한 유지한다.
+- 새 설치부터는 rollback metadata를 저장해서 더 정확하게 복구한다.
+- 예전 설치본처럼 metadata가 없으면 conservative best-effort 방식으로 정리한다.
+
+즉, 완전한 파일 전체 롤백보다는 **codex-nexus가 건드린 표면만 복원/제거**하는 쪽에 맞춰져 있다.
+
 ## 설치 확인
 
 ```bash
@@ -94,6 +129,35 @@ npx -y codex-nexus doctor --scope project
 ```
 
 설치가 정상이면 `Doctor passed.`가 나온다.
+
+## cmux 알림
+
+`codex-nexus`는 Codex hook을 통해 cmux 상태/알림도 best-effort로 제공한다.
+
+전제 조건:
+
+- Codex가 cmux 안에서 실행 중이어야 한다 (`CMUX_WORKSPACE_ID` 환경변수 존재)
+- `cmux` CLI가 PATH에 있어야 한다
+
+동작:
+
+- 작업 시작 / Bash 실행 시 `Running` 상태 pill 갱신
+- 응답 완료 시 `Response ready` 알림 + `Needs Input` 상태 pill
+- 권한 요청 시 `Permission requested` 알림 + `Needs Input` 상태 pill
+
+표시값은 기본적으로 아래를 사용한다.
+
+- icon: `bolt` / `bell`
+- status: `Running` / `Needs Input`
+- color: `#007AFF`
+
+원하면 비활성화할 수 있다.
+
+```bash
+CODEX_NEXUS_CMUX=0 codex
+# 또는
+CODEX_NEXUS_CMUX=false codex
+```
 
 ## 사용 예시
 
@@ -133,6 +197,7 @@ installer는 현재 실행 중인 `codex-nexus` 버전에 맞춰 `@moreih29/nexu
 - 훅은 Codex의 config-layer `hooks.json`에 병합된다.
 - `nx` MCP는 `npx`가 아니라 설치 시점 런타임 절대경로를 사용한다.
 - project scope 설치 시 `.gitignore`에는 로컬 install artifact 디렉터리용 ignore 항목이 자동으로 추가된다.
+- uninstall은 unrelated 설정을 최대한 보존하도록 설계됐지만, metadata가 없는 예전 설치본은 best-effort 정리만 가능하다.
 
 ## 저장소 구조
 

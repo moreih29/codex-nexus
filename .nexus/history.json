@@ -410,6 +410,97 @@
           "created_at": "2026-04-23T06:05:42.388Z"
         }
       ]
+    },
+    {
+      "schema_version": "1.0",
+      "completed_at": "2026-04-23T07:02:10.687Z",
+      "branch": "feat/cli-version-uninstall-notify",
+      "plan": {
+        "id": 5,
+        "topic": "Add codex-nexus CLI version/uninstall commands and cmux-oriented Codex hook notifications",
+        "issues": [
+          {
+            "id": 1,
+            "title": "Choose the codex-nexus CLI surface for displaying version information.",
+            "status": "decided",
+            "decision": "Selected approach: support both `codex-nexus version` and the conventional global flags `codex-nexus --version` / `-V`, all printing the package version and exiting without additional prose. Rationale: the package already exposes `PACKAGE_VERSION`, implementation cost is tiny, and supporting both surfaces avoids forcing users to remember whether version is a command or flag. Rejected alternatives: only a subcommand (dismissed because global version flags are a standard CLI affordance and users explicitly asked command or argument), and only a flag (dismissed because a documented `version` command is discoverable and consistent with other small CLIs). Assumption: version output should be the codex-nexus package version, not the upstream Codex CLI version, because this CLI manages codex-nexus installation behavior."
+          },
+          {
+            "id": 2,
+            "title": "Design uninstall semantics that revert only codex-nexus-managed changes for user/project scope while preserving unrelated user settings.",
+            "status": "decided",
+            "decision": "Selected approach: add a codex-nexus-managed install state file per scope and make uninstall a hybrid of metadata-backed restoration plus safe structural fallback. On install, persist rollback metadata under the managed Codex directory (scope-local) for the exact surfaces codex-nexus mutates: prior values for config keys (`model_instructions_file`, selected feature flags, `mcp_servers.nx`), prior marketplace entry for `codex-nexus`, which `.gitignore` lines were newly added, and backup copies or existence markers for fully managed file trees we overwrite/remove (`pluginInstallDir`, `.codex/agents`, `.agents/skills`, `lead.instructions.md`, package-store codex-nexus install root). On uninstall, restore only those managed surfaces: remove codex-nexus hook commands from hooks.json while preserving unrelated hooks, remove or restore the marketplace entry, restore prior config keys/value presence from metadata, remove only gitignore lines we added, and delete or restore managed directories/files according to recorded prior state. If rollback metadata is missing (older installs), run a conservative best-effort uninstall that removes clearly codex-nexus-managed artifacts and strips managed hook commands while only deleting config fields when they still match the exact managed values we would have written. Rejected alternatives: full-file snapshot restore for merged files (dismissed because it would overwrite unrelated user edits made after install), and pure structure-based uninstall with no metadata (dismissed because it cannot reliably restore original state for keys/entries we changed). Assumption: files under the copied plugin/agents/skills/lead-instructions managed paths are codex-nexus-owned surfaces, so restoring/removing them is acceptable even if the user modified them after install."
+          },
+          {
+            "id": 3,
+            "title": "Decide how to implement cmux-oriented notifications and status messages using Codex hooks, based on currently available local evidence and minimal-risk integration points.",
+            "status": "decided",
+            "decision": "Selected approach: implement cmux integration inside the managed hook script rather than relying on undocumented session-log watching. Use only documented Codex hook events plus local cmux CLI evidence. Specifically: (a) on `UserPromptSubmit`, if running inside cmux (`CMUX_WORKSPACE_ID` present) and not disabled by `CODEX_NEXUS_CMUX=0|false`, call `cmux set-status nexus-state Running --icon bolt --color #007AFF`; (b) on `PermissionRequest`, send `cmux notify --title codex-nexus --body \"Permission requested\"` and set the same status key to `Needs Input` with icon `bell` and color `#007AFF`; (c) on `Stop`, send `cmux notify --title codex-nexus --body \"Response ready\"` and set status to `Needs Input`; (d) preserve existing Nexus tag/context behavior and git-policy hook behavior. The hook should swallow cmux failures silently so non-cmux environments remain unchanged. It may optionally ignore subagent events when an undocumented `agent_id` field is present, but the core behavior must not depend on undocumented fields. Rationale: repo code confirms codex-nexus currently wires no completion/input notifications; OpenAI Codex hook docs explicitly document `PermissionRequest`, `PostToolUse`, `UserPromptSubmit`, and `Stop`; local cmux CLI help shows native `notify` and `set-status` commands; and local opencode-nexus code demonstrates the exact desired icon/color/status conventions (`bolt`/`bell`, `Running`/`Needs Input`, `#007AFF`). Rejected alternatives: relying on Codex’s separate `notify` config as the only mechanism (dismissed because the user specifically asked for hook-provided behavior and notify only covers turn completion, not running state or approval prompts), and session-log tailing (dismissed because it is fragile and not a supported integration path). Assumption: `UserPromptSubmit` is early enough to represent the start of a running turn for cmux status purposes."
+          },
+          {
+            "id": 4,
+            "title": "Determine required tests and documentation updates for the new CLI commands and notification behavior.",
+            "status": "decided",
+            "decision": "Selected approach: add targeted automated tests plus README updates in both Korean and English. Tests should cover (1) `version` subcommand and `--version` flag output, (2) install→uninstall round trip for both `user` and `project` scope with pre-existing unrelated config/hook/marketplace/gitignore content preserved, (3) uninstall behavior when rollback metadata is absent but managed values are still present (best-effort path), and (4) hook-script cmux behavior for `UserPromptSubmit`, `PermissionRequest`, and `Stop`, using a fake `cmux` executable in PATH to capture invoked arguments without requiring the real app. Documentation should update help text plus README/README.en command examples, scope behavior, uninstall caveats, and cmux integration controls (`CODEX_NEXUS_CMUX`, cmux-only best effort). Rejected alternatives: documenting only in help output (dismissed because installer behavior and uninstall guarantees need a persistent reference) and relying on manual cmux smoke testing only (dismissed because notification regressions are cheap to catch with a stubbed command test). Assumption: CHANGELOG update is nice-to-have but not strictly required for this coding cycle unless the repo convention or release practice expects it alongside README updates."
+          }
+        ],
+        "research_summary": "Scanned existing knowledge (.nexus/context/releasing.md and memory/pattern-upstream-vs-downstream-triage.md) and repo code. Current CLI (scripts/codex-nexus.mjs) supports only install/doctor/help and already exposes PACKAGE_VERSION internally. install copies managed plugin/agents/skills, writes lead.instructions.md, merges config.toml (model_instructions_file, features.multi_agent/child_agents_md/codex_hooks, mcp_servers.nx), merges hooks.json by stripping prior codex-nexus hook commands and re-adding SessionStart/UserPromptSubmit/PreToolUse, merges marketplace.json by adding/replacing the codex-nexus entry, and for project scope appends ignore lines to .gitignore. There is no uninstall or rollback metadata today. Existing tests cover install, doctor, hook tag injection, and blocked git commands. Current publishable plugin hooks.json and buildManagedHooks only register SessionStart, UserPromptSubmit, and PreToolUse. No cmux integration exists in this repo. Local installed Codex CLI binary is /opt/homebrew/Caskroom/codex/0.122.0/codex-aarch64-apple-darwin; --help shows built-in -V/--version for Codex itself. Binary string inspection indicates hook/event support beyond what this wrapper uses, including session_start, user_prompt_submit, pre_tool_use, post_tool_use, stop, permission_request, and hook output/status-related fields such as status_message plus terminal statuses like Working/InputRequired/Completed. Therefore missing completion/input notifications are not caused by this repo already wiring such events; the wrapper currently never installs hooks for them, so a local fix here is appropriate if we can safely target Codex’s hook schema.",
+        "created_at": "2026-04-23T06:40:31.905Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Extend codex-nexus CLI and managed install surfaces for version, uninstall, rollback metadata, and cmux hook wiring",
+          "status": "completed",
+          "context": "Update the core CLI script and managed install artifacts so codex-nexus supports `version`, `--version`/`-V`, and `uninstall --scope user|project`. Install should persist scope-local rollback metadata for the surfaces codex-nexus manages, and uninstall should restore/remove only those managed surfaces while preserving unrelated settings where possible. Managed hook registration must be expanded to include PermissionRequest and Stop plus hook-script support for cmux status/notifications.",
+          "acceptance": "- `codex-nexus version`, `codex-nexus --version`, and `codex-nexus -V` print the package version and exit successfully.\n- `codex-nexus uninstall --scope user|project` removes/restores only codex-nexus-managed surfaces, leaving unrelated config/hook/marketplace content intact.\n- Fresh installs write rollback metadata sufficient for later uninstall; older installs without metadata still get a conservative best-effort uninstall.\n- Managed hook registration includes PermissionRequest and Stop in addition to existing events.\n- Hook script performs best-effort cmux integration using `cmux notify` and `cmux set-status` when `CMUX_WORKSPACE_ID` is present and `CODEX_NEXUS_CMUX` is not disabled.",
+          "approach": "Refactor scripts/codex-nexus.mjs to add rollback-state helpers, restore/remove logic, and CLI command parsing/help for version/uninstall. Update managed hooks merge/build logic and publishable plugin hooks.json so installed hooks include the new events. Extend scripts/codex-nexus-hook.mjs with best-effort cmux helpers that set a Running status on UserPromptSubmit and notify/set Needs Input on PermissionRequest and Stop when inside cmux, while preserving existing Nexus tag injection and git blocking behavior.",
+          "risk": "Rollback metadata or fallback heuristics may accidentally over-remove config if exact managed values are not compared carefully.",
+          "plan_issue": 1,
+          "owner": {
+            "role": "lead",
+            "resume_tier": "bounded"
+          },
+          "created_at": "2026-04-23T06:45:08.734Z"
+        },
+        {
+          "id": 2,
+          "title": "Add automated coverage for version, uninstall rollback, and cmux hook behavior",
+          "status": "completed",
+          "context": "Expand the existing Bun test suite to cover the new CLI surfaces and hook behaviors. Tests should validate both metadata-backed uninstall and conservative uninstall behavior, plus hook-side cmux invocations without depending on a real cmux app.",
+          "acceptance": "- Tests fail if version output regresses.\n- Tests fail if uninstall removes unrelated config/hook/marketplace content or leaves codex-nexus-managed artifacts behind.\n- Tests fail if cmux hook integration stops invoking `set-status`/`notify` for the targeted events.\n- Existing hook/tag and install tests still pass.",
+          "approach": "Extend test/installer.test.js for version output and install→uninstall round trips that seed unrelated config/hook/marketplace/gitignore content. Add fallback uninstall coverage when metadata is absent. Extend test/hooks.test.js with a fake `cmux` executable on PATH that captures commands emitted by user-prompt-submit, permission-request, and stop hook modes.",
+          "risk": "Hook tests can become flaky if they depend on real environment state rather than a stubbed PATH/tool.",
+          "plan_issue": 4,
+          "deps": [
+            1
+          ],
+          "owner": {
+            "role": "lead",
+            "resume_tier": "bounded"
+          },
+          "created_at": "2026-04-23T06:45:15.435Z"
+        },
+        {
+          "id": 3,
+          "title": "Document new CLI commands and cmux notification behavior in README files",
+          "status": "completed",
+          "context": "The public README files currently describe install and doctor only. Users need discoverable docs for version/uninstall and for the new best-effort cmux behavior/disable switch.",
+          "acceptance": "- README.md and README.en.md both mention version and uninstall commands with examples.\n- Both READMEs explain user/project uninstall scope and that unrelated settings are preserved where possible.\n- Both READMEs mention cmux notifications/status behavior and the disable environment variable.",
+          "approach": "Update README.md and README.en.md command tables/examples/help snippets to mention version and uninstall, describe user/project scope uninstall semantics, and document that cmux integration is best-effort, requires running inside cmux, and can be disabled via `CODEX_NEXUS_CMUX=0` or `false`.",
+          "risk": "Docs may drift from actual CLI behavior if they are updated before code/test verification is complete.",
+          "plan_issue": 4,
+          "deps": [
+            1,
+            2
+          ],
+          "owner": {
+            "role": "lead",
+            "resume_tier": "bounded"
+          },
+          "created_at": "2026-04-23T06:45:24.211Z"
+        }
+      ]
     }
   ]
 }
