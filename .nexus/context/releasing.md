@@ -101,6 +101,9 @@ CI 기준으로는 아래 워크플로우가 준비되어 있어야 한다.
 
 - **배포 전**: 아직 registry에 없는 버전이므로, 임시 package root 복사본 또는 tarball 설치본을 `CODEX_NEXUS_TEST_PACKAGE_ROOT` 로 지정해서 검사한다
 - **배포 후**: 실제 registry install 기준으로 fresh install + doctor 를 다시 확인한다
+- 실제 작업 중인 레포에서 project scope 스모크 테스트를 돌리면, `.codex/` / `.agents/` local install artifact가 그 레포의 현재 작업 환경을 오염시킬 수 있다
+  - 가능하면 **임시 git 저장소** 또는 **임시 clone** 에서만 project scope 스모크 테스트를 수행한다
+  - 부득이하게 실제 작업 레포에서 테스트했다면, 끝난 뒤 정상 install로 다시 맞추거나 local install artifact를 정리해서 temp path가 남지 않게 한다
 - 배포 후 CLI surface 확인 때는 머신에 오래된 전역 `codex-nexus` 가 남아 있으면 `npx` / `npm exec` 검증이 PATH shadowing 때문에 잘못된 바이너리를 볼 수 있다
   - 이 경우 `command -v codex-nexus` 를 먼저 확인하거나, isolated temp prefix 아래의 **설치된 script 경로를 직접 실행**해서 확인한다
 
@@ -138,6 +141,7 @@ CI 기준으로는 아래 워크플로우가 준비되어 있어야 한다.
 
 1. `npx -y codex-nexus@<target-version> install --scope project`
    - publish 전에는 temp package root override 방식으로 검증하고, repo root를 package root로 직접 재사용하지 않는다
+   - 실제 작업 레포 대신 **임시 git 저장소/임시 clone** 을 우선 사용한다
 2. `npx -y codex-nexus@<target-version> doctor --scope project`
 3. 아래 파일 직접 확인
    - `<repo>/.codex/config.toml`
