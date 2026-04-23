@@ -4,6 +4,25 @@
 
 형식은 Keep a Changelog 스타일을 느슨하게 따르며, 버전 표기는 SemVer 기준으로 관리한다.
 
+## [0.3.12] - 2026-04-23
+
+### Added
+
+- `codex-nexus version`, `--version`, `-V`를 추가해 현재 패키지 버전을 바로 확인할 수 있도록 지원
+- `uninstall --scope user|project`를 추가해 install로 생성·수정된 codex-nexus 관리 표면을 되돌릴 수 있도록 지원
+- install 시 rollback metadata를 저장하고, uninstall 시 이를 사용해 더 정확하게 복구하는 경로를 추가
+- Codex hook 기반 cmux 상태/알림 연동을 추가해 `Running` / `Needs Input` pill 및 응답 완료·권한 요청 알림을 제공
+
+### Changed
+
+- installer/help/README 문서를 새 CLI 커맨드와 uninstall 동작, cmux 연동 기준에 맞춰 갱신
+- publishable hook wiring을 `PermissionRequest`, `Stop`까지 포함하도록 확장
+
+### Fixed
+
+- rollback metadata가 없는 예전 설치본도 conservative best-effort 방식으로 codex-nexus 관리 설정만 정리하도록 uninstall fallback을 보강
+- 테스트/validation이 version 출력, uninstall round-trip, cmux hook 호출까지 검증하도록 확대
+
 ## [0.3.11] - 2026-04-23
 
 ### Changed
