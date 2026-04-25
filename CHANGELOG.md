@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `codex-nexus models` 명령을 추가해 scope별 Codex 기본 모델과 lead를 제외한 Nexus 하위 에이전트 모델을 선택할 수 있도록 지원했다. direct mode는 `--targets ... --model ...`를 사용하며, 선택한 override는 재설치 후에도 다시 적용되도록 관리 상태에 저장한다
+
 ### Changed
 
 - installer가 codex-nexus 관리 hook을 `.codex/` 레이어마다 정확히 한 표면에만 쓰도록 정리했다. 새 표면을 고를 때는 지원되는 Codex에서만 `config.toml` inline `[hooks]`를 사용하고, 그 외 환경에서는 legacy `.codex/hooks.json`으로 fallback한다

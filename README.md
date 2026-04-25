@@ -44,6 +44,8 @@ TTY 환경에서는 설치 중에:
 
 ```bash
 codex-nexus install [--scope user|project]
+codex-nexus models [--scope user|project]
+codex-nexus models [--scope user|project] --targets default,engineer --model gpt-5.4
 codex-nexus uninstall [--scope user|project]
 codex-nexus doctor [--scope user|project]
 codex-nexus version
@@ -56,6 +58,25 @@ codex-nexus --version
 npx -y codex-nexus version
 npx -y codex-nexus --version
 ```
+
+## 모델 선택
+
+설치 후 Codex 기본 모델과 Nexus 하위 에이전트 모델을 scope별로 설정할 수 있다.
+
+```bash
+npx -y codex-nexus models --scope project
+npx -y codex-nexus models --scope project --targets default,engineer,tester --model gpt-5.4
+```
+
+- TTY에서는 scope, 대상, 모델을 순서대로 고른다. scope 기본 선택값은 `project`다.
+- 비대화형 direct mode에서는 `--targets`와 `--model`을 함께 쓴다.
+- `--agents`는 `--targets`의 alias로 지원한다.
+- 대상은 `default`, `architect`, `designer`, `postdoc`, `strategist`, `engineer`, `researcher`, `writer`, `reviewer`, `tester`, `all`이다.
+- `default`는 scoped `.codex/config.toml`의 top-level `model`을 설정한다.
+- 하위 에이전트 대상은 scoped `.codex/agents/<agent>.toml`의 top-level `model`을 설정한다.
+- `lead`는 설정 대상에서 제외된다.
+
+선택한 값은 scoped `.codex/.codex-nexus/model-overrides.json`에도 저장되어, 이후 `codex-nexus install`을 다시 실행해도 non-lead agent model override가 다시 적용된다.
 
 ## 설치 범위
 
