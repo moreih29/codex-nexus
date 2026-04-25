@@ -24,6 +24,11 @@ function writeJson(filePath, value) {
   writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+function writeToml(filePath, value) {
+  mkdirSync(path.dirname(filePath), { recursive: true });
+  writeFileSync(filePath, TOML.stringify(value), "utf8");
+}
+
 function readAgentNxConfigs(agentDir) {
   return ["architect.toml", "designer.toml", "engineer.toml", "postdoc.toml", "researcher.toml", "reviewer.toml", "strategist.toml", "tester.toml", "writer.toml"]
     .filter((entry) => existsSync(path.join(agentDir, entry)))
@@ -61,9 +66,10 @@ test("project install wires plugin, config, hooks, agents, and skills", async ()
 
   try {
     const env = testEnv();
-    const result = await installCommand({ scope: "project" }, { cwd: repoRoot, env });
+    const result = await installCommand({ scope: "project" }, { cwd: repoRoot, env, inlineHooksSupported: false });
 
     expect(result.scope).toBe("project");
+    expect(result.hooksSurface).toBe("hooks.json");
     expect(existsSync(path.join(repoRoot, "plugins", "codex-nexus", ".codex-plugin", "plugin.json"))).toBe(true);
     expect(existsSync(path.join(repoRoot, ".codex", "lead.instructions.md"))).toBe(true);
     expect(existsSync(path.join(repoRoot, ".codex", "agents", "lead.toml"))).toBe(true);
@@ -73,10 +79,13 @@ test("project install wires plugin, config, hooks, agents, and skills", async ()
     expect(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8")).toContain("multi_agent = true");
     expect(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8")).not.toContain('command = "npx"');
     expect(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8")).toContain("dist/mcp/server.js");
+    expect(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8")).not.toContain("[[hooks.SessionStart]]");
     const hooksContent = readFileSync(path.join(repoRoot, ".codex", "hooks.json"), "utf8");
     expect(hooksContent).toContain(path.resolve(path.join(packageRoot, "scripts", "codex-nexus-hook.mjs")));
     expect(hooksContent).toContain("permission-request");
     expect(hooksContent).toContain("stop");
+    expect(hooksContent).toContain("apply_patch");
+    expect(hooksContent).toContain("mcp__");
     expect(readFileSync(path.join(repoRoot, ".gitignore"), "utf8")).toContain(".codex/");
     expect(readFileSync(path.join(repoRoot, ".gitignore"), "utf8")).toContain(".agents/");
     const installedAgentNxConfigs = readAgentNxConfigs(path.join(repoRoot, ".codex", "agents"));
@@ -107,9 +116,10 @@ test("user install targets home-scoped marketplace and codex directories", async
 
   try {
     const env = testEnv({ HOME: homeDir });
-    const result = await installCommand({ scope: "user" }, { cwd: workDir, env });
+    const result = await installCommand({ scope: "user" }, { cwd: workDir, env, inlineHooksSupported: false });
 
     expect(result.scope).toBe("user");
+    expect(result.hooksSurface).toBe("hooks.json");
     expect(existsSync(path.join(homeDir, ".codex", "plugins", "codex-nexus", ".codex-plugin", "plugin.json"))).toBe(true);
     expect(existsSync(path.join(homeDir, ".codex", "agents", "lead.toml"))).toBe(true);
     expect(existsSync(path.join(homeDir, ".agents", "skills", "nx-run", "SKILL.md"))).toBe(true);
@@ -138,6 +148,35 @@ test("user install targets home-scoped marketplace and codex directories", async
   } finally {
     rmSync(homeDir, { recursive: true, force: true });
     rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test("project install prefers inline config hooks when stable inline hooks are supported", async () => {
+  const repoRoot = mkdtempSync(path.join(tmpdir(), "codex-nexus-project-inline-"));
+  mkdirSync(path.join(repoRoot, ".git"));
+  writeFileSync(path.join(repoRoot, "package.json"), "{}\n", "utf8");
+
+  try {
+    const env = testEnv();
+    const result = await installCommand({ scope: "project" }, { cwd: repoRoot, env, inlineHooksSupported: true });
+
+    expect(result.hooksSurface).toBe("config.toml");
+    expect(existsSync(path.join(repoRoot, ".codex", "hooks.json"))).toBe(false);
+
+    const config = TOML.parse(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8"));
+    expect(config.features.codex_hooks).toBe(true);
+    expect(Array.isArray(config.hooks.SessionStart)).toBe(true);
+    expect(config.hooks.SessionStart[0].hooks[0].command).toContain(path.resolve(path.join(packageRoot, "scripts", "codex-nexus-hook.mjs")));
+    expect(config.hooks.PreToolUse[0].matcher).toContain("apply_patch");
+    expect(config.hooks.PreToolUse[0].matcher).toContain("mcp__");
+    expect(config.hooks.PermissionRequest[0].hooks[0].command).toContain("permission-request");
+    expect(config.hooks.Stop[0].hooks[0].command).toContain("stop");
+
+    const doctor = doctorCommand({ scope: "project" }, { cwd: repoRoot, env });
+    expect(doctor.hooksSurface).toBe("config.toml");
+    expect(doctor.failed).toBe(0);
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
   }
 });
 
@@ -202,7 +241,7 @@ test("project uninstall restores prior files and preserves unrelated settings", 
     writeFileSync(path.join(repoRoot, "plugins", "codex-nexus", "marker.txt"), "restore me\n", "utf8");
 
     const env = testEnv();
-    const installResult = await installCommand({ scope: "project" }, { cwd: repoRoot, env });
+    const installResult = await installCommand({ scope: "project" }, { cwd: repoRoot, env, inlineHooksSupported: false });
     expect(installResult.uninstallMode).toBe("restore");
     expect(existsSync(installResult.managedStatePath)).toBe(true);
 
@@ -261,7 +300,7 @@ test("user uninstall restores prior files for home-scoped installs", async () =>
     });
 
     const env = testEnv({ HOME: homeDir });
-    const installResult = await installCommand({ scope: "user" }, { cwd: workDir, env });
+    const installResult = await installCommand({ scope: "user" }, { cwd: workDir, env, inlineHooksSupported: false });
     expect(installResult.uninstallMode).toBe("restore");
 
     const uninstallResult = await uninstallCommand({ scope: "user" }, { cwd: workDir, env });
@@ -287,6 +326,51 @@ test("user uninstall restores prior files for home-scoped installs", async () =>
   }
 });
 
+test("project uninstall preserves user inline hooks when install used config.toml hooks", async () => {
+  const repoRoot = mkdtempSync(path.join(tmpdir(), "codex-nexus-project-inline-uninstall-"));
+  mkdirSync(path.join(repoRoot, ".git"));
+  writeFileSync(path.join(repoRoot, "package.json"), "{}\n", "utf8");
+
+  try {
+    writeToml(path.join(repoRoot, ".codex", "config.toml"), {
+      features: {
+        experimental: true
+      },
+      hooks: {
+        SessionStart: [
+          {
+            matcher: "startup",
+            hooks: [
+              {
+                type: "command",
+                command: "echo keep-inline-session-start"
+              }
+            ]
+          }
+        ]
+      }
+    });
+
+    const env = testEnv();
+    const installResult = await installCommand({ scope: "project" }, { cwd: repoRoot, env, inlineHooksSupported: true });
+    expect(installResult.uninstallMode).toBe("restore");
+    expect(installResult.hooksSurface).toBe("config.toml");
+    expect(existsSync(path.join(repoRoot, ".codex", "hooks.json"))).toBe(false);
+
+    const uninstallResult = await uninstallCommand({ scope: "project" }, { cwd: repoRoot, env });
+    expect(uninstallResult.mode).toBe("restore");
+
+    const config = TOML.parse(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8"));
+    expect(config.features.experimental).toBe(true);
+    expect(config.features.multi_agent).toBeUndefined();
+    expect(config.hooks.SessionStart[0].hooks[0].command).toBe("echo keep-inline-session-start");
+    expect(JSON.stringify(config)).not.toContain("codex-nexus-hook");
+    expect(existsSync(path.join(repoRoot, ".codex", "hooks.json"))).toBe(false);
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
 test("uninstall falls back to best-effort cleanup when rollback metadata is missing", async () => {
   const repoRoot = mkdtempSync(path.join(tmpdir(), "codex-nexus-project-fallback-"));
   mkdirSync(path.join(repoRoot, ".git"));
@@ -306,7 +390,7 @@ test("uninstall falls back to best-effort cleanup when rollback metadata is miss
     });
 
     const env = testEnv();
-    const installResult = await installCommand({ scope: "project" }, { cwd: repoRoot, env });
+    const installResult = await installCommand({ scope: "project" }, { cwd: repoRoot, env, inlineHooksSupported: false });
     removePath(path.dirname(installResult.managedStatePath));
 
     const uninstallResult = await uninstallCommand({ scope: "project" }, { cwd: repoRoot, env });
@@ -327,6 +411,44 @@ test("uninstall falls back to best-effort cleanup when rollback metadata is miss
     expect(marketplace.plugins.some((entry) => entry.name === "keep-fallback-plugin")).toBe(true);
     expect(marketplace.plugins.some((entry) => entry.name === "codex-nexus")).toBe(false);
     expect(readFileSync(path.join(repoRoot, ".gitignore"), "utf8")).toContain("dist/");
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("best-effort uninstall strips managed inline hooks and preserves user inline hooks", async () => {
+  const repoRoot = mkdtempSync(path.join(tmpdir(), "codex-nexus-project-inline-fallback-"));
+  mkdirSync(path.join(repoRoot, ".git"));
+  writeFileSync(path.join(repoRoot, "package.json"), "{}\n", "utf8");
+
+  try {
+    writeToml(path.join(repoRoot, ".codex", "config.toml"), {
+      hooks: {
+        SessionStart: [
+          {
+            matcher: "startup",
+            hooks: [
+              {
+                type: "command",
+                command: "echo keep-inline-fallback-hook"
+              }
+            ]
+          }
+        ]
+      }
+    });
+
+    const env = testEnv();
+    const installResult = await installCommand({ scope: "project" }, { cwd: repoRoot, env, inlineHooksSupported: true });
+    removePath(path.dirname(installResult.managedStatePath));
+
+    const uninstallResult = await uninstallCommand({ scope: "project" }, { cwd: repoRoot, env });
+    expect(uninstallResult.mode).toBe("best-effort");
+
+    const config = TOML.parse(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8"));
+    expect(config.hooks.SessionStart[0].hooks[0].command).toBe("echo keep-inline-fallback-hook");
+    expect(JSON.stringify(config)).not.toContain("codex-nexus-hook");
+    expect(existsSync(path.join(repoRoot, ".codex", "hooks.json"))).toBe(false);
   } finally {
     rmSync(repoRoot, { recursive: true, force: true });
   }

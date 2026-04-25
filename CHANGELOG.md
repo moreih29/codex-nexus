@@ -4,6 +4,20 @@
 
 형식은 Keep a Changelog 스타일을 느슨하게 따르며, 버전 표기는 SemVer 기준으로 관리한다.
 
+## [Unreleased]
+
+### Changed
+
+- installer가 codex-nexus 관리 hook을 `.codex/` 레이어마다 정확히 한 표면에만 쓰도록 정리했다. 새 표면을 고를 때는 지원되는 Codex에서만 `config.toml` inline `[hooks]`를 사용하고, 그 외 환경에서는 legacy `.codex/hooks.json`으로 fallback한다
+- install/update 시 hook 표면 선택을 보수적으로 바꿨다. 기존 inline hook은 inline으로 유지하고, inline hook이 없는 상태에서 기존 `.codex/hooks.json`은 legacy 표면으로 유지하며, 아무 표면도 없을 때만 감지된 `codex-cli >= 0.124.0` 환경에서 inline hook을 새로 사용한다
+- README / README.en / release checklist를 modern inline hooks + legacy fallback 호환성 기준에 맞게 갱신했다
+
+### Fixed
+
+- hook runtime이 Bash, `apply_patch`, MCP 이벤트 입력을 정규화하도록 보강해 최신 Codex tool surface에서도 cmux 알림과 permission 흐름이 일관되게 동작하도록 정리했다
+- managed `PreToolUse` / `PermissionRequest` matcher가 `Bash`, `apply_patch` / `Edit` / `Write`, `mcp__.*`를 모두 커버하도록 확장했다
+- 기존 Bash deny 규칙은 계속 Bash command에만 적용되도록 유지해 `apply_patch` payload가 Bash 전용 deny 규칙에 잘못 걸리지 않게 했고, `PostToolUse` wiring은 의도적으로 그대로 뒀다
+
 ## [0.3.13] - 2026-04-23
 
 ### Fixed

@@ -636,6 +636,128 @@
           "created_at": "2026-04-23T09:05:44.460Z"
         }
       ]
+    },
+    {
+      "schema_version": "1.0",
+      "completed_at": "2026-04-25T13:58:20.181Z",
+      "branch": "feat/p1-hooks-compat",
+      "plan": {
+        "id": 8,
+        "topic": "codex 0.124.0~0.125.0에 맞춘 codex-nexus P1 구현 계획",
+        "issues": [
+          {
+            "id": 1,
+            "title": "P1 구현 방식: 구버전 호환을 유지하면서 hooks 설정 surface를 modernize하고 tool 관측 범위를 확장할 것인가, 그리고 어떤 단계로 적용할 것인가?",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "lead",
+                "summary": "Lead 검토: 현재 codex-nexus의 핵심 계약은 (1) installer가 .codex/hooks.json을 병합하고 uninstall 시 기존 사용자 hook 설정을 복원한다는 점, (2) publishable plugin bundle은 plugins/codex-nexus 아래를 source of truth로 유지한다는 점, (3) 설치된 runtime 경로와 publishable source 경로를 분리해 다룬다는 점이다. 따라서 P1은 upstream의 stable hooks 방향을 바로 강제 전환하기보다, hooks surface를 추상화한 뒤 stable config surface와 legacy hooks.json을 병행 지원하는 단계적 migration이 안전하다. 또한 hook event coverage 확대는 Bash-only matcher와 command-only parsing에서 벗어나 tool/event-aware parsing 계층을 먼저 만든 뒤 apply_patch, MCP, 필요 시 PostToolUse를 순차 추가해야 기존 cmux/permission UX를 덜 깨뜨린다. HOW subagent는 이번 턴에 생략했다. 이유: 사용자가 subagent delegation을 요청하지 않았고, 로컬 코드/테스트/공식 릴리스 근거만으로도 비교 가능한 옵션 도출이 가능하다.",
+                "recorded_at": "2026-04-25T13:18:47.896Z"
+              }
+            ],
+            "decision": "P1은 즉시 전환이 아니라 호환 계층 기반의 단계적 적용으로 진행한다. 2026-04-23의 Codex 0.124.0 hooks stable 변경을 반영하되, 기존 사용자와 구버전 Codex 호환을 위해 managed hook spec을 추상화하고 stable hooks surface와 legacy .codex/hooks.json 병행 지원을 도입한다. tool 관측 범위 확장은 Bash-only 구조에서 input normalization 계층을 만든 뒤 apply_patch, MCP, 필요 시 PostToolUse 순으로 넓힌다. uninstall/restore/doctor 계약은 기존 사용자 설정 보존을 우선한다."
+          }
+        ],
+        "research_summary": "공식 릴리스 기준으로 2026-04-23의 Codex 0.124.0에서 hooks가 stable로 올라가고 config.toml/requirements.toml 관리 및 MCP/apply_patch/long-running Bash 관측 범위가 강화되었다. 2026-04-24의 0.125.0에서는 permission profile/app-server/plugin 원격 기능이 보강되었으나, P1 범위와 직접 연결되는 핵심은 hooks modernisation과 tool coverage 확대다. 로컬 코드 확인 결과 codex-nexus는 현재 installer에서 .codex/hooks.json을 직접 병합하고(scripts/codex-nexus.mjs), publishable plugin hooks.json도 npx self-pin 방식으로 유지한다(plugins/codex-nexus/hooks.json). README 역시 hooks.json 병합을 현재 동작 원칙으로 문서화한다. hook script는 Bash command 중심으로 동작하며 apply_patch/MCP/PostToolUse 계열 처리가 없다(scripts/codex-nexus-hook.mjs). 테스트는 install/uninstall 시 hooks.json merge/restore/best-effort cleanup을 강하게 검증하고 있으며, 기존 사용자 설정 보존이 핵심 계약이다(test/installer.test.js). prior history에는 동일 주제 의사결정 기록이 없다. 메모 패턴상 upstream vs downstream triage를 먼저 해야 하며, 이번 P1은 wrapper/installer/integration 레이어 이슈이므로 downstream 로컬 변경이 중심이다.",
+        "created_at": "2026-04-25T13:18:38.373Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Hook surface abstraction과 dual-surface install/uninstall/doctor 기반 추가",
+          "status": "completed",
+          "context": "현재 codex-nexus는 installer에서 .codex/hooks.json을 직접 병합하고 uninstall/restore/best-effort cleanup도 이 surface에 강하게 기대고 있다. P1에서는 managed hook spec을 공통 구조로 추상화하고, Codex 0.124.0의 stable hooks 방향을 반영할 수 있는 writer를 추가하되 legacy .codex/hooks.json fallback을 유지해야 한다. 기존 사용자 설정 보존과 rollback metadata 계약은 깨지면 안 된다.",
+          "acceptance": "- installer가 managed hook spec을 단일 소스에서 생성한다.\n- 지원 가능한 최신 Codex surface에서는 stable hooks 설정을 쓸 수 있고, 미지원/불확실 환경에서는 기존 .codex/hooks.json fallback이 유지된다.\n- uninstall restore와 metadata 없는 best-effort cleanup이 codex-nexus가 관리한 hook 조각만 제거하고 사용자 기존 hook 설정은 보존한다.\n- doctor가 stable surface와 legacy hooks.json 중 실제 사용 중인 구성을 진단할 수 있다.\n- 기존 install/uninstall 계약을 깨지 않는 회귀 테스트가 추가되거나 갱신된다.",
+          "approach": "scripts/codex-nexus.mjs에서 managed hook 정의를 output-format 독립 구조로 분리하고, stable hooks surface writer와 legacy hooks.json writer를 도입한다. install 시 환경/버전/지원 여부에 따라 stable surface를 우선 적용하되 불확실하거나 미지원이면 기존 hooks.json 병합을 유지한다. uninstall/restore/best-effort cleanup, doctor, validate 경로를 모두 이 추상화 위로 올린다.",
+          "risk": "Codex stable hooks 설정 surface의 실제 파일/스키마 차이가 예상과 다를 경우 adapter 분기와 smoke test 보강이 필요하다.",
+          "plan_issue": 1,
+          "owner": {
+            "role": "engineer",
+            "agent_id": "019dc4d0-05a7-7d42-b64c-9ac0b5e5fefd",
+            "resume_tier": "persistent"
+          },
+          "created_at": "2026-04-25T13:21:09.643Z"
+        },
+        {
+          "id": 2,
+          "title": "Hook runtime normalization과 apply_patch/MCP 관측 확장",
+          "status": "completed",
+          "context": "현재 hook script는 Bash command 문자열 중심으로 동작하며 PreToolUse/PermissionRequest matcher도 Bash에 묶여 있다. P1에서는 Bash-only 구조에서 벗어나 tool/event 공통 정규화 계층을 만들고 Codex 0.124.0에서 넓어진 관측 범위를 최소한 apply_patch와 MCP까지 확장해야 한다. 단, 기존 cmux 상태/알림과 permission deny 동작은 유지돼야 한다.",
+          "acceptance": "- hook script가 Bash 외 이벤트 payload도 공통 normalize해서 처리할 수 있다.\n- apply_patch와 MCP 관련 이벤트에서 cmux 상태/알림 또는 정책 판단에 필요한 입력을 읽을 수 있다.\n- 기존 Bash 기반 permission deny 규칙과 cmux Running/Needs Input 흐름이 유지된다.\n- hook event coverage에 대한 테스트가 추가되어 Bash, apply_patch, MCP 케이스를 검증한다.",
+          "approach": "scripts/codex-nexus-hook.mjs에 tool/event payload normalization 계층을 추가하고, Bash/ApplyPatch/MCP 이벤트에서 공통적으로 command/description/output/tool kind를 읽도록 바꾼다. installer의 managed hook spec도 이에 맞춰 matcher 또는 event wiring을 확장한다. PostToolUse는 optional 확장 포인트로 남기되 최소 목표는 apply_patch와 MCP 관측 및 기존 Bash 동작 유지다.",
+          "risk": "upstream hook payload shape가 이벤트 종류별로 다를 수 있어 overly strict parser를 만들면 최신/구버전 중 하나가 깨질 수 있다.",
+          "plan_issue": 1,
+          "deps": [
+            1
+          ],
+          "owner": {
+            "role": "engineer",
+            "agent_id": "019dc4d0-05a7-7d42-b64c-9ac0b5e5fefd",
+            "resume_tier": "persistent"
+          },
+          "created_at": "2026-04-25T13:21:18.342Z"
+        },
+        {
+          "id": 3,
+          "title": "Dual-surface compatibility와 expanded hook coverage 회귀 검증",
+          "status": "completed",
+          "context": "P1 구현은 install/uninstall/doctor 계약과 hook runtime 동작을 동시에 건드린다. 기존 사용자 설정 보존, fallback cleanup, published-style install, Bash hook 동작이 유지되는지와 새 stable surface/apply_patch/MCP 지원이 추가되는지를 함께 검증해야 한다.",
+          "acceptance": "- install/uninstall/doctor 테스트가 stable surface 경로와 legacy hooks.json fallback 경로를 모두 검증한다.\n- restore uninstall과 best-effort cleanup 테스트가 사용자 기존 hook/config/marketplace 설정 보존을 계속 보장한다.\n- hook runtime 테스트가 Bash, apply_patch, MCP 이벤트를 검증한다.\n- bun run validate, bun test, node scripts/codex-nexus.mjs doctor --scope project 기준 회귀가 없다.",
+          "approach": "test/installer.test.js, test/hooks.test.js, test/plugin-layout.test.js, 필요 시 validate 경로를 확장해 stable surface 사용 가능 케이스와 legacy fallback 케이스를 모두 추가한다. published package 설치, restore uninstall, metadata 없는 best-effort cleanup, Bash/apply_patch/MCP hook payload 회귀를 검증하고 validate/test/doctor 명령을 통과시킨다.",
+          "risk": "테스트 fixture가 upstream payload나 stable hook schema 변화에 민감해 flake 또는 과도한 coupling이 생길 수 있다.",
+          "plan_issue": 1,
+          "deps": [
+            1,
+            2
+          ],
+          "owner": {
+            "role": "tester",
+            "agent_id": "019dc4e0-bfc8-7953-94bc-0deb3958cfc4",
+            "resume_tier": "bounded"
+          },
+          "created_at": "2026-04-25T13:21:26.382Z"
+        },
+        {
+          "id": 4,
+          "title": "P1 호환성 변경 문서화 및 배포 체크리스트 반영",
+          "status": "completed",
+          "context": "P1은 사용자에게 보이는 설치 surface와 호환성 정책이 바뀌는 작업이다. README, CHANGELOG, 배포 체크리스트에 최신 Codex 지원 방식과 legacy fallback 정책을 명확히 남겨야 이후 릴리스/지원 시 혼선이 줄어든다.",
+          "acceptance": "- README 한/영문이 설치 후 hook wiring과 backward compatibility 동작을 실제 구현과 맞게 설명한다.\n- CHANGELOG에 사용자 영향, 설치/업데이트 변화, 호환성 포인트가 정리된다.\n- 배포 체크리스트가 stable surface/fallback 검증 포인트를 포함한다.\n- 문서 간 설명이 서로 충돌하지 않는다.",
+          "approach": "README.md, README.en.md, CHANGELOG.md, .nexus/context/releasing.md를 업데이트해 stable hooks surface 우선 + legacy hooks.json fallback 정책, apply_patch/MCP 관측 확대, uninstall/doctor 호환성 주의사항을 정리한다. 문서는 구현 세부가 확정된 뒤 실제 동작 기준으로 맞춘다.",
+          "risk": "구현 확정 전에 문서를 먼저 쓰면 실제 fallback 조건과 어긋날 수 있으므로 코드 확정 후 반영이 필요하다.",
+          "plan_issue": 1,
+          "deps": [
+            1,
+            2
+          ],
+          "owner": {
+            "role": "writer",
+            "agent_id": "019dc4e4-b46d-7eb2-8ed5-a93504af4dd9",
+            "resume_tier": "ephemeral"
+          },
+          "created_at": "2026-04-25T13:21:33.116Z"
+        },
+        {
+          "id": 5,
+          "title": "P1 문서 정확성 및 호환성 메시지 리뷰",
+          "status": "completed",
+          "context": "P1 문서는 최신 Codex 사용자에게는 modernized hooks 동작을 설명하면서도, 구버전 사용자에게는 fallback과 제한을 정확히 안내해야 한다. wording이 부정확하면 지원 이슈와 잘못된 설치 기대를 만들 수 있다.",
+          "acceptance": "- 문서가 실제 구현/테스트 결과와 모순되지 않는다.\n- stable surface와 legacy fallback 조건이 독자가 오해하지 않도록 명확하다.\n- README/CHANGELOG/체크리스트 사이의 용어와 버전 호환성 설명이 일치한다.",
+          "approach": "README.md, README.en.md, CHANGELOG.md, .nexus/context/releasing.md의 문구를 구현/테스트 결과와 대조해 검수하고, stable surface 지원 조건, fallback 조건, known limits가 과장 없이 표현되었는지 확인한다.",
+          "risk": "최신 Codex surface 명칭이나 지원 조건이 구현 중 바뀌면 문서 리뷰가 다시 필요하다.",
+          "plan_issue": 1,
+          "deps": [
+            4
+          ],
+          "owner": {
+            "role": "reviewer",
+            "agent_id": "019dc4ea-7b54-7c70-aea0-57999f73d403",
+            "resume_tier": "ephemeral"
+          },
+          "created_at": "2026-04-25T13:21:38.971Z"
+        }
+      ]
     }
   ]
 }

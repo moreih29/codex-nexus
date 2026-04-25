@@ -141,6 +141,38 @@ test("pre-tool-use denies blocked git commands", () => {
   }
 });
 
+test("pre-tool-use normalizes apply_patch payloads without applying Bash git deny rules", async () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "codex-nexus-hook-"));
+  const binDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-hook-bin-"));
+  const logPath = path.join(cwd, "cmux.log");
+
+  try {
+    writeFakeCmux(binDir, logPath);
+    const env = buildCmuxEnv(binDir, logPath, path.basename(cwd));
+
+    const result = runHook(
+      "pre-tool-use",
+      {
+        cwd,
+        tool_name: "apply_patch",
+        tool_input: {
+          command: "*** Begin Patch\n*** Add File: notes.txt\n+Avoid running git add -A from scripts.\n*** End Patch\n"
+        }
+      },
+      cwd,
+      env
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("");
+    const entries = await waitForLogEntries(logPath, 1);
+    expect(entries).toContainEqual(["set-status", "nexus-state", "Running", "--icon", CMUX_RUNNING_ICON, "--color", "#007AFF"]);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
 test("user-prompt-submit sets a cmux Running status when cmux integration is enabled", async () => {
   const cwd = mkdtempSync(path.join(tmpdir(), "codex-nexus-hook-"));
   const binDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-hook-bin-"));
@@ -197,6 +229,39 @@ test("permission-request sends a cmux notification and Needs Input status", asyn
     expect(result.stdout).toBe("");
     const entries = await waitForLogEntries(logPath, 2);
     expect(entries).toContainEqual(["notify", "--title", "codex-nexus", "--body", "Need approval"]);
+    expect(entries).toContainEqual(["set-status", "nexus-state", "Needs Input", "--icon", CMUX_NEEDS_INPUT_ICON, "--color", "#007AFF"]);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
+test("permission-request normalizes MCP tool input for cmux notifications", async () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "codex-nexus-hook-"));
+  const binDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-hook-bin-"));
+  const logPath = path.join(cwd, "cmux.log");
+
+  try {
+    writeFakeCmux(binDir, logPath);
+    const env = buildCmuxEnv(binDir, logPath, path.basename(cwd));
+
+    const result = runHook(
+      "permission-request",
+      {
+        cwd,
+        tool_name: "mcp__filesystem__read_file",
+        tool_input: {
+          path: "/tmp/report.txt"
+        }
+      },
+      cwd,
+      env
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("");
+    const entries = await waitForLogEntries(logPath, 2);
+    expect(entries).toContainEqual(["notify", "--title", "codex-nexus", "--body", "mcp__filesystem__read_file path=/tmp/report.txt"]);
     expect(entries).toContainEqual(["set-status", "nexus-state", "Needs Input", "--icon", CMUX_NEEDS_INPUT_ICON, "--color", "#007AFF"]);
   } finally {
     rmSync(cwd, { recursive: true, force: true });

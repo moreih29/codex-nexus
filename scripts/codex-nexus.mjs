@@ -37,6 +37,10 @@ const MANAGED_GITIGNORE_LINES = [
 const MANAGED_FEATURE_KEYS = ["multi_agent", "child_agents_md", "codex_hooks"];
 const DEFAULT_MARKETPLACE_NAME = "codex-nexus";
 const DEFAULT_MARKETPLACE_DISPLAY_NAME = "Codex Nexus";
+const STABLE_INLINE_HOOKS_MIN_CODEX_VERSION = "0.124.0";
+const HOOK_SURFACE_INLINE = "config.toml";
+const HOOK_SURFACE_JSON = "hooks.json";
+const MANAGED_TOOL_HOOK_MATCHER = "^(Bash|apply_patch|Edit|Write|mcp__.*)$";
 
 function safeObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -274,76 +278,93 @@ function quotePathForShell(filePath) {
   return `"${filePath.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"")}"`;
 }
 
-function buildManagedHooks(installedPackageRoot) {
+function buildManagedHookSpec(installedPackageRoot) {
   const hookScriptPath = path.join(installedPackageRoot, "scripts", "codex-nexus-hook.mjs");
   const quotedHookScriptPath = quotePathForShell(hookScriptPath);
 
   return {
-    hooks: {
-      SessionStart: [
-        {
-          matcher: "startup|resume|clear",
-          hooks: [
-            {
-              type: "command",
-              command: `node ${quotedHookScriptPath} session-start`,
-              timeout: 30
-            }
-          ]
-        }
-      ],
-      UserPromptSubmit: [
-        {
-          hooks: [
-            {
-              type: "command",
-              command: `node ${quotedHookScriptPath} user-prompt-submit`,
-              timeout: 30
-            }
-          ]
-        }
-      ],
-      PreToolUse: [
-        {
-          matcher: "Bash",
-          hooks: [
-            {
-              type: "command",
-              command: `node ${quotedHookScriptPath} pre-tool-use`,
-              timeout: 30
-            }
-          ]
-        }
-      ],
-      PermissionRequest: [
-        {
-          matcher: "Bash",
-          hooks: [
-            {
-              type: "command",
-              command: `node ${quotedHookScriptPath} permission-request`,
-              timeout: 30
-            }
-          ]
-        }
-      ],
-      Stop: [
-        {
-          hooks: [
-            {
-              type: "command",
-              command: `node ${quotedHookScriptPath} stop`,
-              timeout: 30
-            }
-          ]
-        }
-      ]
-    }
+    SessionStart: [
+      {
+        matcher: "startup|resume|clear",
+        hooks: [
+          {
+            type: "command",
+            command: `node ${quotedHookScriptPath} session-start`,
+            timeout: 30
+          }
+        ]
+      }
+    ],
+    UserPromptSubmit: [
+      {
+        hooks: [
+          {
+            type: "command",
+            command: `node ${quotedHookScriptPath} user-prompt-submit`,
+            timeout: 30
+          }
+        ]
+      }
+    ],
+    PreToolUse: [
+      {
+        matcher: MANAGED_TOOL_HOOK_MATCHER,
+        hooks: [
+          {
+            type: "command",
+            command: `node ${quotedHookScriptPath} pre-tool-use`,
+            timeout: 30
+          }
+        ]
+      }
+    ],
+    PermissionRequest: [
+      {
+        matcher: MANAGED_TOOL_HOOK_MATCHER,
+        hooks: [
+          {
+            type: "command",
+            command: `node ${quotedHookScriptPath} permission-request`,
+            timeout: 30
+          }
+        ]
+      }
+    ],
+    Stop: [
+      {
+        hooks: [
+          {
+            type: "command",
+            command: `node ${quotedHookScriptPath} stop`,
+            timeout: 30
+          }
+        ]
+      }
+    ]
   };
 }
 
 function isManagedHookCommand(command) {
   return typeof command === "string" && /codex-nexus-hook/.test(command);
+}
+
+function hasManagedHooksRecord(hooksRecord) {
+  for (const groups of Object.values(safeObject(hooksRecord))) {
+    if (!Array.isArray(groups)) {
+      continue;
+    }
+
+    for (const group of groups) {
+      if (!group || typeof group !== "object" || !Array.isArray(group.hooks)) {
+        continue;
+      }
+      if (group.hooks.some((hook) => hook?.type === "command" && isManagedHookCommand(hook.command))) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 function stripManagedHookGroup(group) {
@@ -362,23 +383,59 @@ function stripManagedHookGroup(group) {
   };
 }
 
-function mergeHooksJson(existingContent, installedPackageRoot) {
-  const parsed = existingContent ? JSON.parse(existingContent) : {};
+function mergeManagedHookRecord(existingHooksRecord, managedHooksRecord) {
   const next = {
-    ...parsed,
-    hooks: {
-      ...safeObject(parsed.hooks)
-    }
+    ...safeObject(existingHooksRecord)
   };
-  const managed = buildManagedHooks(installedPackageRoot);
 
-  for (const [eventName, groups] of Object.entries(managed.hooks)) {
-    const existingGroups = Array.isArray(next.hooks[eventName]) ? next.hooks[eventName] : [];
+  for (const [eventName, groups] of Object.entries(managedHooksRecord)) {
+    const existingGroups = Array.isArray(next[eventName]) ? next[eventName] : [];
     const preserved = existingGroups
       .map((group) => stripManagedHookGroup(group))
       .filter((group) => group !== null);
-    next.hooks[eventName] = [...preserved, ...groups];
+    next[eventName] = [...preserved, ...groups];
   }
+
+  return next;
+}
+
+function stripManagedHooksRecord(existingHooksRecord) {
+  const hooks = safeObject(existingHooksRecord);
+  const nextHooks = {};
+
+  for (const [eventName, groups] of Object.entries(hooks)) {
+    if (!Array.isArray(groups)) {
+      nextHooks[eventName] = groups;
+      continue;
+    }
+
+    const cleanedGroups = groups
+      .map((group) => stripManagedHookGroup(group))
+      .filter((group) => group !== null);
+
+    if (cleanedGroups.length > 0) {
+      nextHooks[eventName] = cleanedGroups;
+    }
+  }
+
+  return Object.keys(nextHooks).length > 0 ? nextHooks : null;
+}
+
+function setParsedHooksRecord(parsed, hooksRecord) {
+  if (hooksRecord && Object.keys(hooksRecord).length > 0) {
+    parsed.hooks = hooksRecord;
+    return;
+  }
+  delete parsed.hooks;
+}
+
+function mergeHooksJson(existingContent, installedPackageRoot) {
+  const parsed = existingContent ? JSON.parse(existingContent) : {};
+  const next = {
+    ...parsed
+  };
+  const managed = buildManagedHookSpec(installedPackageRoot);
+  setParsedHooksRecord(next, mergeManagedHookRecord(parsed.hooks, managed));
 
   return JSON.stringify(next, null, 2) + "\n";
 }
@@ -388,30 +445,90 @@ function stripManagedHooksJson(existingContent, fileExisted) {
   const next = {
     ...parsed
   };
-  const hooks = safeObject(parsed.hooks);
-  const nextHooks = {};
-
-  for (const [eventName, groups] of Object.entries(hooks)) {
-    const cleanedGroups = (Array.isArray(groups) ? groups : [])
-      .map((group) => stripManagedHookGroup(group))
-      .filter((group) => group !== null);
-
-    if (cleanedGroups.length > 0) {
-      nextHooks[eventName] = cleanedGroups;
-    }
-  }
-
-  if (Object.keys(nextHooks).length > 0) {
-    next.hooks = nextHooks;
-  } else {
-    delete next.hooks;
-  }
+  setParsedHooksRecord(next, stripManagedHooksRecord(parsed.hooks));
 
   if (Object.keys(next).length === 0 && !fileExisted) {
     return null;
   }
 
   return JSON.stringify(next, null, 2) + "\n";
+}
+
+function extractSemver(text) {
+  if (typeof text !== "string") {
+    return null;
+  }
+
+  const match = text.match(/\d+\.\d+\.\d+/);
+  return match ? match[0] : null;
+}
+
+function compareSemver(left, right) {
+  const leftParts = String(left).split(".").map((value) => Number.parseInt(value, 10));
+  const rightParts = String(right).split(".").map((value) => Number.parseInt(value, 10));
+  const maxLength = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const leftValue = Number.isFinite(leftParts[index]) ? leftParts[index] : 0;
+    const rightValue = Number.isFinite(rightParts[index]) ? rightParts[index] : 0;
+
+    if (leftValue > rightValue) {
+      return 1;
+    }
+    if (leftValue < rightValue) {
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
+async function detectCodexCliVersion(cwd, env) {
+  try {
+    const output = await runCommand("codex", ["--version"], cwd, env);
+    return extractSemver(output);
+  } catch {
+    return null;
+  }
+}
+
+async function supportsStableInlineHooks(scopePaths, runtime = {}) {
+  if (typeof runtime.inlineHooksSupported === "boolean") {
+    return runtime.inlineHooksSupported;
+  }
+
+  const codexVersion = typeof runtime.codexVersion === "string"
+    ? runtime.codexVersion
+    : await detectCodexCliVersion(runtime.cwd ?? scopePaths.projectRoot, runtime.env ?? process.env);
+
+  return codexVersion
+    ? compareSemver(codexVersion, STABLE_INLINE_HOOKS_MIN_CODEX_VERSION) >= 0
+    : false;
+}
+
+async function resolveManagedHookSurface(scopePaths, runtime = {}) {
+  const configContent = readTextIfExists(scopePaths.configTomlPath);
+  const hooksContent = readTextIfExists(scopePaths.hooksJsonPath);
+  const parsedConfig = configContent ? TOML.parse(configContent) : {};
+  const inlineHooks = safeObject(parsedConfig.hooks);
+  const jsonHooks = hooksContent ? safeObject(JSON.parse(hooksContent).hooks) : {};
+
+  if (hasManagedHooksRecord(inlineHooks)) {
+    return HOOK_SURFACE_INLINE;
+  }
+  if (hasManagedHooksRecord(jsonHooks)) {
+    return HOOK_SURFACE_JSON;
+  }
+  if (Object.keys(inlineHooks).length > 0) {
+    return HOOK_SURFACE_INLINE;
+  }
+  if (hooksContent !== null) {
+    return HOOK_SURFACE_JSON;
+  }
+
+  return await supportsStableInlineHooks(scopePaths, runtime)
+    ? HOOK_SURFACE_INLINE
+    : HOOK_SURFACE_JSON;
 }
 
 function managedInstalledNxServerConfig(runtimeCommand, serverPath) {
@@ -491,7 +608,7 @@ function managedConfigPatch(runtimeCommand, serverPath) {
   };
 }
 
-function mergeConfigToml(existingContent, runtimeCommand, serverPath) {
+function mergeConfigToml(existingContent, runtimeCommand, serverPath, managedHookSpec = null) {
   const parsed = existingContent ? TOML.parse(existingContent) : {};
   const features = safeObject(parsed.features);
   const mcpServers = safeObject(parsed.mcp_servers);
@@ -506,6 +623,9 @@ function mergeConfigToml(existingContent, runtimeCommand, serverPath) {
     ...mcpServers,
     nx: managed.mcpServerNx
   };
+  if (managedHookSpec) {
+    setParsedHooksRecord(parsed, mergeManagedHookRecord(parsed.hooks, managedHookSpec));
+  }
 
   return TOML.stringify(parsed);
 }
@@ -580,6 +700,7 @@ function restoreConfigToml(existingContent, configState) {
 
   deleteIfEmptyObject(parsed, "features");
   deleteIfEmptyObject(parsed, "mcp_servers");
+  setParsedHooksRecord(parsed, stripManagedHooksRecord(parsed.hooks));
 
   return stringifyTomlOrNull(parsed, configState.fileExisted);
 }
@@ -630,6 +751,7 @@ function removeExactManagedConfigToml(existingContent) {
 
   deleteIfEmptyObject(parsed, "features");
   deleteIfEmptyObject(parsed, "mcp_servers");
+  setParsedHooksRecord(parsed, stripManagedHooksRecord(parsed.hooks));
 
   return stringifyTomlOrNull(parsed, false);
 }
@@ -868,9 +990,11 @@ function detectExistingManagedInstall(scopePaths) {
   const config = readTextIfExists(scopePaths.configTomlPath) ?? "";
   const hooks = readTextIfExists(scopePaths.hooksJsonPath) ?? "";
   const marketplace = readTextIfExists(scopePaths.marketplacePath) ?? "";
+  const parsedConfig = config ? TOML.parse(config) : {};
   const pluginManifest = readJsonIfExists(path.join(scopePaths.pluginInstallDir, ".codex-plugin", "plugin.json"));
 
-  return config.includes(`model_instructions_file = "${LEAD_INSTRUCTIONS_FILE}"`) ||
+  return parsedConfig.model_instructions_file === LEAD_INSTRUCTIONS_FILE ||
+    hasManagedHooksRecord(parsedConfig.hooks) ||
     hooks.includes("codex-nexus-hook") ||
     marketplace.includes(`"name": "${PLUGIN_NAME}"`) ||
     pluginManifest?.name === PLUGIN_NAME;
@@ -956,11 +1080,13 @@ function removeManagedPackageStore(scopePaths, packageStoreDirExisted) {
   }
 }
 
-async function installManagedSurfaces(installedPackageRoot, scopePaths) {
+async function installManagedSurfaces(installedPackageRoot, scopePaths, runtime = {}) {
   const pluginSourceRoot = path.join(installedPackageRoot, "plugins", PLUGIN_NAME);
   const nexusCoreVersion = resolveNexusCoreVersion(installedPackageRoot);
   const runtimeCommand = resolveRuntimeCommand();
   const nexusCoreServerPath = resolveNexusCoreServerPath(installedPackageRoot);
+  const hookSurface = await resolveManagedHookSurface(scopePaths, runtime);
+  const managedHookSpec = buildManagedHookSpec(installedPackageRoot);
 
   copyDirectory(pluginSourceRoot, scopePaths.pluginInstallDir);
   copyDirectory(path.join(pluginSourceRoot, "agents"), scopePaths.agentsDir);
@@ -972,12 +1098,19 @@ async function installManagedSurfaces(installedPackageRoot, scopePaths) {
   );
   writeText(
     scopePaths.configTomlPath,
-    mergeConfigToml(readTextIfExists(scopePaths.configTomlPath), runtimeCommand, nexusCoreServerPath)
+    mergeConfigToml(
+      readTextIfExists(scopePaths.configTomlPath),
+      runtimeCommand,
+      nexusCoreServerPath,
+      hookSurface === HOOK_SURFACE_INLINE ? managedHookSpec : null
+    )
   );
-  writeText(
-    scopePaths.hooksJsonPath,
-    mergeHooksJson(readTextIfExists(scopePaths.hooksJsonPath), installedPackageRoot)
-  );
+  if (hookSurface === HOOK_SURFACE_JSON) {
+    writeText(
+      scopePaths.hooksJsonPath,
+      mergeHooksJson(readTextIfExists(scopePaths.hooksJsonPath), installedPackageRoot)
+    );
+  }
   writeText(
     scopePaths.marketplacePath,
     mergeMarketplaceJson(readTextIfExists(scopePaths.marketplacePath), scopePaths.pluginSourcePath)
@@ -989,7 +1122,8 @@ async function installManagedSurfaces(installedPackageRoot, scopePaths) {
   return {
     nexusCoreVersion,
     runtimeCommand,
-    nexusCoreServerPath
+    nexusCoreServerPath,
+    hookSurface
   };
 }
 
@@ -1003,7 +1137,17 @@ async function installCommand(options = {}, runtime = {}) {
   const managedState = ensureManagedInstallState(scopePaths);
   const installedPackageRoot = await resolveInstalledPackageRoot(scopePaths, requestedVersion, runtime);
   const installedVersion = await readInstalledPackageVersion(installedPackageRoot);
-  const assets = await installManagedSurfaces(installedPackageRoot, scopePaths);
+  const assets = await installManagedSurfaces(installedPackageRoot, scopePaths, runtime);
+  if (!managedState.legacy) {
+    writeManagedInstallState(scopePaths, {
+      ...managedState,
+      hooks: {
+        ...safeObject(managedState.hooks),
+        fileExisted: Boolean(managedState.hooks?.fileExisted),
+        surface: assets.hookSurface
+      }
+    });
+  }
 
   return {
     scope,
@@ -1024,7 +1168,8 @@ async function installCommand(options = {}, runtime = {}) {
     uninstallMode: managedState.legacy ? "best-effort" : "restore",
     nexusCoreVersion: assets.nexusCoreVersion,
     runtimeCommand: assets.runtimeCommand,
-    nexusCoreServerPath: assets.nexusCoreServerPath
+    nexusCoreServerPath: assets.nexusCoreServerPath,
+    hooksSurface: assets.hookSurface
   };
 }
 
@@ -1110,16 +1255,27 @@ function doctorCommand(options = {}, runtime = {}) {
   const hooks = readTextIfExists(paths.hooksJsonPath) ?? "";
   const marketplace = readTextIfExists(paths.marketplacePath) ?? "";
   const parsedConfig = config ? TOML.parse(config) : {};
+  const parsedHooks = hooks ? JSON.parse(hooks) : {};
   const nxConfig = safeObject(safeObject(parsedConfig.mcp_servers).nx);
   const nxCommand = typeof nxConfig.command === "string" ? nxConfig.command : "";
   const nxArgs = Array.isArray(nxConfig.args) ? nxConfig.args : [];
   const nxServerPath = typeof nxArgs[0] === "string" ? nxArgs[0] : "";
-  const hasManagedHooks = /codex-nexus-hook[^\n]*session-start/.test(hooks);
+  const hasManagedInlineHooks = hasManagedHooksRecord(parsedConfig.hooks);
+  const hasManagedHooksJson = hasManagedHooksRecord(parsedHooks.hooks);
+  const hooksSurface = hasManagedInlineHooks && hasManagedHooksJson
+    ? `${HOOK_SURFACE_INLINE} + ${HOOK_SURFACE_JSON}`
+    : hasManagedInlineHooks
+      ? HOOK_SURFACE_INLINE
+      : hasManagedHooksJson
+        ? HOOK_SURFACE_JSON
+        : null;
   const packageStoreRoot = env[TEST_PACKAGE_ROOT_ENV]
     ? path.resolve(env[TEST_PACKAGE_ROOT_ENV])
     : paths.managedInstalledPackageRoot;
-  const usesLocalDevelopmentHooks = hooks.includes(path.join(PACKAGE_ROOT, "scripts", "codex-nexus-hook.mjs")) ||
-    hooks.includes("node ./scripts/codex-nexus-hook.mjs");
+  const usesLocalDevelopmentHooks = [config, hooks].some((content) =>
+    content.includes(path.join(PACKAGE_ROOT, "scripts", "codex-nexus-hook.mjs")) ||
+    content.includes("node ./scripts/codex-nexus-hook.mjs")
+  );
   const installedAgentNxConfigs = readAgentNxServerConfigs(paths.agentsDir);
   const usesResolvedNxLauncher = (agentConfigs) => agentConfigs.length > 0 &&
     agentConfigs.every((agent) =>
@@ -1145,7 +1301,7 @@ function doctorCommand(options = {}, runtime = {}) {
         nxServerPath.length > 0 &&
         existsSync(nxServerPath)
     },
-    { label: "hooks.json", ok: existsSync(paths.hooksJsonPath) && hasManagedHooks },
+    { label: hooksSurface ? `hooks surface (${hooksSurface})` : "hooks surface", ok: hooksSurface !== null },
     { label: "marketplace.json", ok: existsSync(paths.marketplacePath) && marketplace.includes(paths.pluginSourcePath) },
     { label: ".codex/agents/lead.toml", ok: existsSync(path.join(paths.agentsDir, "lead.toml")) },
     { label: ".codex/agents use resolved nx MCP launcher", ok: usesResolvedNxLauncher(installedAgentNxConfigs) },
@@ -1155,6 +1311,7 @@ function doctorCommand(options = {}, runtime = {}) {
 
   return {
     scope,
+    hooksSurface,
     failed: checks.filter((check) => !check.ok).length,
     checks
   };
@@ -1169,6 +1326,7 @@ function formatInstallSummary(result) {
     `nexus-core version: ${result.nexusCoreVersion}`,
     `runtime command: ${result.runtimeCommand}`,
     `nexus-mcp entry: ${result.nexusCoreServerPath}`,
+    `hooks surface: ${result.hooksSurface}`,
     `uninstall mode: ${result.uninstallMode}`,
     `state: ${result.managedStatePath}`,
     `package store: ${result.packageStoreDir}`,

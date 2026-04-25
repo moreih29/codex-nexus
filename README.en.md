@@ -93,7 +93,7 @@ The installer writes or updates:
 - `[features].child_agents_md = true`
 - `[features].codex_hooks = true`
 - `[mcp_servers.nx]`
-- `.codex/hooks.json`
+- managed Codex hook wiring (inline `config.toml [hooks]` or legacy `.codex/hooks.json`)
 - `.codex/agents/*`
 - `.agents/skills/*`
 - the marketplace entry
@@ -101,6 +101,24 @@ The installer writes or updates:
 This is the important distinction: it does not just copy a plugin folder. It wires the final-user config paths that Codex actually reads.
 It also wires `nx` MCP through the installed runtime plus the installed `nexus-core` server entry, instead of relying on `npx` being present on PATH.
 By contrast, the installed plugin bundle keeps its `agents/*.toml` files in their distributed `nexus-mcp` source form, while the runtime agent copies under `.codex/agents/*` get the resolved absolute launcher.
+
+## Hook compatibility
+
+`codex-nexus` writes its **managed Codex hooks** to exactly one surface per `.codex/` layer. Re-running install/update does not duplicate the same managed hooks across both inline `[hooks]` and `.codex/hooks.json`.
+
+The selection rules are conservative:
+
+- if inline `[hooks]` already exist in `config.toml`, codex-nexus keeps using that surface
+- if inline `[hooks]` do not already exist and `.codex/hooks.json` does, codex-nexus keeps using the legacy surface
+- if neither surface exists yet, inline `config.toml [hooks]` is enabled only when `codex --version` is `0.124.0` or newer
+- if the Codex CLI version is unknown or older than `0.124.0`, codex-nexus falls back to `.codex/hooks.json`
+
+Managed matcher/runtime coverage:
+
+- `PreToolUse` and `PermissionRequest` match `Bash`, `apply_patch` / `Edit` / `Write`, and `mcp__.*`
+- the hook runtime normalizes Bash, `apply_patch`, and MCP event inputs
+- existing Bash deny rules remain Bash-only
+- `PostToolUse` is intentionally unchanged
 
 ## Uninstall
 
@@ -193,7 +211,7 @@ The installer also aligns the pinned `@moreih29/nexus-core` version from the cur
 
 ## Notes
 
-- Hooks are merged into Codex config-layer `hooks.json`.
+- codex-nexus-managed hooks follow conservative surface-selection rules. Existing inline hooks stay inline, existing `hooks.json` stays legacy when inline hooks are not already present, and only a fresh surface selection on supported Codex enables inline `config.toml [hooks]`.
 - `nx` MCP uses the installer runtime path rather than a bare `npx` command.
 - For project installs, the installer adds ignore entries for local install artifact directories to `.gitignore`.
 - Uninstall is designed to preserve unrelated settings, but old installs without rollback metadata can only be cleaned up on a best-effort basis.

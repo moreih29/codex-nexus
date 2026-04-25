@@ -67,6 +67,10 @@ const CMUX_DEDUPE_RETENTION_MS = 5 * 60 * 1000;
 const CMUX_NOTIFICATION_PREVIEW_MAX_CHARS = 96;
 const CMUX_PERMISSION_FALLBACK = "Permission requested";
 const CMUX_STOP_FALLBACK = "Response ready";
+const TOOL_KIND_BASH = "bash";
+const TOOL_KIND_APPLY_PATCH = "apply_patch";
+const TOOL_KIND_MCP = "mcp";
+const TOOL_KIND_OTHER = "other";
 
 async function readStdin() {
   const chunks = [];
@@ -280,6 +284,90 @@ function extractText(value, depth = 0) {
   return null;
 }
 
+function summarizeStructuredValue(value, depth = 0) {
+  if (depth > 3 || value == null) {
+    return null;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    const items = value
+      .slice(0, 3)
+      .map((item) => summarizeStructuredValue(item, depth + 1))
+      .filter((item) => typeof item === "string" && item.length > 0);
+
+    if (items.length === 0) {
+      return null;
+    }
+
+    return `[${items.join(", ")}${value.length > items.length ? ", …" : ""}]`;
+  }
+
+  if (typeof value !== "object") {
+    return null;
+  }
+
+  const entries = Object.entries(value)
+    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+    .slice(0, 3)
+    .map(([key, entryValue]) => {
+      const summarized = summarizeStructuredValue(entryValue, depth + 1);
+      return summarized ? `${key}=${summarized}` : null;
+    })
+    .filter((item) => typeof item === "string" && item.length > 0);
+
+  if (entries.length === 0) {
+    return null;
+  }
+
+  return `${entries.join(" ")}${Object.keys(value).length > entries.length ? " …" : ""}`;
+}
+
+function normalizeToolEvent(input) {
+  const toolName = firstNonEmptyString([input?.tool_name, input?.toolName]);
+  const toolInput = input?.tool_input ?? input?.toolInput ?? null;
+  const description = firstNonEmptyString([
+    toolInput && typeof toolInput === "object" ? toolInput.description : null
+  ]);
+  const command = firstNonEmptyString([
+    toolInput && typeof toolInput === "object" ? toolInput.command : null
+  ]);
+
+  let toolKind = TOOL_KIND_OTHER;
+  if (toolName === "Bash") {
+    toolKind = TOOL_KIND_BASH;
+  } else if (toolName === "apply_patch") {
+    toolKind = TOOL_KIND_APPLY_PATCH;
+  } else if (typeof toolName === "string" && toolName.startsWith("mcp__")) {
+    toolKind = TOOL_KIND_MCP;
+  }
+
+  const inputPreview = firstNonEmptyString([
+    command,
+    summarizeStructuredValue(toolInput)
+  ]);
+
+  return {
+    toolName,
+    toolKind,
+    toolInput,
+    description,
+    command,
+    inputPreview,
+    isBash: toolKind === TOOL_KIND_BASH,
+    isApplyPatch: toolKind === TOOL_KIND_APPLY_PATCH,
+    isMcp: toolKind === TOOL_KIND_MCP
+  };
+}
+
 function isPreCheckParagraph(paragraph) {
   const firstLine = paragraph
     .split(/\r?\n/)
@@ -345,13 +433,17 @@ function buildNotificationPreview(sourceText, fallback) {
 }
 
 function buildPermissionNotificationBody(input) {
+  const toolEvent = normalizeToolEvent(input);
   const source = firstNonEmptyString([
     input?.request_text,
     input?.requestText,
-    input?.tool_input?.description,
-    input?.toolInput?.description,
-    input?.tool_input?.command,
-    input?.toolInput?.command
+    toolEvent.description,
+    toolEvent.isMcp && toolEvent.inputPreview
+      ? `${toolEvent.toolName} ${toolEvent.inputPreview}`
+      : toolEvent.isApplyPatch && toolEvent.inputPreview
+        ? `apply_patch ${toolEvent.inputPreview}`
+        : toolEvent.inputPreview,
+    toolEvent.toolName
   ]);
   return buildNotificationPreview(source, CMUX_PERMISSION_FALLBACK);
 }
@@ -440,17 +532,20 @@ function handleUserPromptSubmit(input) {
 }
 
 function handlePreToolUse(input) {
-  const command = input.tool_input?.command ?? input.toolInput?.command ?? "";
-  for (const candidate of BLOCKED_GIT_PATTERNS) {
-    if (candidate.pattern.test(command)) {
-      printJson({
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "deny",
-          permissionDecisionReason: candidate.reason
-        }
-      });
-      return;
+  const toolEvent = normalizeToolEvent(input);
+
+  if (toolEvent.isBash && toolEvent.command) {
+    for (const candidate of BLOCKED_GIT_PATTERNS) {
+      if (candidate.pattern.test(toolEvent.command)) {
+        printJson({
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: candidate.reason
+          }
+        });
+        return;
+      }
     }
   }
 
