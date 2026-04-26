@@ -44,7 +44,6 @@ const HOOK_SURFACE_INLINE = "config.toml";
 const HOOK_SURFACE_JSON = "hooks.json";
 const MANAGED_TOOL_HOOK_MATCHER = "^(Bash|apply_patch|Edit|Write|mcp__.*)$";
 const MODEL_TARGET_DEFAULT = "default";
-const MODEL_TARGET_DONE = "__done__";
 const MODEL_AGENT_TARGETS = [
   "architect",
   "designer",
@@ -1765,11 +1764,6 @@ function terminalKeycap(label) {
 function modelTargetSelectOptions(scopePaths, pendingTargetModels = {}) {
   return [
     {
-      value: MODEL_TARGET_DONE,
-      label: "Done",
-      hint: Object.keys(pendingTargetModels).length > 0 ? "save pending changes" : "exit without changes"
-    },
-    {
       value: MODEL_TARGET_ALL,
       label: "all",
       hint: "default + non-lead agents"
@@ -1789,19 +1783,14 @@ async function configureModelsInteractive(scopePaths, models) {
     const selectedTargets = await multiselect({
       message: `Select model targets. ${terminalKeycap("Space")} toggles, ${terminalKeycap("Enter")} continues; ${terminalKeycap("Enter")} with no selection finishes.`,
       required: false,
-      options: modelTargetSelectOptions(scopePaths, pendingTargetModels),
-      validate(value) {
-        if (value.includes(MODEL_TARGET_DONE) && value.length > 1) {
-          return "Choose Done by itself, or choose only model targets.";
-        }
-      }
+      options: modelTargetSelectOptions(scopePaths, pendingTargetModels)
     });
 
     if (isCancel(selectedTargets)) {
       return { cancelled: true };
     }
 
-    if (selectedTargets.length === 0 || selectedTargets.includes(MODEL_TARGET_DONE)) {
+    if (selectedTargets.length === 0) {
       const result = applyModelTargetMap(scopePaths, pendingTargetModels);
       return {
         cancelled: false,
