@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.3.16] - 2026-04-26
+
 ### Changed
 
 - TTY에서 `codex-nexus install`이 완료되면 이어서 모델 설정을 진행할지 묻도록 했다
