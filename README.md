@@ -44,6 +44,8 @@ TTY 환경에서는 설치 중에:
 
 ```bash
 codex-nexus install [--scope user|project]
+codex-nexus models [--scope user|project]
+codex-nexus models [--scope user|project] --targets default,engineer --model gpt-5.4
 codex-nexus uninstall [--scope user|project]
 codex-nexus doctor [--scope user|project]
 codex-nexus version
@@ -56,6 +58,25 @@ codex-nexus --version
 npx -y codex-nexus version
 npx -y codex-nexus --version
 ```
+
+## 모델 선택
+
+설치 후 Codex 기본 모델과 Nexus 하위 에이전트 모델을 scope별로 설정할 수 있다.
+
+```bash
+npx -y codex-nexus models --scope project
+npx -y codex-nexus models --scope project --targets default,engineer,tester --model gpt-5.4
+```
+
+- TTY에서는 scope, 대상, 모델을 순서대로 고른다. scope 기본 선택값은 `project`다.
+- 비대화형 direct mode에서는 `--targets`와 `--model`을 함께 쓴다.
+- `--agents`는 `--targets`의 alias로 지원한다.
+- 대상은 `default`, `architect`, `designer`, `postdoc`, `strategist`, `engineer`, `researcher`, `writer`, `reviewer`, `tester`, `all`이다.
+- `default`는 scoped `.codex/config.toml`의 top-level `model`을 설정한다.
+- 하위 에이전트 대상은 scoped `.codex/agents/<agent>.toml`의 top-level `model`을 설정한다.
+- `lead`는 설정 대상에서 제외된다.
+
+선택한 값은 scoped `.codex/.codex-nexus/model-overrides.json`에도 저장되어, 이후 `codex-nexus install`을 다시 실행해도 non-lead agent model override가 다시 적용된다.
 
 ## 설치 범위
 
@@ -95,7 +116,7 @@ installer는 선택한 버전을 기준으로 아래를 맞춰 준다.
 - `[features].child_agents_md = true`
 - `[features].codex_hooks = true`
 - `[mcp_servers.nx]`
-- `.codex/hooks.json`
+- Codex hook wiring (`config.toml` inline `[hooks]` 또는 `.codex/hooks.json`)
 - `.codex/agents/*`
 - `.agents/skills/*`
 - marketplace entry
@@ -103,6 +124,24 @@ installer는 선택한 버전을 기준으로 아래를 맞춰 준다.
 즉, 플러그인만 복사하는 것이 아니라 Codex가 실제로 읽는 최종 사용자 경로까지 함께 정리한다.
 또한 `nx` MCP는 `npx` PATH에 의존하지 않도록, 설치된 런타임과 설치된 `nexus-core` server.js 절대경로로 연결한다.
 반면 설치된 plugin bundle 내부의 `agents/*.toml`은 배포 소스 형태(`nexus-mcp`)를 유지하고, 실제 실행용 agent 사본은 `.codex/agents/*` 쪽에 절대경로 launcher로 써 넣는다.
+
+## 훅 호환성
+
+`codex-nexus`는 **자신이 관리하는 Codex hook** 을 `.codex/` 레이어마다 정확히 한 표면에만 쓴다. install/update를 다시 실행해도 같은 managed hook을 inline `[hooks]` 와 `.codex/hooks.json` 양쪽에 중복으로 쓰지 않는다.
+
+선택 규칙은 보수적이다.
+
+- 이미 `config.toml` 안에 inline `[hooks]`가 있으면 그 표면을 유지한다.
+- inline `[hooks]`가 없고 이미 `.codex/hooks.json`이 있으면 legacy 표면을 유지한다.
+- 둘 다 없다면 `codex --version`이 `0.124.0` 이상일 때만 `config.toml` inline `[hooks]`를 사용한다.
+- Codex 버전을 확인할 수 없거나 `0.124.0` 미만이면 `.codex/hooks.json`으로 fallback한다.
+
+관리되는 matcher / runtime 범위:
+
+- `PreToolUse`, `PermissionRequest` matcher는 `Bash`, `apply_patch` / `Edit` / `Write`, `mcp__.*`를 커버한다.
+- hook runtime은 Bash, `apply_patch`, MCP 이벤트 입력을 정규화한다.
+- 기존 Bash deny 규칙은 계속 Bash command에만 적용된다.
+- `PostToolUse`는 의도적으로 변경하지 않는다.
 
 ## uninstall
 
@@ -195,7 +234,7 @@ installer는 현재 실행 중인 `codex-nexus` 버전에 맞춰 `@moreih29/nexu
 
 ## 주의할 점
 
-- 훅은 Codex의 config-layer `hooks.json`에 병합된다.
+- codex-nexus가 관리하는 hook은 보수적 표면 선택 규칙을 따른다. 기존 inline 표면이 있으면 inline을 유지하고, inline이 없을 때 기존 `hooks.json`은 legacy를 유지하며, 아무 표면도 없을 때만 지원되는 Codex에서 `config.toml` inline `[hooks]`를 새로 사용한다.
 - `nx` MCP는 `npx`가 아니라 설치 시점 런타임 절대경로를 사용한다.
 - project scope 설치 시 `.gitignore`에는 로컬 install artifact 디렉터리용 ignore 항목이 자동으로 추가된다.
 - uninstall은 unrelated 설정을 최대한 보존하도록 설계됐지만, metadata가 없는 예전 설치본은 best-effort 정리만 가능하다.

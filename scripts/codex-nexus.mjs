@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { stdin as input, stdout as output } from "node:process";
 import TOML from "@iarna/toml";
-import { intro, isCancel, outro, select, spinner } from "@clack/prompts";
+import { intro, isCancel, multiselect, outro, select, spinner } from "@clack/prompts";
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PACKAGE_JSON = JSON.parse(readFileSync(path.join(PACKAGE_ROOT, "package.json"), "utf8"));
@@ -29,6 +29,8 @@ const NEXUS_CORE_SERVER_RELATIVE_PATH = path.join("dist", "mcp", "server.js");
 const INSTALL_STATE_DIRNAME = ".codex-nexus";
 const INSTALL_STATE_FILENAME = "install-state.json";
 const INSTALL_STATE_VERSION = 1;
+const MODEL_OVERRIDES_FILENAME = "model-overrides.json";
+const MODEL_OVERRIDES_VERSION = 1;
 const MANAGED_GITIGNORE_LINES = [
   ".nexus/state/",
   ".codex/",
@@ -37,6 +39,24 @@ const MANAGED_GITIGNORE_LINES = [
 const MANAGED_FEATURE_KEYS = ["multi_agent", "child_agents_md", "codex_hooks"];
 const DEFAULT_MARKETPLACE_NAME = "codex-nexus";
 const DEFAULT_MARKETPLACE_DISPLAY_NAME = "Codex Nexus";
+const STABLE_INLINE_HOOKS_MIN_CODEX_VERSION = "0.124.0";
+const HOOK_SURFACE_INLINE = "config.toml";
+const HOOK_SURFACE_JSON = "hooks.json";
+const MANAGED_TOOL_HOOK_MATCHER = "^(Bash|apply_patch|Edit|Write|mcp__.*)$";
+const MODEL_TARGET_DEFAULT = "default";
+const MODEL_AGENT_TARGETS = [
+  "architect",
+  "designer",
+  "postdoc",
+  "strategist",
+  "engineer",
+  "researcher",
+  "writer",
+  "reviewer",
+  "tester"
+];
+const MODEL_TARGET_ALL = "all";
+const MODEL_TARGETS = [MODEL_TARGET_DEFAULT, ...MODEL_AGENT_TARGETS];
 
 function safeObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -179,7 +199,8 @@ function resolveScopePaths(scope, cwd = process.cwd(), env = process.env) {
     pluginSourcePath: scope === "user" ? "./.codex/plugins/codex-nexus" : "./plugins/codex-nexus",
     projectGitignorePath: path.join(projectRoot, ".gitignore"),
     managedStateDir,
-    managedStatePath: path.join(managedStateDir, INSTALL_STATE_FILENAME)
+    managedStatePath: path.join(managedStateDir, INSTALL_STATE_FILENAME),
+    modelOverridesPath: path.join(managedStateDir, MODEL_OVERRIDES_FILENAME)
   };
 }
 
@@ -216,6 +237,69 @@ async function readInstalledPackageVersion(packageRoot) {
     throw new Error(`Installed package at ${packageRoot} is missing a valid version.`);
   }
   return parsed.version;
+}
+
+function normalizeModelCatalogEntries(entries) {
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+
+  const seen = new Set();
+  const models = [];
+
+  for (const entry of entries) {
+    const slug = typeof entry === "string" ? entry : entry?.slug;
+    if (typeof slug !== "string" || slug.trim().length === 0 || seen.has(slug)) {
+      continue;
+    }
+
+    const visibility = typeof entry === "object" && entry !== null ? entry.visibility : "list";
+    if (visibility !== undefined && visibility !== "list") {
+      continue;
+    }
+
+    seen.add(slug);
+    models.push({
+      slug,
+      displayName: typeof entry?.display_name === "string" && entry.display_name.trim().length > 0
+        ? entry.display_name
+        : slug,
+      description: typeof entry?.description === "string" ? entry.description : ""
+    });
+  }
+
+  return models;
+}
+
+function parseCodexModelCatalogOutput(outputText) {
+  let parsed;
+  try {
+    parsed = JSON.parse(outputText);
+  } catch (error) {
+    throw new Error(`Unable to parse Codex model catalog JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  const entries = Array.isArray(parsed) ? parsed : parsed?.models;
+  const models = normalizeModelCatalogEntries(entries);
+  if (models.length === 0) {
+    throw new Error("No visible Codex models were found in `codex debug models` output.");
+  }
+
+  return models;
+}
+
+async function listCodexModels(cwd, env = process.env, runtime = {}) {
+  const injectedCatalog = runtime.modelCatalog ?? runtime.codexModels;
+  if (injectedCatalog) {
+    const models = normalizeModelCatalogEntries(injectedCatalog);
+    if (models.length === 0) {
+      throw new Error("Injected Codex model catalog did not contain any visible models.");
+    }
+    return models;
+  }
+
+  const outputText = await runCommand("codex", ["debug", "models"], cwd, env);
+  return parseCodexModelCatalogOutput(outputText);
 }
 
 function resolveNexusCoreVersion(packageRoot) {
@@ -274,76 +358,93 @@ function quotePathForShell(filePath) {
   return `"${filePath.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"")}"`;
 }
 
-function buildManagedHooks(installedPackageRoot) {
+function buildManagedHookSpec(installedPackageRoot) {
   const hookScriptPath = path.join(installedPackageRoot, "scripts", "codex-nexus-hook.mjs");
   const quotedHookScriptPath = quotePathForShell(hookScriptPath);
 
   return {
-    hooks: {
-      SessionStart: [
-        {
-          matcher: "startup|resume|clear",
-          hooks: [
-            {
-              type: "command",
-              command: `node ${quotedHookScriptPath} session-start`,
-              timeout: 30
-            }
-          ]
-        }
-      ],
-      UserPromptSubmit: [
-        {
-          hooks: [
-            {
-              type: "command",
-              command: `node ${quotedHookScriptPath} user-prompt-submit`,
-              timeout: 30
-            }
-          ]
-        }
-      ],
-      PreToolUse: [
-        {
-          matcher: "Bash",
-          hooks: [
-            {
-              type: "command",
-              command: `node ${quotedHookScriptPath} pre-tool-use`,
-              timeout: 30
-            }
-          ]
-        }
-      ],
-      PermissionRequest: [
-        {
-          matcher: "Bash",
-          hooks: [
-            {
-              type: "command",
-              command: `node ${quotedHookScriptPath} permission-request`,
-              timeout: 30
-            }
-          ]
-        }
-      ],
-      Stop: [
-        {
-          hooks: [
-            {
-              type: "command",
-              command: `node ${quotedHookScriptPath} stop`,
-              timeout: 30
-            }
-          ]
-        }
-      ]
-    }
+    SessionStart: [
+      {
+        matcher: "startup|resume|clear",
+        hooks: [
+          {
+            type: "command",
+            command: `node ${quotedHookScriptPath} session-start`,
+            timeout: 30
+          }
+        ]
+      }
+    ],
+    UserPromptSubmit: [
+      {
+        hooks: [
+          {
+            type: "command",
+            command: `node ${quotedHookScriptPath} user-prompt-submit`,
+            timeout: 30
+          }
+        ]
+      }
+    ],
+    PreToolUse: [
+      {
+        matcher: MANAGED_TOOL_HOOK_MATCHER,
+        hooks: [
+          {
+            type: "command",
+            command: `node ${quotedHookScriptPath} pre-tool-use`,
+            timeout: 30
+          }
+        ]
+      }
+    ],
+    PermissionRequest: [
+      {
+        matcher: MANAGED_TOOL_HOOK_MATCHER,
+        hooks: [
+          {
+            type: "command",
+            command: `node ${quotedHookScriptPath} permission-request`,
+            timeout: 30
+          }
+        ]
+      }
+    ],
+    Stop: [
+      {
+        hooks: [
+          {
+            type: "command",
+            command: `node ${quotedHookScriptPath} stop`,
+            timeout: 30
+          }
+        ]
+      }
+    ]
   };
 }
 
 function isManagedHookCommand(command) {
   return typeof command === "string" && /codex-nexus-hook/.test(command);
+}
+
+function hasManagedHooksRecord(hooksRecord) {
+  for (const groups of Object.values(safeObject(hooksRecord))) {
+    if (!Array.isArray(groups)) {
+      continue;
+    }
+
+    for (const group of groups) {
+      if (!group || typeof group !== "object" || !Array.isArray(group.hooks)) {
+        continue;
+      }
+      if (group.hooks.some((hook) => hook?.type === "command" && isManagedHookCommand(hook.command))) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 function stripManagedHookGroup(group) {
@@ -362,23 +463,59 @@ function stripManagedHookGroup(group) {
   };
 }
 
-function mergeHooksJson(existingContent, installedPackageRoot) {
-  const parsed = existingContent ? JSON.parse(existingContent) : {};
+function mergeManagedHookRecord(existingHooksRecord, managedHooksRecord) {
   const next = {
-    ...parsed,
-    hooks: {
-      ...safeObject(parsed.hooks)
-    }
+    ...safeObject(existingHooksRecord)
   };
-  const managed = buildManagedHooks(installedPackageRoot);
 
-  for (const [eventName, groups] of Object.entries(managed.hooks)) {
-    const existingGroups = Array.isArray(next.hooks[eventName]) ? next.hooks[eventName] : [];
+  for (const [eventName, groups] of Object.entries(managedHooksRecord)) {
+    const existingGroups = Array.isArray(next[eventName]) ? next[eventName] : [];
     const preserved = existingGroups
       .map((group) => stripManagedHookGroup(group))
       .filter((group) => group !== null);
-    next.hooks[eventName] = [...preserved, ...groups];
+    next[eventName] = [...preserved, ...groups];
   }
+
+  return next;
+}
+
+function stripManagedHooksRecord(existingHooksRecord) {
+  const hooks = safeObject(existingHooksRecord);
+  const nextHooks = {};
+
+  for (const [eventName, groups] of Object.entries(hooks)) {
+    if (!Array.isArray(groups)) {
+      nextHooks[eventName] = groups;
+      continue;
+    }
+
+    const cleanedGroups = groups
+      .map((group) => stripManagedHookGroup(group))
+      .filter((group) => group !== null);
+
+    if (cleanedGroups.length > 0) {
+      nextHooks[eventName] = cleanedGroups;
+    }
+  }
+
+  return Object.keys(nextHooks).length > 0 ? nextHooks : null;
+}
+
+function setParsedHooksRecord(parsed, hooksRecord) {
+  if (hooksRecord && Object.keys(hooksRecord).length > 0) {
+    parsed.hooks = hooksRecord;
+    return;
+  }
+  delete parsed.hooks;
+}
+
+function mergeHooksJson(existingContent, installedPackageRoot) {
+  const parsed = existingContent ? JSON.parse(existingContent) : {};
+  const next = {
+    ...parsed
+  };
+  const managed = buildManagedHookSpec(installedPackageRoot);
+  setParsedHooksRecord(next, mergeManagedHookRecord(parsed.hooks, managed));
 
   return JSON.stringify(next, null, 2) + "\n";
 }
@@ -388,30 +525,90 @@ function stripManagedHooksJson(existingContent, fileExisted) {
   const next = {
     ...parsed
   };
-  const hooks = safeObject(parsed.hooks);
-  const nextHooks = {};
-
-  for (const [eventName, groups] of Object.entries(hooks)) {
-    const cleanedGroups = (Array.isArray(groups) ? groups : [])
-      .map((group) => stripManagedHookGroup(group))
-      .filter((group) => group !== null);
-
-    if (cleanedGroups.length > 0) {
-      nextHooks[eventName] = cleanedGroups;
-    }
-  }
-
-  if (Object.keys(nextHooks).length > 0) {
-    next.hooks = nextHooks;
-  } else {
-    delete next.hooks;
-  }
+  setParsedHooksRecord(next, stripManagedHooksRecord(parsed.hooks));
 
   if (Object.keys(next).length === 0 && !fileExisted) {
     return null;
   }
 
   return JSON.stringify(next, null, 2) + "\n";
+}
+
+function extractSemver(text) {
+  if (typeof text !== "string") {
+    return null;
+  }
+
+  const match = text.match(/\d+\.\d+\.\d+/);
+  return match ? match[0] : null;
+}
+
+function compareSemver(left, right) {
+  const leftParts = String(left).split(".").map((value) => Number.parseInt(value, 10));
+  const rightParts = String(right).split(".").map((value) => Number.parseInt(value, 10));
+  const maxLength = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const leftValue = Number.isFinite(leftParts[index]) ? leftParts[index] : 0;
+    const rightValue = Number.isFinite(rightParts[index]) ? rightParts[index] : 0;
+
+    if (leftValue > rightValue) {
+      return 1;
+    }
+    if (leftValue < rightValue) {
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
+async function detectCodexCliVersion(cwd, env) {
+  try {
+    const output = await runCommand("codex", ["--version"], cwd, env);
+    return extractSemver(output);
+  } catch {
+    return null;
+  }
+}
+
+async function supportsStableInlineHooks(scopePaths, runtime = {}) {
+  if (typeof runtime.inlineHooksSupported === "boolean") {
+    return runtime.inlineHooksSupported;
+  }
+
+  const codexVersion = typeof runtime.codexVersion === "string"
+    ? runtime.codexVersion
+    : await detectCodexCliVersion(runtime.cwd ?? scopePaths.projectRoot, runtime.env ?? process.env);
+
+  return codexVersion
+    ? compareSemver(codexVersion, STABLE_INLINE_HOOKS_MIN_CODEX_VERSION) >= 0
+    : false;
+}
+
+async function resolveManagedHookSurface(scopePaths, runtime = {}) {
+  const configContent = readTextIfExists(scopePaths.configTomlPath);
+  const hooksContent = readTextIfExists(scopePaths.hooksJsonPath);
+  const parsedConfig = configContent ? TOML.parse(configContent) : {};
+  const inlineHooks = safeObject(parsedConfig.hooks);
+  const jsonHooks = hooksContent ? safeObject(JSON.parse(hooksContent).hooks) : {};
+
+  if (hasManagedHooksRecord(inlineHooks)) {
+    return HOOK_SURFACE_INLINE;
+  }
+  if (hasManagedHooksRecord(jsonHooks)) {
+    return HOOK_SURFACE_JSON;
+  }
+  if (Object.keys(inlineHooks).length > 0) {
+    return HOOK_SURFACE_INLINE;
+  }
+  if (hooksContent !== null) {
+    return HOOK_SURFACE_JSON;
+  }
+
+  return await supportsStableInlineHooks(scopePaths, runtime)
+    ? HOOK_SURFACE_INLINE
+    : HOOK_SURFACE_JSON;
 }
 
 function managedInstalledNxServerConfig(runtimeCommand, serverPath) {
@@ -491,7 +688,7 @@ function managedConfigPatch(runtimeCommand, serverPath) {
   };
 }
 
-function mergeConfigToml(existingContent, runtimeCommand, serverPath) {
+function mergeConfigToml(existingContent, runtimeCommand, serverPath, managedHookSpec = null) {
   const parsed = existingContent ? TOML.parse(existingContent) : {};
   const features = safeObject(parsed.features);
   const mcpServers = safeObject(parsed.mcp_servers);
@@ -506,8 +703,115 @@ function mergeConfigToml(existingContent, runtimeCommand, serverPath) {
     ...mcpServers,
     nx: managed.mcpServerNx
   };
+  if (managedHookSpec) {
+    setParsedHooksRecord(parsed, mergeManagedHookRecord(parsed.hooks, managedHookSpec));
+  }
 
   return TOML.stringify(parsed);
+}
+
+function toggleMultilineTomlState(line, currentDelimiter) {
+  if (currentDelimiter) {
+    const closingIndex = line.indexOf(currentDelimiter);
+    return closingIndex === -1 ? currentDelimiter : null;
+  }
+
+  const doubleIndex = line.indexOf('"""');
+  const singleIndex = line.indexOf("'''");
+  if (doubleIndex === -1 && singleIndex === -1) {
+    return null;
+  }
+  if (doubleIndex !== -1 && (singleIndex === -1 || doubleIndex < singleIndex)) {
+    return line.indexOf('"""', doubleIndex + 3) === -1 ? '"""' : null;
+  }
+  return line.indexOf("'''", singleIndex + 3) === -1 ? "'''" : null;
+}
+
+function findFirstTopLevelTableLine(lines) {
+  let multilineDelimiter = null;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!multilineDelimiter && /^\s*\[\[?[^\]]+\]\]?\s*(?:#.*)?$/.test(line)) {
+      return index;
+    }
+    multilineDelimiter = toggleMultilineTomlState(line, multilineDelimiter);
+  }
+
+  return lines.length;
+}
+
+function findTopLevelKeyLine(lines, key, endIndex) {
+  let multilineDelimiter = null;
+  const keyPattern = new RegExp(`^\\s*${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*=`);
+
+  for (let index = 0; index < endIndex; index += 1) {
+    const line = lines[index];
+    if (!multilineDelimiter && keyPattern.test(line)) {
+      return index;
+    }
+    multilineDelimiter = toggleMultilineTomlState(line, multilineDelimiter);
+  }
+
+  return -1;
+}
+
+function tomlStringLiteral(value) {
+  return JSON.stringify(value);
+}
+
+function setTopLevelTomlString(existingContent, key, value, filePath = "TOML") {
+  const content = existingContent ?? "";
+  const before = content ? TOML.parse(content) : {};
+  const modelLine = `${key} = ${tomlStringLiteral(value)}`;
+
+  let nextContent;
+  if (content.length === 0) {
+    nextContent = `${modelLine}\n`;
+  } else {
+    const hasTrailingNewline = /\r?\n$/.test(content);
+    const lines = content.replace(/\r\n/g, "\n").split("\n");
+    if (hasTrailingNewline) {
+      lines.pop();
+    }
+
+    const firstTableIndex = findFirstTopLevelTableLine(lines);
+    const existingKeyIndex = findTopLevelKeyLine(lines, key, firstTableIndex);
+
+    if (existingKeyIndex !== -1) {
+      lines[existingKeyIndex] = modelLine;
+    } else if (firstTableIndex === lines.length) {
+      if (lines.length > 0 && lines.at(-1) !== "") {
+        lines.push(modelLine);
+      } else {
+        lines.splice(lines.length, 0, modelLine);
+      }
+    } else {
+      const insertLines = [modelLine];
+      if (firstTableIndex === 0 || lines[firstTableIndex - 1] !== "") {
+        insertLines.push("");
+      }
+      lines.splice(firstTableIndex, 0, ...insertLines);
+    }
+
+    nextContent = `${lines.join("\n")}\n`;
+  }
+
+  const after = TOML.parse(nextContent);
+  if (after[key] !== value) {
+    throw new Error(`Unable to update ${key} in ${filePath}`);
+  }
+
+  for (const existingKey of Object.keys(before)) {
+    if (existingKey === key) {
+      continue;
+    }
+    if (JSON.stringify(before[existingKey]) !== JSON.stringify(after[existingKey])) {
+      throw new Error(`Updating ${key} would unexpectedly change ${existingKey} in ${filePath}`);
+    }
+  }
+
+  return nextContent;
 }
 
 function captureValueState(record, key) {
@@ -580,6 +884,7 @@ function restoreConfigToml(existingContent, configState) {
 
   deleteIfEmptyObject(parsed, "features");
   deleteIfEmptyObject(parsed, "mcp_servers");
+  setParsedHooksRecord(parsed, stripManagedHooksRecord(parsed.hooks));
 
   return stringifyTomlOrNull(parsed, configState.fileExisted);
 }
@@ -630,6 +935,7 @@ function removeExactManagedConfigToml(existingContent) {
 
   deleteIfEmptyObject(parsed, "features");
   deleteIfEmptyObject(parsed, "mcp_servers");
+  setParsedHooksRecord(parsed, stripManagedHooksRecord(parsed.hooks));
 
   return stringifyTomlOrNull(parsed, false);
 }
@@ -868,9 +1174,11 @@ function detectExistingManagedInstall(scopePaths) {
   const config = readTextIfExists(scopePaths.configTomlPath) ?? "";
   const hooks = readTextIfExists(scopePaths.hooksJsonPath) ?? "";
   const marketplace = readTextIfExists(scopePaths.marketplacePath) ?? "";
+  const parsedConfig = config ? TOML.parse(config) : {};
   const pluginManifest = readJsonIfExists(path.join(scopePaths.pluginInstallDir, ".codex-plugin", "plugin.json"));
 
-  return config.includes(`model_instructions_file = "${LEAD_INSTRUCTIONS_FILE}"`) ||
+  return parsedConfig.model_instructions_file === LEAD_INSTRUCTIONS_FILE ||
+    hasManagedHooksRecord(parsedConfig.hooks) ||
     hooks.includes("codex-nexus-hook") ||
     marketplace.includes(`"name": "${PLUGIN_NAME}"`) ||
     pluginManifest?.name === PLUGIN_NAME;
@@ -956,11 +1264,199 @@ function removeManagedPackageStore(scopePaths, packageStoreDirExisted) {
   }
 }
 
-async function installManagedSurfaces(installedPackageRoot, scopePaths) {
+function isModelAgentTarget(target) {
+  return MODEL_AGENT_TARGETS.includes(target);
+}
+
+function validateModelTarget(target) {
+  if (target === "lead") {
+    throw new Error("The lead agent cannot be configured by codex-nexus models.");
+  }
+  if (!MODEL_TARGETS.includes(target)) {
+    throw new Error(`Unknown model target "${target}". Expected one of: ${MODEL_TARGETS.join(", ")}.`);
+  }
+}
+
+function expandModelTargets(targets) {
+  const expanded = [];
+
+  for (const target of targets) {
+    if (target === MODEL_TARGET_ALL) {
+      expanded.push(...MODEL_TARGETS);
+      continue;
+    }
+    validateModelTarget(target);
+    expanded.push(target);
+  }
+
+  return [...new Set(expanded)];
+}
+
+function parseModelTargets(targetList) {
+  if (typeof targetList !== "string" || targetList.trim().length === 0) {
+    throw new Error("No model targets were provided.");
+  }
+
+  const entries = targetList
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  if (entries.length === 0) {
+    throw new Error("No model targets were provided.");
+  }
+
+  return expandModelTargets(entries);
+}
+
+function normalizeModelTargetMap(targetModels) {
+  const next = {};
+  for (const [target, model] of Object.entries(safeObject(targetModels))) {
+    validateModelTarget(target);
+    if (typeof model !== "string" || model.trim().length === 0) {
+      throw new Error(`Invalid model override for ${target}.`);
+    }
+    next[target] = model;
+  }
+  return next;
+}
+
+function modelTargetPath(scopePaths, target) {
+  validateModelTarget(target);
+  return target === MODEL_TARGET_DEFAULT
+    ? scopePaths.configTomlPath
+    : path.join(scopePaths.agentsDir, `${target}.toml`);
+}
+
+function readModelOverrides(scopePaths) {
+  const parsed = readJsonIfExists(scopePaths.modelOverridesPath);
+  if (!parsed || typeof parsed !== "object") {
+    return {};
+  }
+  if (parsed.packageName !== PACKAGE_NAME || parsed.scope !== scopePaths.scope) {
+    return {};
+  }
+
+  const targets = safeObject(parsed.targets);
+  const overrides = {};
+  for (const [target, model] of Object.entries(targets)) {
+    if (!MODEL_TARGETS.includes(target) || typeof model !== "string" || model.trim().length === 0) {
+      continue;
+    }
+    overrides[target] = model;
+  }
+  return overrides;
+}
+
+function writeModelOverrides(scopePaths, targetModels) {
+  const nextTargets = {
+    ...readModelOverrides(scopePaths),
+    ...normalizeModelTargetMap(targetModels)
+  };
+
+  writeJson(scopePaths.modelOverridesPath, {
+    schemaVersion: MODEL_OVERRIDES_VERSION,
+    packageName: PACKAGE_NAME,
+    scope: scopePaths.scope,
+    updatedAt: new Date().toISOString(),
+    targets: nextTargets
+  });
+}
+
+function buildModelOverrideWrites(scopePaths, targetModels) {
+  const normalized = normalizeModelTargetMap(targetModels);
+  const writes = [];
+
+  for (const [target, model] of Object.entries(normalized)) {
+    const filePath = modelTargetPath(scopePaths, target);
+    const existingContent = readTextIfExists(filePath);
+
+    if (isModelAgentTarget(target) && existingContent === null) {
+      throw new Error(`Agent config not found for "${target}" at ${filePath}. Run codex-nexus install first.`);
+    }
+
+    writes.push({
+      target,
+      model,
+      filePath,
+      existingContent,
+      nextContent: setTopLevelTomlString(existingContent, "model", model, filePath)
+    });
+  }
+
+  return writes;
+}
+
+function applyModelTargetMap(scopePaths, targetModels, options = {}) {
+  const writes = buildModelOverrideWrites(scopePaths, targetModels);
+  const changed = [];
+
+  for (const write of writes) {
+    if (write.nextContent !== write.existingContent) {
+      writeText(write.filePath, write.nextContent);
+      changed.push(write);
+    }
+  }
+
+  if (options.persist !== false && Object.keys(targetModels).length > 0) {
+    writeModelOverrides(scopePaths, targetModels);
+  }
+
+  return {
+    changed,
+    applied: writes.map(({ target, model, filePath }) => ({ target, model, filePath }))
+  };
+}
+
+function applyPersistedModelOverrides(scopePaths) {
+  const overrides = readModelOverrides(scopePaths);
+  if (Object.keys(overrides).length === 0) {
+    return {
+      changed: [],
+      applied: []
+    };
+  }
+  return applyModelTargetMap(scopePaths, overrides, { persist: false });
+}
+
+function modelTargetsToMap(targets, model) {
+  return Object.fromEntries(targets.map((target) => [target, model]));
+}
+
+function readCurrentModelForTarget(scopePaths, target) {
+  const filePath = modelTargetPath(scopePaths, target);
+  const content = readTextIfExists(filePath);
+  if (content === null) {
+    return null;
+  }
+  const parsed = TOML.parse(content);
+  return typeof parsed.model === "string" && parsed.model.trim().length > 0 ? parsed.model : null;
+}
+
+function modelTargetLabel(target) {
+  return target === MODEL_TARGET_DEFAULT ? "default (Codex)" : target;
+}
+
+function modelTargetHint(scopePaths, target, pendingTargetModels = {}) {
+  const pending = pendingTargetModels[target];
+  if (typeof pending === "string" && pending.length > 0) {
+    return `pending: ${pending}`;
+  }
+
+  const current = readCurrentModelForTarget(scopePaths, target);
+  if (current) {
+    return current;
+  }
+  return isModelAgentTarget(target) && !existsSync(modelTargetPath(scopePaths, target)) ? "missing" : "inherit";
+}
+
+async function installManagedSurfaces(installedPackageRoot, scopePaths, runtime = {}) {
   const pluginSourceRoot = path.join(installedPackageRoot, "plugins", PLUGIN_NAME);
   const nexusCoreVersion = resolveNexusCoreVersion(installedPackageRoot);
   const runtimeCommand = resolveRuntimeCommand();
   const nexusCoreServerPath = resolveNexusCoreServerPath(installedPackageRoot);
+  const hookSurface = await resolveManagedHookSurface(scopePaths, runtime);
+  const managedHookSpec = buildManagedHookSpec(installedPackageRoot);
 
   copyDirectory(pluginSourceRoot, scopePaths.pluginInstallDir);
   copyDirectory(path.join(pluginSourceRoot, "agents"), scopePaths.agentsDir);
@@ -972,12 +1468,19 @@ async function installManagedSurfaces(installedPackageRoot, scopePaths) {
   );
   writeText(
     scopePaths.configTomlPath,
-    mergeConfigToml(readTextIfExists(scopePaths.configTomlPath), runtimeCommand, nexusCoreServerPath)
+    mergeConfigToml(
+      readTextIfExists(scopePaths.configTomlPath),
+      runtimeCommand,
+      nexusCoreServerPath,
+      hookSurface === HOOK_SURFACE_INLINE ? managedHookSpec : null
+    )
   );
-  writeText(
-    scopePaths.hooksJsonPath,
-    mergeHooksJson(readTextIfExists(scopePaths.hooksJsonPath), installedPackageRoot)
-  );
+  if (hookSurface === HOOK_SURFACE_JSON) {
+    writeText(
+      scopePaths.hooksJsonPath,
+      mergeHooksJson(readTextIfExists(scopePaths.hooksJsonPath), installedPackageRoot)
+    );
+  }
   writeText(
     scopePaths.marketplacePath,
     mergeMarketplaceJson(readTextIfExists(scopePaths.marketplacePath), scopePaths.pluginSourcePath)
@@ -985,11 +1488,13 @@ async function installManagedSurfaces(installedPackageRoot, scopePaths) {
   if (scopePaths.scope === "project") {
     ensureProjectGitignore(scopePaths.projectRoot);
   }
+  applyPersistedModelOverrides(scopePaths);
 
   return {
     nexusCoreVersion,
     runtimeCommand,
-    nexusCoreServerPath
+    nexusCoreServerPath,
+    hookSurface
   };
 }
 
@@ -1003,7 +1508,17 @@ async function installCommand(options = {}, runtime = {}) {
   const managedState = ensureManagedInstallState(scopePaths);
   const installedPackageRoot = await resolveInstalledPackageRoot(scopePaths, requestedVersion, runtime);
   const installedVersion = await readInstalledPackageVersion(installedPackageRoot);
-  const assets = await installManagedSurfaces(installedPackageRoot, scopePaths);
+  const assets = await installManagedSurfaces(installedPackageRoot, scopePaths, runtime);
+  if (!managedState.legacy) {
+    writeManagedInstallState(scopePaths, {
+      ...managedState,
+      hooks: {
+        ...safeObject(managedState.hooks),
+        fileExisted: Boolean(managedState.hooks?.fileExisted),
+        surface: assets.hookSurface
+      }
+    });
+  }
 
   return {
     scope,
@@ -1024,7 +1539,8 @@ async function installCommand(options = {}, runtime = {}) {
     uninstallMode: managedState.legacy ? "best-effort" : "restore",
     nexusCoreVersion: assets.nexusCoreVersion,
     runtimeCommand: assets.runtimeCommand,
-    nexusCoreServerPath: assets.nexusCoreServerPath
+    nexusCoreServerPath: assets.nexusCoreServerPath,
+    hooksSurface: assets.hookSurface
   };
 }
 
@@ -1110,16 +1626,27 @@ function doctorCommand(options = {}, runtime = {}) {
   const hooks = readTextIfExists(paths.hooksJsonPath) ?? "";
   const marketplace = readTextIfExists(paths.marketplacePath) ?? "";
   const parsedConfig = config ? TOML.parse(config) : {};
+  const parsedHooks = hooks ? JSON.parse(hooks) : {};
   const nxConfig = safeObject(safeObject(parsedConfig.mcp_servers).nx);
   const nxCommand = typeof nxConfig.command === "string" ? nxConfig.command : "";
   const nxArgs = Array.isArray(nxConfig.args) ? nxConfig.args : [];
   const nxServerPath = typeof nxArgs[0] === "string" ? nxArgs[0] : "";
-  const hasManagedHooks = /codex-nexus-hook[^\n]*session-start/.test(hooks);
+  const hasManagedInlineHooks = hasManagedHooksRecord(parsedConfig.hooks);
+  const hasManagedHooksJson = hasManagedHooksRecord(parsedHooks.hooks);
+  const hooksSurface = hasManagedInlineHooks && hasManagedHooksJson
+    ? `${HOOK_SURFACE_INLINE} + ${HOOK_SURFACE_JSON}`
+    : hasManagedInlineHooks
+      ? HOOK_SURFACE_INLINE
+      : hasManagedHooksJson
+        ? HOOK_SURFACE_JSON
+        : null;
   const packageStoreRoot = env[TEST_PACKAGE_ROOT_ENV]
     ? path.resolve(env[TEST_PACKAGE_ROOT_ENV])
     : paths.managedInstalledPackageRoot;
-  const usesLocalDevelopmentHooks = hooks.includes(path.join(PACKAGE_ROOT, "scripts", "codex-nexus-hook.mjs")) ||
-    hooks.includes("node ./scripts/codex-nexus-hook.mjs");
+  const usesLocalDevelopmentHooks = [config, hooks].some((content) =>
+    content.includes(path.join(PACKAGE_ROOT, "scripts", "codex-nexus-hook.mjs")) ||
+    content.includes("node ./scripts/codex-nexus-hook.mjs")
+  );
   const installedAgentNxConfigs = readAgentNxServerConfigs(paths.agentsDir);
   const usesResolvedNxLauncher = (agentConfigs) => agentConfigs.length > 0 &&
     agentConfigs.every((agent) =>
@@ -1145,7 +1672,7 @@ function doctorCommand(options = {}, runtime = {}) {
         nxServerPath.length > 0 &&
         existsSync(nxServerPath)
     },
-    { label: "hooks.json", ok: existsSync(paths.hooksJsonPath) && hasManagedHooks },
+    { label: hooksSurface ? `hooks surface (${hooksSurface})` : "hooks surface", ok: hooksSurface !== null },
     { label: "marketplace.json", ok: existsSync(paths.marketplacePath) && marketplace.includes(paths.pluginSourcePath) },
     { label: ".codex/agents/lead.toml", ok: existsSync(path.join(paths.agentsDir, "lead.toml")) },
     { label: ".codex/agents use resolved nx MCP launcher", ok: usesResolvedNxLauncher(installedAgentNxConfigs) },
@@ -1155,6 +1682,7 @@ function doctorCommand(options = {}, runtime = {}) {
 
   return {
     scope,
+    hooksSurface,
     failed: checks.filter((check) => !check.ok).length,
     checks
   };
@@ -1169,6 +1697,7 @@ function formatInstallSummary(result) {
     `nexus-core version: ${result.nexusCoreVersion}`,
     `runtime command: ${result.runtimeCommand}`,
     `nexus-mcp entry: ${result.nexusCoreServerPath}`,
+    `hooks surface: ${result.hooksSurface}`,
     `uninstall mode: ${result.uninstallMode}`,
     `state: ${result.managedStatePath}`,
     `package store: ${result.packageStoreDir}`,
@@ -1204,8 +1733,164 @@ function formatDoctorSummary(result) {
   return lines.join("\n");
 }
 
+function hasDirectModelOptions(options) {
+  return typeof options.targets === "string" || typeof options.model === "string";
+}
+
+function assertModelAvailable(models, model) {
+  if (typeof model !== "string" || model.trim().length === 0) {
+    throw new Error("A model must be provided.");
+  }
+  if (!models.some((entry) => entry.slug === model)) {
+    throw new Error(`Model is not available in Codex: ${model}`);
+  }
+}
+
+function modelSelectOptions(models) {
+  return models.map((model) => ({
+    value: model.slug,
+    label: model.displayName,
+    hint: model.displayName === model.slug ? undefined : model.slug
+  }));
+}
+
+function terminalKeycap(label) {
+  if (process.env.NO_COLOR || process.env.FORCE_COLOR === "0") {
+    return label;
+  }
+  return `\x1b[7m ${label} \x1b[0m`;
+}
+
+function modelTargetSelectOptions(scopePaths, pendingTargetModels = {}) {
+  return [
+    {
+      value: MODEL_TARGET_ALL,
+      label: "all",
+      hint: "default + non-lead agents"
+    },
+    ...MODEL_TARGETS.map((target) => ({
+      value: target,
+      label: modelTargetLabel(target),
+      hint: modelTargetHint(scopePaths, target, pendingTargetModels)
+    }))
+  ];
+}
+
+async function configureModelsInteractive(scopePaths, models) {
+  const pendingTargetModels = {};
+
+  while (true) {
+    const selectedTargets = await multiselect({
+      message: `Select model targets. ${terminalKeycap("Space")} toggles, ${terminalKeycap("Enter")} continues; ${terminalKeycap("Enter")} with no selection finishes.`,
+      required: false,
+      options: modelTargetSelectOptions(scopePaths, pendingTargetModels)
+    });
+
+    if (isCancel(selectedTargets)) {
+      return { cancelled: true };
+    }
+
+    if (selectedTargets.length === 0) {
+      const result = applyModelTargetMap(scopePaths, pendingTargetModels);
+      return {
+        cancelled: false,
+        ...result
+      };
+    }
+
+    const selectedModel = await select({
+      message: `Which model should ${expandModelTargets(selectedTargets).map(modelTargetLabel).join(", ")} use?`,
+      options: modelSelectOptions(models)
+    });
+
+    if (isCancel(selectedModel)) {
+      return { cancelled: true };
+    }
+
+    Object.assign(pendingTargetModels, modelTargetsToMap(expandModelTargets(selectedTargets), selectedModel));
+
+    const nextAction = await select({
+      message: "What do you want to do next?",
+      initialValue: "done",
+      options: [
+        { value: "done", label: "Done", hint: "Save model settings" },
+        { value: "next", label: "Next", hint: "Configure another target group" },
+        { value: "cancel", label: "Cancel", hint: "Discard pending changes" }
+      ]
+    });
+
+    if (isCancel(nextAction) || nextAction === "cancel") {
+      return { cancelled: true };
+    }
+    if (nextAction === "next") {
+      continue;
+    }
+
+    const result = applyModelTargetMap(scopePaths, pendingTargetModels);
+    return {
+      cancelled: false,
+      ...result
+    };
+  }
+}
+
+async function modelsCommand(options = {}, runtime = {}) {
+  const scope = normalizeScope(options.scope) ?? "project";
+  const cwd = runtime.cwd ?? process.cwd();
+  const env = runtime.env ?? process.env;
+  const scopePaths = resolveScopePaths(scope, cwd, env);
+  const models = await listCodexModels(cwd, env, runtime);
+
+  if (options.interactive) {
+    const result = await configureModelsInteractive(scopePaths, models);
+    return {
+      scope,
+      configTomlPath: scopePaths.configTomlPath,
+      agentsDir: scopePaths.agentsDir,
+      modelOverridesPath: scopePaths.modelOverridesPath,
+      ...result
+    };
+  }
+
+  const targets = parseModelTargets(options.targets);
+  assertModelAvailable(models, options.model);
+  const targetModels = modelTargetsToMap(targets, options.model);
+  const result = applyModelTargetMap(scopePaths, targetModels);
+
+  return {
+    scope,
+    configTomlPath: scopePaths.configTomlPath,
+    agentsDir: scopePaths.agentsDir,
+    modelOverridesPath: scopePaths.modelOverridesPath,
+    cancelled: false,
+    ...result
+  };
+}
+
+function formatModelsSummary(result) {
+  if (result.cancelled) {
+    return "codex-nexus models cancelled";
+  }
+
+  const changedTargets = new Set(result.changed.map((entry) => entry.target));
+  const lines = [
+    "codex-nexus models complete",
+    `scope: ${result.scope}`,
+    `config: ${result.configTomlPath}`,
+    `agents: ${result.agentsDir}`,
+    `overrides: ${result.modelOverridesPath}`
+  ];
+
+  for (const applied of result.applied) {
+    lines.push(`${changedTargets.has(applied.target) ? "updated" : "unchanged"}: ${applied.target} -> ${applied.model} (${applied.filePath})`);
+  }
+
+  return lines.join("\n");
+}
+
 function parseArgs(argv) {
-  const [, , command, ...rest] = argv;
+  const [, , rawCommand, ...rest] = argv;
+  const command = rawCommand === "model" ? "models" : rawCommand;
 
   if (command === "--help" || command === "-h" || command === "help" || command === undefined) {
     return {
@@ -1241,6 +1926,47 @@ function parseArgs(argv) {
       options.help = true;
       continue;
     }
+    if (command === "models" && token === "--model" && rest[index + 1]) {
+      options.model = rest[index + 1];
+      index += 1;
+      continue;
+    }
+    if (command === "models" && token.startsWith("--model=")) {
+      options.model = token.slice("--model=".length);
+      continue;
+    }
+    if (command === "models" && token === "--targets" && rest[index + 1]) {
+      if (options.targets) {
+        throw new Error("Use only one of --targets or --agents.");
+      }
+      options.targets = rest[index + 1];
+      index += 1;
+      continue;
+    }
+    if (command === "models" && token.startsWith("--targets=")) {
+      if (options.targets) {
+        throw new Error("Use only one of --targets or --agents.");
+      }
+      options.targets = token.slice("--targets=".length);
+      continue;
+    }
+    if (command === "models" && token === "--agents" && rest[index + 1]) {
+      if (options.targets) {
+        throw new Error("Use only one of --targets or --agents.");
+      }
+      options.targets = rest[index + 1];
+      options.targetsAlias = "agents";
+      index += 1;
+      continue;
+    }
+    if (command === "models" && token.startsWith("--agents=")) {
+      if (options.targets) {
+        throw new Error("Use only one of --targets or --agents.");
+      }
+      options.targets = token.slice("--agents=".length);
+      options.targetsAlias = "agents";
+      continue;
+    }
     throw new Error(`Unknown option "${token}". Version selection should be done at invocation time, for example: npx -y codex-nexus@${PACKAGE_VERSION} install`);
   }
 
@@ -1256,7 +1982,9 @@ async function promptScope(command, defaultValue = "user") {
       ? "Which installation scope do you want to inspect?"
       : command === "uninstall"
         ? "Which installation scope do you want to remove?"
-        : "Which installation scope do you want to install into?",
+        : command === "models"
+          ? "Which installation scope do you want to configure models for?"
+          : "Which installation scope do you want to install into?",
     initialValue: defaultValue,
     options: [
       { value: "user", label: "user", hint: "~/.codex and ~/.agents" },
@@ -1321,15 +2049,50 @@ async function resolveUninstallOptions(parsed) {
   return options;
 }
 
+async function resolveModelsOptions(parsed) {
+  const interactive = isInteractiveTerminal();
+  const options = { ...parsed.options };
+  const direct = hasDirectModelOptions(options);
+
+  validateScopedOptions(options);
+
+  if ((typeof options.model === "string") !== (typeof options.targets === "string")) {
+    throw new Error("Direct model configuration requires both --targets (or --agents) and --model.");
+  }
+
+  if (!options.scope && interactive) {
+    options.scope = await promptScope("models", "project");
+  } else if (!options.scope) {
+    options.scope = "project";
+  }
+
+  if (!direct && !interactive) {
+    throw new Error("Non-interactive model configuration requires --targets (or --agents) and --model.");
+  }
+
+  options.interactive = !direct;
+  return options;
+}
+
 function printHelp() {
   process.stdout.write(`codex-nexus
 
 Usage:
   codex-nexus install [--scope user|project]
+  codex-nexus models [--scope user|project]
+  codex-nexus models [--scope user|project] --targets default,engineer --model gpt-5.4
   codex-nexus uninstall [--scope user|project]
   codex-nexus doctor [--scope user|project]
   codex-nexus version
   codex-nexus --version
+
+Model targets:
+  default, architect, designer, postdoc, strategist, engineer, researcher, writer, reviewer, tester
+  all
+
+Aliases:
+  codex-nexus model
+  --agents (alias for --targets)
 `);
 }
 
@@ -1355,6 +2118,37 @@ async function runCli(argv = process.argv, runtime = {}) {
     const result = doctorCommand(options, runtime);
     process.stdout.write(formatDoctorSummary(result) + "\n");
     return result.failed === 0 ? 0 : 1;
+  }
+
+  if (parsed.command === "models") {
+    const interactive = isInteractiveTerminal();
+    if (interactive) {
+      intro("codex-nexus models");
+    }
+
+    const options = await resolveModelsOptions(parsed, runtime);
+    const s = interactive && !options.interactive ? spinner() : null;
+
+    try {
+      if (s) {
+        s.start("Configuring model settings");
+      }
+      const result = await modelsCommand(options, runtime);
+      if (s) {
+        s.stop("Model settings configured");
+        outro(formatModelsSummary(result));
+      } else if (interactive) {
+        outro(formatModelsSummary(result));
+      } else {
+        process.stdout.write(formatModelsSummary(result) + "\n");
+      }
+      return 0;
+    } catch (error) {
+      if (s) {
+        s.stop("Model configuration failed");
+      }
+      throw error;
+    }
   }
 
   if (parsed.command === "install") {
@@ -1434,16 +2228,22 @@ export {
   doctorCommand,
   formatDoctorSummary,
   formatInstallSummary,
+  formatModelsSummary,
   formatUninstallSummary,
   installCommand,
+  listCodexModels,
   mergeConfigToml,
   mergeHooksJson,
   mergeMarketplaceJson,
+  modelsCommand,
+  parseCodexModelCatalogOutput,
+  parseModelTargets,
   resolveInstalledPackageRoot,
   resolveNexusCorePackageRoot,
   resolveNexusCoreServerPath,
   resolveNexusCoreVersion,
   resolveScopePaths,
   runCli,
+  setTopLevelTomlString,
   uninstallCommand
 };

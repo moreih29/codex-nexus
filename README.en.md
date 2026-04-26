@@ -42,6 +42,8 @@ If you want a different version, change the package version at invocation time.
 
 ```bash
 codex-nexus install [--scope user|project]
+codex-nexus models [--scope user|project]
+codex-nexus models [--scope user|project] --targets default,engineer --model gpt-5.4
 codex-nexus uninstall [--scope user|project]
 codex-nexus doctor [--scope user|project]
 codex-nexus version
@@ -54,6 +56,25 @@ Version examples:
 npx -y codex-nexus version
 npx -y codex-nexus --version
 ```
+
+## Model selection
+
+After installation, you can configure the Codex default model and Nexus subagent models per scope.
+
+```bash
+npx -y codex-nexus models --scope project
+npx -y codex-nexus models --scope project --targets default,engineer,tester --model gpt-5.4
+```
+
+- In a TTY, the command prompts for scope, targets, and model. The initial scope selection is `project`.
+- In non-interactive direct mode, pass `--targets` and `--model` together.
+- `--agents` is supported as an alias for `--targets`.
+- Valid targets are `default`, `architect`, `designer`, `postdoc`, `strategist`, `engineer`, `researcher`, `writer`, `reviewer`, `tester`, and `all`.
+- `default` writes the top-level `model` in the scoped `.codex/config.toml`.
+- Subagent targets write the top-level `model` in the scoped `.codex/agents/<agent>.toml`.
+- `lead` is intentionally not configurable through this command.
+
+Selections are also stored in the scoped `.codex/.codex-nexus/model-overrides.json`, so non-lead agent model overrides are reapplied after future `codex-nexus install` runs.
 
 ## Installation scopes
 
@@ -93,7 +114,7 @@ The installer writes or updates:
 - `[features].child_agents_md = true`
 - `[features].codex_hooks = true`
 - `[mcp_servers.nx]`
-- `.codex/hooks.json`
+- managed Codex hook wiring (inline `config.toml [hooks]` or legacy `.codex/hooks.json`)
 - `.codex/agents/*`
 - `.agents/skills/*`
 - the marketplace entry
@@ -101,6 +122,24 @@ The installer writes or updates:
 This is the important distinction: it does not just copy a plugin folder. It wires the final-user config paths that Codex actually reads.
 It also wires `nx` MCP through the installed runtime plus the installed `nexus-core` server entry, instead of relying on `npx` being present on PATH.
 By contrast, the installed plugin bundle keeps its `agents/*.toml` files in their distributed `nexus-mcp` source form, while the runtime agent copies under `.codex/agents/*` get the resolved absolute launcher.
+
+## Hook compatibility
+
+`codex-nexus` writes its **managed Codex hooks** to exactly one surface per `.codex/` layer. Re-running install/update does not duplicate the same managed hooks across both inline `[hooks]` and `.codex/hooks.json`.
+
+The selection rules are conservative:
+
+- if inline `[hooks]` already exist in `config.toml`, codex-nexus keeps using that surface
+- if inline `[hooks]` do not already exist and `.codex/hooks.json` does, codex-nexus keeps using the legacy surface
+- if neither surface exists yet, inline `config.toml [hooks]` is enabled only when `codex --version` is `0.124.0` or newer
+- if the Codex CLI version is unknown or older than `0.124.0`, codex-nexus falls back to `.codex/hooks.json`
+
+Managed matcher/runtime coverage:
+
+- `PreToolUse` and `PermissionRequest` match `Bash`, `apply_patch` / `Edit` / `Write`, and `mcp__.*`
+- the hook runtime normalizes Bash, `apply_patch`, and MCP event inputs
+- existing Bash deny rules remain Bash-only
+- `PostToolUse` is intentionally unchanged
 
 ## Uninstall
 
@@ -193,7 +232,7 @@ The installer also aligns the pinned `@moreih29/nexus-core` version from the cur
 
 ## Notes
 
-- Hooks are merged into Codex config-layer `hooks.json`.
+- codex-nexus-managed hooks follow conservative surface-selection rules. Existing inline hooks stay inline, existing `hooks.json` stays legacy when inline hooks are not already present, and only a fresh surface selection on supported Codex enables inline `config.toml [hooks]`.
 - `nx` MCP uses the installer runtime path rather than a bare `npx` command.
 - For project installs, the installer adds ignore entries for local install artifact directories to `.gitignore`.
 - Uninstall is designed to preserve unrelated settings, but old installs without rollback metadata can only be cleaned up on a best-effort basis.

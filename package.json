@@ -1,6 +1,6 @@
 {
   "name": "codex-nexus",
-  "version": "0.3.13",
+  "version": "0.3.14",
   "private": false,
   "type": "module",
   "description": "Thin Codex plugin wrapper around @moreih29/nexus-core",

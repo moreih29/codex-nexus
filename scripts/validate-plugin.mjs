@@ -45,6 +45,18 @@ assert(Array.isArray(hooks.hooks?.UserPromptSubmit), "hooks.json must define Use
 assert(Array.isArray(hooks.hooks?.PreToolUse), "hooks.json must define PreToolUse hooks.");
 assert(Array.isArray(hooks.hooks?.PermissionRequest), "hooks.json must define PermissionRequest hooks.");
 assert(Array.isArray(hooks.hooks?.Stop), "hooks.json must define Stop hooks.");
+assert(
+  typeof hooks.hooks.PreToolUse[0]?.matcher === "string" &&
+  hooks.hooks.PreToolUse[0].matcher.includes("apply_patch") &&
+  hooks.hooks.PreToolUse[0].matcher.includes("mcp__"),
+  "PreToolUse matcher must cover apply_patch/Edit/Write and MCP tools."
+);
+assert(
+  typeof hooks.hooks.PermissionRequest[0]?.matcher === "string" &&
+  hooks.hooks.PermissionRequest[0].matcher.includes("apply_patch") &&
+  hooks.hooks.PermissionRequest[0].matcher.includes("mcp__"),
+  "PermissionRequest matcher must cover apply_patch/Edit/Write and MCP tools."
+);
 for (const [eventName, expectedMode] of [["UserPromptSubmit", "user-prompt-submit"], ["PermissionRequest", "permission-request"], ["Stop", "stop"]]) {
   assert(
     hooks.hooks[eventName][0]?.hooks?.[0]?.command?.includes(`codex-nexus@${pkg.version}`),
