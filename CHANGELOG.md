@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.3.14] - 2026-04-26
+
 ### Added
 
 - `codex-nexus models` 명령을 추가해 scope별 Codex 기본 모델과 lead를 제외한 Nexus 하위 에이전트 모델을 선택할 수 있도록 지원했다. direct mode는 `--targets ... --model ...`를 사용하며, 선택한 override는 재설치 후에도 다시 적용되도록 관리 상태에 저장한다
