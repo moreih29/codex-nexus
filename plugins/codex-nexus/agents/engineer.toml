@@ -153,7 +153,6 @@ Include documentation impact where applicable:
 
 Include these so Lead can update the Document phase manifest.
 """
-model = "gpt-5.3-codex"
 
 [mcp_servers.nx]
 command = "nexus-mcp"

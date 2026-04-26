@@ -170,7 +170,6 @@ After completing a review or design task, report to Lead with the following stru
 - **Recommendation**: Approved / conditionally approved / requires revision
 - **Open risks**: Concerns that remain open or require further investigation
 """
-model = "gpt-5.4"
 sandbox_mode = "read-only"
 
 [mcp_servers.nx]

@@ -177,7 +177,6 @@ Upon completing synthesis or methodology work, report to Lead. Include:
 
 Note: The Synthesis Document Format above is the primary output artifact. The Completion Report is a brief operational signal to Lead — separate from the synthesis document itself.
 """
-model = "gpt-5.4"
 sandbox_mode = "read-only"
 
 [mcp_servers.nx]

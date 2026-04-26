@@ -259,7 +259,6 @@ Issues found: <count and severity classification, or "none">
 Recommendations: <request immediate fix for CRITICAL issues; request Lead judgment for WARNING issues>
 ```
 """
-model = "gpt-5.3-codex"
 
 [mcp_servers.nx]
 command = "nexus-mcp"

@@ -8,6 +8,7 @@ import {
   doctorCommand,
   installCommand,
   resolveNexusCorePackageRoot,
+  runCli,
   uninstallCommand
 } from "../scripts/codex-nexus.mjs";
 
@@ -36,6 +37,7 @@ function readAgentNxConfigs(agentDir) {
       const parsed = TOML.parse(readFileSync(path.join(agentDir, entry), "utf8"));
       return {
         file: entry,
+        model: parsed.model,
         nx: parsed?.mcp_servers?.nx ?? {}
       };
     });
@@ -91,6 +93,7 @@ test("project install wires plugin, config, hooks, agents, and skills", async ()
     const installedAgentNxConfigs = readAgentNxConfigs(path.join(repoRoot, ".codex", "agents"));
     expect(installedAgentNxConfigs.length).toBeGreaterThan(0);
     for (const agent of installedAgentNxConfigs) {
+      expect(agent.model).toBeUndefined();
       expect(agent.nx.command).toBe(result.runtimeCommand);
       expect(agent.nx.args).toEqual([result.nexusCoreServerPath]);
       expect(Array.isArray(agent.nx.disabled_tools)).toBe(true);
@@ -98,6 +101,7 @@ test("project install wires plugin, config, hooks, agents, and skills", async ()
     const installedPluginAgentNxConfigs = readAgentNxConfigs(path.join(repoRoot, "plugins", "codex-nexus", "agents"));
     expect(installedPluginAgentNxConfigs.length).toBeGreaterThan(0);
     for (const agent of installedPluginAgentNxConfigs) {
+      expect(agent.model).toBeUndefined();
       expect(agent.nx.command).toBe("nexus-mcp");
       expect(agent.nx.args).toBeUndefined();
       expect(Array.isArray(agent.nx.disabled_tools)).toBe(true);
@@ -128,6 +132,7 @@ test("user install targets home-scoped marketplace and codex directories", async
     const installedAgentNxConfigs = readAgentNxConfigs(path.join(homeDir, ".codex", "agents"));
     expect(installedAgentNxConfigs.length).toBeGreaterThan(0);
     for (const agent of installedAgentNxConfigs) {
+      expect(agent.model).toBeUndefined();
       expect(agent.nx.command).toBe(result.runtimeCommand);
       expect(agent.nx.args).toEqual([result.nexusCoreServerPath]);
       expect(Array.isArray(agent.nx.disabled_tools)).toBe(true);
@@ -135,6 +140,7 @@ test("user install targets home-scoped marketplace and codex directories", async
     const installedPluginAgentNxConfigs = readAgentNxConfigs(path.join(homeDir, ".codex", "plugins", "codex-nexus", "agents"));
     expect(installedPluginAgentNxConfigs.length).toBeGreaterThan(0);
     for (const agent of installedPluginAgentNxConfigs) {
+      expect(agent.model).toBeUndefined();
       expect(agent.nx.command).toBe("nexus-mcp");
       expect(agent.nx.args).toBeUndefined();
       expect(Array.isArray(agent.nx.disabled_tools)).toBe(true);
@@ -148,6 +154,100 @@ test("user install targets home-scoped marketplace and codex directories", async
   } finally {
     rmSync(homeDir, { recursive: true, force: true });
     rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test("interactive install can hand off to model configuration when accepted", async () => {
+  const repoRoot = mkdtempSync(path.join(tmpdir(), "codex-nexus-install-models-"));
+  mkdirSync(path.join(repoRoot, ".git"));
+
+  const originalForceTty = process.env.CODEX_NEXUS_FORCE_TTY;
+  process.env.CODEX_NEXUS_FORCE_TTY = "1";
+
+  try {
+    let modelOptions = null;
+    const result = await runCli(["node", "codex-nexus", "install", "--scope", "project"], {
+      cwd: repoRoot,
+      env: testEnv(),
+      inlineHooksSupported: false,
+      configureModelsAfterInstall: true,
+      modelsAfterInstallCommand: async (options) => {
+        modelOptions = options;
+        return {
+          scope: options.scope,
+          configTomlPath: path.join(repoRoot, ".codex", "config.toml"),
+          agentsDir: path.join(repoRoot, ".codex", "agents"),
+          modelOverridesPath: path.join(repoRoot, ".codex", ".codex-nexus", "model-overrides.json"),
+          cancelled: false,
+          changed: [],
+          applied: []
+        };
+      }
+    });
+
+    expect(result).toBe(0);
+    expect(modelOptions).toEqual({ scope: "project", interactive: true });
+  } finally {
+    if (originalForceTty === undefined) {
+      delete process.env.CODEX_NEXUS_FORCE_TTY;
+    } else {
+      process.env.CODEX_NEXUS_FORCE_TTY = originalForceTty;
+    }
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("interactive install skips model configuration when declined", async () => {
+  const repoRoot = mkdtempSync(path.join(tmpdir(), "codex-nexus-install-skip-models-"));
+  mkdirSync(path.join(repoRoot, ".git"));
+
+  const originalForceTty = process.env.CODEX_NEXUS_FORCE_TTY;
+  process.env.CODEX_NEXUS_FORCE_TTY = "1";
+
+  try {
+    let called = false;
+    const result = await runCli(["node", "codex-nexus", "install", "--scope", "project"], {
+      cwd: repoRoot,
+      env: testEnv(),
+      inlineHooksSupported: false,
+      configureModelsAfterInstall: false,
+      modelsAfterInstallCommand: async () => {
+        called = true;
+      }
+    });
+
+    expect(result).toBe(0);
+    expect(called).toBe(false);
+  } finally {
+    if (originalForceTty === undefined) {
+      delete process.env.CODEX_NEXUS_FORCE_TTY;
+    } else {
+      process.env.CODEX_NEXUS_FORCE_TTY = originalForceTty;
+    }
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("noninteractive install does not prompt for model configuration", async () => {
+  const repoRoot = mkdtempSync(path.join(tmpdir(), "codex-nexus-install-noninteractive-models-"));
+  mkdirSync(path.join(repoRoot, ".git"));
+
+  try {
+    let called = false;
+    const result = await runCli(["node", "codex-nexus", "install", "--scope", "project"], {
+      cwd: repoRoot,
+      env: testEnv(),
+      inlineHooksSupported: false,
+      configureModelsAfterInstall: true,
+      modelsAfterInstallCommand: async () => {
+        called = true;
+      }
+    });
+
+    expect(result).toBe(0);
+    expect(called).toBe(false);
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
   }
 });
 

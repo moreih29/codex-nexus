@@ -216,4 +216,3 @@ Do not restart a skill or `[run]` cycle without a user decision. When the same e
 - Working directly on main/master — move to a branch appropriate for the task type before starting (prefix: `feat/`, `fix/`, `chore/`, `research/`, etc.)
 - Delegating `nx_task_*` tools to subagents — Lead calls these exclusively
 """
-model = "gpt-5.4"

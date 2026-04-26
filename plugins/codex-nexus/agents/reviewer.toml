@@ -206,7 +206,6 @@ Final verdict: APPROVED | REVISION_REQUIRED | BLOCKED
 Artifact: <saved review report filename or "inline">
 ```
 """
-model = "gpt-5.3-codex"
 
 [mcp_servers.nx]
 command = "nexus-mcp"

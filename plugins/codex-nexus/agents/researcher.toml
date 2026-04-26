@@ -210,7 +210,6 @@ References recorded: [yes/no]
 Flagged issues: [questions that were escalated, ambiguous, or unresolved]
 ```
 """
-model = "gpt-5.3-codex"
 
 [mcp_servers.nx]
 command = "nexus-mcp"

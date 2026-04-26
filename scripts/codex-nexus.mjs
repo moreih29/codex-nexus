@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { stdin as input, stdout as output } from "node:process";
 import TOML from "@iarna/toml";
-import { intro, isCancel, multiselect, outro, select, spinner } from "@clack/prompts";
+import { confirm, intro, isCancel, multiselect, outro, select, spinner } from "@clack/prompts";
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PACKAGE_JSON = JSON.parse(readFileSync(path.join(PACKAGE_ROOT, "package.json"), "utf8"));
@@ -57,6 +57,8 @@ const MODEL_AGENT_TARGETS = [
 ];
 const MODEL_TARGET_ALL = "all";
 const MODEL_TARGETS = [MODEL_TARGET_DEFAULT, ...MODEL_AGENT_TARGETS];
+const GENERATED_AGENT_TARGETS = ["lead", ...MODEL_AGENT_TARGETS];
+const MODEL_INHERIT = "inherit";
 
 function safeObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -814,6 +816,66 @@ function setTopLevelTomlString(existingContent, key, value, filePath = "TOML") {
   return nextContent;
 }
 
+function removeTopLevelTomlKey(existingContent, key, filePath = "TOML") {
+  const content = existingContent ?? "";
+  if (content.length === 0) {
+    return content;
+  }
+
+  const before = TOML.parse(content);
+  if (!objectHas(before, key)) {
+    return content;
+  }
+
+  const hasTrailingNewline = /\r?\n$/.test(content);
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  if (hasTrailingNewline) {
+    lines.pop();
+  }
+
+  const firstTableIndex = findFirstTopLevelTableLine(lines);
+  const existingKeyIndex = findTopLevelKeyLine(lines, key, firstTableIndex);
+  if (existingKeyIndex === -1) {
+    throw new Error(`Unable to locate top-level ${key} in ${filePath}`);
+  }
+  lines.splice(existingKeyIndex, 1);
+
+  const nextContent = `${lines.join("\n")}${hasTrailingNewline ? "\n" : ""}`;
+  const after = TOML.parse(nextContent);
+  if (objectHas(after, key)) {
+    throw new Error(`Unable to remove top-level ${key} from ${filePath}`);
+  }
+
+  for (const existingKey of Object.keys(before)) {
+    if (existingKey === key) {
+      continue;
+    }
+    if (JSON.stringify(before[existingKey]) !== JSON.stringify(after[existingKey])) {
+      throw new Error(`Removing ${key} would unexpectedly change ${existingKey} in ${filePath}`);
+    }
+  }
+
+  return nextContent;
+}
+
+function stripDefaultModelFromAgentFile(agentPath) {
+  const existingContent = readTextIfExists(agentPath);
+  if (existingContent === null) {
+    return;
+  }
+
+  const nextContent = removeTopLevelTomlKey(existingContent, "model", agentPath);
+  if (nextContent !== existingContent) {
+    writeText(agentPath, nextContent);
+  }
+}
+
+function stripDefaultModelsFromAgentDir(agentDir) {
+  for (const target of GENERATED_AGENT_TARGETS) {
+    stripDefaultModelFromAgentFile(path.join(agentDir, `${target}.toml`));
+  }
+}
+
 function captureValueState(record, key) {
   return objectHas(record, key)
     ? { existed: true, value: record[key] }
@@ -1316,7 +1378,7 @@ function normalizeModelTargetMap(targetModels) {
     if (typeof model !== "string" || model.trim().length === 0) {
       throw new Error(`Invalid model override for ${target}.`);
     }
-    next[target] = model;
+    next[target] = model === MODEL_INHERIT ? MODEL_INHERIT : model;
   }
   return next;
 }
@@ -1349,10 +1411,17 @@ function readModelOverrides(scopePaths) {
 }
 
 function writeModelOverrides(scopePaths, targetModels) {
+  const normalized = normalizeModelTargetMap(targetModels);
   const nextTargets = {
-    ...readModelOverrides(scopePaths),
-    ...normalizeModelTargetMap(targetModels)
+    ...readModelOverrides(scopePaths)
   };
+  for (const [target, model] of Object.entries(normalized)) {
+    if (model === MODEL_INHERIT) {
+      delete nextTargets[target];
+    } else {
+      nextTargets[target] = model;
+    }
+  }
 
   writeJson(scopePaths.modelOverridesPath, {
     schemaVersion: MODEL_OVERRIDES_VERSION,
@@ -1380,7 +1449,11 @@ function buildModelOverrideWrites(scopePaths, targetModels) {
       model,
       filePath,
       existingContent,
-      nextContent: setTopLevelTomlString(existingContent, "model", model, filePath)
+      nextContent: model === MODEL_INHERIT
+        ? existingContent === null
+          ? null
+          : removeTopLevelTomlKey(existingContent, "model", filePath)
+        : setTopLevelTomlString(existingContent, "model", model, filePath)
     });
   }
 
@@ -1459,12 +1532,14 @@ async function installManagedSurfaces(installedPackageRoot, scopePaths, runtime 
   const managedHookSpec = buildManagedHookSpec(installedPackageRoot);
 
   copyDirectory(pluginSourceRoot, scopePaths.pluginInstallDir);
-  copyDirectory(path.join(pluginSourceRoot, "agents"), scopePaths.agentsDir);
+  stripDefaultModelsFromAgentDir(path.join(scopePaths.pluginInstallDir, "agents"));
+  copyDirectory(path.join(scopePaths.pluginInstallDir, "agents"), scopePaths.agentsDir);
+  stripDefaultModelsFromAgentDir(scopePaths.agentsDir);
   rewriteManagedAgentNxServerConfigs(scopePaths.agentsDir, runtimeCommand, nexusCoreServerPath);
-  copyDirectory(path.join(pluginSourceRoot, "skills"), scopePaths.skillsDir);
+  copyDirectory(path.join(scopePaths.pluginInstallDir, "skills"), scopePaths.skillsDir);
   writeText(
     scopePaths.leadInstructionsPath,
-    readFileSync(path.join(pluginSourceRoot, LEAD_INSTRUCTIONS_FILE), "utf8")
+    readFileSync(path.join(scopePaths.pluginInstallDir, LEAD_INSTRUCTIONS_FILE), "utf8")
   );
   writeText(
     scopePaths.configTomlPath,
@@ -1741,17 +1816,29 @@ function assertModelAvailable(models, model) {
   if (typeof model !== "string" || model.trim().length === 0) {
     throw new Error("A model must be provided.");
   }
+  if (model === MODEL_INHERIT) {
+    return;
+  }
   if (!models.some((entry) => entry.slug === model)) {
     throw new Error(`Model is not available in Codex: ${model}`);
   }
 }
 
 function modelSelectOptions(models) {
-  return models.map((model) => ({
-    value: model.slug,
-    label: model.displayName,
-    hint: model.displayName === model.slug ? undefined : model.slug
-  }));
+  return [
+    {
+      value: MODEL_INHERIT,
+      label: "inherit",
+      hint: "remove model field; inherit parent/default"
+    },
+    ...models
+      .filter((model) => model.slug !== MODEL_INHERIT)
+      .map((model) => ({
+        value: model.slug,
+        label: model.displayName,
+        hint: model.displayName === model.slug ? undefined : model.slug
+      }))
+  ];
 }
 
 function terminalKeycap(label) {
@@ -1839,9 +1926,9 @@ async function modelsCommand(options = {}, runtime = {}) {
   const cwd = runtime.cwd ?? process.cwd();
   const env = runtime.env ?? process.env;
   const scopePaths = resolveScopePaths(scope, cwd, env);
-  const models = await listCodexModels(cwd, env, runtime);
 
   if (options.interactive) {
+    const models = await listCodexModels(cwd, env, runtime);
     const result = await configureModelsInteractive(scopePaths, models);
     return {
       scope,
@@ -1853,7 +1940,12 @@ async function modelsCommand(options = {}, runtime = {}) {
   }
 
   const targets = parseModelTargets(options.targets);
-  assertModelAvailable(models, options.model);
+  if (options.model === MODEL_INHERIT) {
+    assertModelAvailable([], options.model);
+  } else {
+    const models = await listCodexModels(cwd, env, runtime);
+    assertModelAvailable(models, options.model);
+  }
   const targetModels = modelTargetsToMap(targets, options.model);
   const result = applyModelTargetMap(scopePaths, targetModels);
 
@@ -1886,6 +1978,35 @@ function formatModelsSummary(result) {
   }
 
   return lines.join("\n");
+}
+
+async function shouldConfigureModelsAfterInstall(runtime = {}) {
+  if (typeof runtime.configureModelsAfterInstall === "boolean") {
+    return runtime.configureModelsAfterInstall;
+  }
+  if (typeof runtime.configureModelsAfterInstall === "function") {
+    return Boolean(await runtime.configureModelsAfterInstall());
+  }
+
+  const selection = await confirm({
+    message: "Configure Codex and Nexus agent models now?",
+    initialValue: false
+  });
+
+  return isCancel(selection) ? false : Boolean(selection);
+}
+
+async function runModelsAfterInstall(installResult, runtime = {}) {
+  if (!(await shouldConfigureModelsAfterInstall(runtime))) {
+    return null;
+  }
+
+  if (typeof runtime.modelsAfterInstallCommand === "function") {
+    return await runtime.modelsAfterInstallCommand({ scope: installResult.scope, interactive: true }, runtime);
+  }
+
+  intro("codex-nexus models");
+  return await modelsCommand({ scope: installResult.scope, interactive: true }, runtime);
 }
 
 function parseArgs(argv) {
@@ -2081,6 +2202,7 @@ Usage:
   codex-nexus install [--scope user|project]
   codex-nexus models [--scope user|project]
   codex-nexus models [--scope user|project] --targets default,engineer --model gpt-5.4
+  codex-nexus models [--scope user|project] --targets engineer --model inherit
   codex-nexus uninstall [--scope user|project]
   codex-nexus doctor [--scope user|project]
   codex-nexus version
@@ -2089,6 +2211,9 @@ Usage:
 Model targets:
   default, architect, designer, postdoc, strategist, engineer, researcher, writer, reviewer, tester
   all
+
+Model values:
+  Any visible Codex model, or inherit to remove the target model field
 
 Aliases:
   codex-nexus model
@@ -2168,6 +2293,10 @@ async function runCli(argv = process.argv, runtime = {}) {
       if (s) {
         s.stop("Install complete");
         outro(formatInstallSummary(result));
+        const modelResult = await runModelsAfterInstall(result, runtime);
+        if (modelResult) {
+          outro(formatModelsSummary(modelResult));
+        }
       } else {
         process.stdout.write(formatInstallSummary(result) + "\n");
       }
@@ -2238,6 +2367,7 @@ export {
   modelsCommand,
   parseCodexModelCatalogOutput,
   parseModelTargets,
+  removeTopLevelTomlKey,
   resolveInstalledPackageRoot,
   resolveNexusCorePackageRoot,
   resolveNexusCoreServerPath,
