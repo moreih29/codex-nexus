@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+## [0.3.15] - 2026-04-26
+
+### Changed
+
+- 정리된 main 기준으로 release metadata와 hook pin을 `0.3.15`로 갱신했다. 사용자 기능 변경은 없다
+
 ## [0.3.14] - 2026-04-26
 
 ### Added

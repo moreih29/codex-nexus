@@ -1,6 +1,6 @@
 {
   "name": "codex-nexus",
-  "version": "0.3.14",
+  "version": "0.3.15",
   "description": "Thin Codex plugin wrapper that packages nexus-core skills, agent specs, and MCP tooling.",
   "author": {
     "name": "moreih29",
