@@ -34,6 +34,7 @@ npx -y codex-nexus install
 TTY 환경에서는 설치 중에:
 
 1. 설치 범위 `user` 또는 `project`
+2. 설치 완료 후 모델 설정을 바로 진행할지 여부
 
 를 고를 수 있다.
 
@@ -62,19 +63,26 @@ npx -y codex-nexus --version
 ## 모델 선택
 
 설치 후 Codex 기본 모델과 Nexus 하위 에이전트 모델을 scope별로 설정할 수 있다.
+TTY에서 `install`을 실행하면 설치 완료 후 이 모델 설정 흐름으로 바로 이어갈지도 물어본다.
 
 ```bash
 npx -y codex-nexus models --scope project
 npx -y codex-nexus models --scope project --targets default,engineer,tester --model gpt-5.4
+npx -y codex-nexus models --scope project --targets engineer,tester --model inherit
 ```
 
 - TTY에서는 scope, 대상, 모델을 순서대로 고른다. scope 기본 선택값은 `project`다.
 - 비대화형 direct mode에서는 `--targets`와 `--model`을 함께 쓴다.
+- 모델 선택지에는 `inherit`도 포함된다. direct mode에서는 `--model inherit`을 사용한다.
 - `--agents`는 `--targets`의 alias로 지원한다.
 - 대상은 `default`, `architect`, `designer`, `postdoc`, `strategist`, `engineer`, `researcher`, `writer`, `reviewer`, `tester`, `all`이다.
 - `default`는 scoped `.codex/config.toml`의 top-level `model`을 설정한다.
 - 하위 에이전트 대상은 scoped `.codex/agents/<agent>.toml`의 top-level `model`을 설정한다.
+- `inherit`을 선택하면 해당 대상 TOML의 top-level `model` 필드를 제거한다. 하위 에이전트는 scoped `.codex/config.toml`의 top-level 모델을 상속한다.
 - `lead`는 설정 대상에서 제외된다.
+
+기본 설치 상태의 하위 에이전트 TOML에는 `model` 필드를 쓰지 않는다.
+따라서 별도 override를 설정하지 않은 에이전트는 scoped `.codex/config.toml`의 top-level 모델을 상속한다.
 
 선택한 값은 scoped `.codex/.codex-nexus/model-overrides.json`에도 저장되어, 이후 `codex-nexus install`을 다시 실행해도 non-lead agent model override가 다시 적용된다.
 

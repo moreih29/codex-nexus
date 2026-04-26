@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+### Changed
+
+- TTY에서 `codex-nexus install`이 완료되면 이어서 모델 설정을 진행할지 묻도록 했다
+- generated agent TOML의 기본 `model` pin을 제거해, 별도 override가 없는 하위 에이전트가 scoped Codex top-level 모델을 상속하도록 바꿨다
+- `codex-nexus models`에서 `inherit` 모델 선택지를 지원해, 대상 TOML의 top-level `model` 필드와 persisted override를 제거할 수 있게 했다
+
 ## [0.3.15] - 2026-04-26
 
 ### Changed

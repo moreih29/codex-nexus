@@ -185,7 +185,6 @@ After completing a document, report to Lead with the following fields:
 - **Sources**: which agents or documents provided the source material
 - **Gaps**: any information that was missing from source material and was flagged (not filled)
 """
-model = "gpt-5.3-codex"
 
 [mcp_servers.nx]
 command = "nexus-mcp"

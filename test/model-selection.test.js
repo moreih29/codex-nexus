@@ -7,6 +7,7 @@ import {
   installCommand,
   modelsCommand,
   parseCodexModelCatalogOutput,
+  removeTopLevelTomlKey,
   runCli,
   setTopLevelTomlString
 } from "../scripts/codex-nexus.mjs";
@@ -66,6 +67,18 @@ test("setTopLevelTomlString preserves multiline instructions and tables", () => 
   expect(parsed.mcp_servers.nx.disabled_tools).toEqual(["spawn_agent"]);
 });
 
+test("removeTopLevelTomlKey preserves multiline instructions and tables", () => {
+  const before = `name = "engineer"\ndeveloper_instructions = """\nKeep this text.\n[not_a_table]\n"""\nmodel = "gpt-5.3-codex"\nsandbox_mode = "read-only"\n\n[mcp_servers.nx]\ncommand = "nexus-mcp"\ndisabled_tools = ["spawn_agent"]\n`;
+  const after = removeTopLevelTomlKey(before, "model", "engineer.toml");
+  const parsed = TOML.parse(after);
+
+  expect(parsed.model).toBeUndefined();
+  expect(parsed.developer_instructions).toContain("[not_a_table]");
+  expect(parsed.sandbox_mode).toBe("read-only");
+  expect(parsed.mcp_servers.nx.command).toBe("nexus-mcp");
+  expect(parsed.mcp_servers.nx.disabled_tools).toEqual(["spawn_agent"]);
+});
+
 test("models command writes default and selected non-lead agent TOMLs", async () => {
   const repoRoot = makeProject();
   try {
@@ -84,6 +97,58 @@ test("models command writes default and selected non-lead agent TOMLs", async ()
 
     const overrides = JSON.parse(readFileSync(path.join(repoRoot, ".codex", ".codex-nexus", "model-overrides.json"), "utf8"));
     expect(overrides.targets).toEqual({ default: "gpt-5.4", engineer: "gpt-5.4" });
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("models command supports inherit by removing model fields and persisted overrides", async () => {
+  const repoRoot = makeProject();
+  try {
+    const engineerPath = writeAgent(repoRoot, "engineer");
+
+    await modelsCommand(
+      { scope: "project", targets: "default,engineer", model: "gpt-5.5" },
+      { cwd: repoRoot, modelCatalog }
+    );
+    await modelsCommand(
+      { scope: "project", targets: "engineer", model: "inherit" },
+      { cwd: repoRoot, modelCatalog }
+    );
+
+    expect(readToml(path.join(repoRoot, ".codex", "config.toml")).model).toBe("gpt-5.5");
+    expect(readToml(engineerPath).model).toBeUndefined();
+
+    const overrides = JSON.parse(readFileSync(path.join(repoRoot, ".codex", ".codex-nexus", "model-overrides.json"), "utf8"));
+    expect(overrides.targets).toEqual({ default: "gpt-5.5" });
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("models command inherit can clear the scoped default model without creating missing config", async () => {
+  const repoRoot = makeProject();
+  try {
+    await modelsCommand(
+      { scope: "project", targets: "default", model: "inherit" },
+      { cwd: repoRoot, modelCatalog }
+    );
+
+    expect(existsSync(path.join(repoRoot, ".codex", "config.toml"))).toBe(false);
+
+    await modelsCommand(
+      { scope: "project", targets: "default", model: "gpt-5.5" },
+      { cwd: repoRoot, modelCatalog }
+    );
+    await modelsCommand(
+      { scope: "project", targets: "default", model: "inherit" },
+      { cwd: repoRoot, modelCatalog }
+    );
+
+    expect(readToml(path.join(repoRoot, ".codex", "config.toml")).model).toBeUndefined();
+
+    const overrides = JSON.parse(readFileSync(path.join(repoRoot, ".codex", ".codex-nexus", "model-overrides.json"), "utf8"));
+    expect(overrides.targets).toEqual({});
   } finally {
     rmSync(repoRoot, { recursive: true, force: true });
   }
@@ -163,7 +228,31 @@ test("persisted model overrides are reapplied after install", async () => {
 
     expect(readToml(path.join(repoRoot, ".codex", "config.toml")).model).toBe("gpt-5.5");
     expect(readToml(path.join(repoRoot, ".codex", "agents", "engineer.toml")).model).toBe("gpt-5.5");
-    expect(readToml(path.join(repoRoot, ".codex", "agents", "lead.toml")).model).not.toBe("gpt-5.5");
+    expect(readToml(path.join(repoRoot, ".codex", "agents", "lead.toml")).model).toBeUndefined();
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("inherit removes persisted agent override across reinstall", async () => {
+  const repoRoot = makeProject();
+  try {
+    const env = testEnv();
+    await installCommand({ scope: "project" }, { cwd: repoRoot, env, inlineHooksSupported: false });
+    await modelsCommand(
+      { scope: "project", targets: "default,engineer", model: "gpt-5.5" },
+      { cwd: repoRoot, env, modelCatalog }
+    );
+    await modelsCommand(
+      { scope: "project", targets: "engineer", model: "inherit" },
+      { cwd: repoRoot, env, modelCatalog }
+    );
+
+    await installCommand({ scope: "project" }, { cwd: repoRoot, env, inlineHooksSupported: false });
+
+    expect(readToml(path.join(repoRoot, ".codex", "config.toml")).model).toBe("gpt-5.5");
+    expect(readToml(path.join(repoRoot, ".codex", "agents", "engineer.toml")).model).toBeUndefined();
+    expect(readToml(path.join(repoRoot, ".codex", "agents", "lead.toml")).model).toBeUndefined();
   } finally {
     rmSync(repoRoot, { recursive: true, force: true });
   }
@@ -198,5 +287,35 @@ test("runCli supports --targets and --agents alias in direct mode", async () => 
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
     }
+  }
+});
+
+test("runCli direct inherit does not require a Codex model catalog", async () => {
+  const repoRoot = makeProject();
+  try {
+    writeAgent(repoRoot, "reviewer", 'name = "reviewer"\nmodel = "gpt-5.3-codex"\n');
+    let stdout = "";
+    const originalWrite = process.stdout.write;
+    process.stdout.write = (chunk, ...args) => {
+      stdout += String(chunk);
+      if (typeof args.at(-1) === "function") {
+        args.at(-1)();
+      }
+      return true;
+    };
+    try {
+      const exitCode = await runCli(
+        ["node", "codex-nexus", "models", "--scope", "project", "--targets", "reviewer", "--model", "inherit"],
+        { cwd: repoRoot }
+      );
+      expect(exitCode).toBe(0);
+    } finally {
+      process.stdout.write = originalWrite;
+    }
+
+    expect(stdout).toContain("reviewer -> inherit");
+    expect(readToml(path.join(repoRoot, ".codex", "agents", "reviewer.toml")).model).toBeUndefined();
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
   }
 });

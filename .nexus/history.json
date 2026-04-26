@@ -907,6 +907,132 @@
           "created_at": "2026-04-25T14:43:20.113Z"
         }
       ]
+    },
+    {
+      "schema_version": "1.0",
+      "completed_at": "2026-04-26T05:33:59.945Z",
+      "branch": "feat/install-model-config-inheritance",
+      "plan": {
+        "id": 10,
+        "topic": "install-time model setup prompt and inherited agent defaults",
+        "issues": [
+          {
+            "id": 1,
+            "title": "Install flow should offer to run model configuration after successful interactive install",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "lead",
+                "summary": "`runCli()` has separate `install` and `models` branches. The existing `modelsCommand({ interactive: true })` already performs the TTY model selector and returns a `formatModelsSummary`-compatible result. Therefore install should, only in interactive TTY mode and after a successful install, ask a yes/no confirmation and then invoke the same `modelsCommand` with the installed scope. Noninteractive install must remain unchanged. To keep tests deterministic, add runtime injection for the post-install prompt decision rather than requiring a real TTY.",
+                "recorded_at": "2026-04-26T05:26:01.446Z"
+              }
+            ],
+            "decision": "Selected: after successful interactive `install`, show the install summary, then ask whether to configure models now; if accepted, run `modelsCommand({ scope: options.scope, interactive: true })` and show its summary. Noninteractive install will not prompt or run model configuration. The prompt should default to no/false or otherwise be low-pressure to avoid surprising users after install; however, if the user chooses yes, it reuses exactly the `models` command TTY implementation.\n\nRejected alternatives: (1) always opening the model selector after install was rejected because install should remain predictable and not force additional setup; (2) adding separate install-specific model UI was rejected because it would duplicate the tested `modelsCommand` flow; (3) running model setup before install was rejected because the runtime `.codex/agents` files may not exist yet. Assumption: the prompt only needs to appear in TTY sessions, consistent with current scope prompts."
+          },
+          {
+            "id": 2,
+            "title": "Generated/published agent TOMLs should inherit top-level Codex model by default by omitting top-level model fields",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "lead",
+                "summary": "Generated publishable agents under `plugins/codex-nexus/agents` currently contain top-level `model` fields. Install copies those files to runtime `.codex/agents`, so default installed agents pin models instead of inheriting top-level config. Because `sync:core` overwrites generated agents, the removal must be implemented in `scripts/sync-from-nexus-core.mjs` after replacing agents. The same sanitizer can remove a top-level model key from all publishable agents, including lead, without touching multiline developer instructions or `[mcp_servers.nx]`. Existing model override command still writes top-level model when the user explicitly configures a target, and persisted overrides still reapply after install.",
+                "recorded_at": "2026-04-26T05:26:16.764Z"
+              }
+            ],
+            "decision": "Selected: strip top-level `model` from publishable agent TOMLs during `sync:core`, then update the current checked-in `plugins/codex-nexus/agents/*.toml` accordingly. This makes fresh installs inherit the scoped top-level Codex model by default. Explicit user overrides still work because the `models` command writes runtime `.codex/agents/<agent>.toml` top-level `model`, and persisted overrides are reapplied after install.\n\nRejected alternatives: (1) stripping only during install was rejected because publishable source would still encode defaults and validation/docs would not reflect intended behavior; (2) manually deleting model fields without sync post-processing was rejected because the next `bun run sync:core` would reintroduce them; (3) removing only non-lead model fields was rejected because the stated principle is inheritance by default and lead instructions already exclude lead from model selector rather than requiring a model pin. Assumption: absence of `model` in agent TOML inherits the parent/top-level Codex model as the user stated; if Codex changes that contract, the fallback is explicit model selection via `models`."
+          },
+          {
+            "id": 3,
+            "title": "Tests and docs should reflect install prompt behavior and inherited model defaults",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "lead",
+                "summary": "Tests should cover: fresh install produces runtime and publishable agent TOMLs without top-level model; explicit model override still writes model and persists/reapplies; install prompt can trigger model setup via injected prompt/model-selection hooks without real TTY; declined/noninteractive install does not run model setup. Docs should explain that agents inherit Codex default unless configured, and install may offer immediate model setup in TTY. Validation should assert publishable generated agents do not pin `model`.",
+                "recorded_at": "2026-04-26T05:26:27.739Z"
+              }
+            ],
+            "decision": "Selected: update installer/model-selection tests plus plugin layout/validation assertions, and update README/README.en/CHANGELOG. Tests should parse TOML rather than exact text and use runtime injection for prompt decisions. Documentation should say fresh agents inherit the scoped Codex default unless a user runs `codex-nexus models`, and interactive install can launch model setup immediately.\n\nRejected alternatives: (1) relying on manual TTY testing was rejected because install prompt regressions are easy to miss; (2) documenting only the explicit `models` command was rejected because install now surfaces the flow; (3) skipping validation changes was rejected because `sync:core` could reintroduce model pins unnoticed. Assumption: no release version bump is required in this implementation cycle unless the user later asks for PR/release again."
+          }
+        ],
+        "research_summary": "Existing knowledge: .nexus/context/releasing.md requires install/doctor/check/pack verification and warns project-scope smoke can mutate local artifacts; .nexus/memory/pattern-upstream-vs-downstream-triage.md says local wrapper/installer/config behavior should be fixed in this repo unless upstream-generated assumptions are the root. Current branch is feat/install-model-config-inheritance. tasks.json and plan.json were absent. Code verification: `scripts/codex-nexus.mjs` owns install/models flows. `runCli()` dispatches install, uses spinner, then `outro(formatInstallSummary(result))`. `modelsCommand({interactive:true})` already opens the clack TTY model selector. `installManagedSurfaces()` copies plugin agents to scoped `.codex/agents`, rewrites MCP launcher, then reapplies persisted model overrides. `plugins/codex-nexus/agents/*.toml` currently contain top-level `model` fields for lead and all subagents, so fresh install does not inherit top-level config. `scripts/sync-from-nexus-core.mjs` replaces generated agents from nexus-core and then runs downstream launcher compatibility fix, so any default model stripping must be encoded as sync post-processing, not a one-off manual edit. Tests exist in `test/model-selection.test.js`, `test/installer.test.js`, `test/plugin-layout.test.js`, and validation checks generated agent launcher metadata in `scripts/validate-plugin.mjs`. Prior history search for this specific install/inherit request returned no matching archived cycle.",
+        "created_at": "2026-04-26T05:25:52.204Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Add install-time model setup handoff",
+          "status": "completed",
+          "context": "Implement post-install interactive prompt in scripts/codex-nexus.mjs. After successful interactive install, ask if the user wants to configure models now; if yes, run the same interactive model selector used by `codex-nexus models`. Noninteractive install remains unchanged.",
+          "acceptance": "Interactive install can trigger model configuration through an injected prompt/model setup path in tests; declined prompt does not configure models; noninteractive install never prompts; existing install summary behavior remains stable.",
+          "approach": "Import/use clack confirm. Add helper to prompt/run model setup after install with runtime injection seams for tests. Keep install spinner lifecycle clean: stop spinner before prompt, show install summary, then model summary if run.",
+          "risk": "Testing real TTY prompts is brittle, so use dependency injection rather than requiring an actual terminal.",
+          "plan_issue": 1,
+          "owner": {
+            "role": "lead",
+            "resume_tier": "ephemeral"
+          },
+          "created_at": "2026-04-26T05:26:43.394Z"
+        },
+        {
+          "id": 2,
+          "title": "Make generated agent TOMLs inherit model by default",
+          "status": "completed",
+          "context": "Remove default top-level `model` pins from publishable generated agent TOMLs and ensure `bun run sync:core` keeps them removed. Files: scripts/sync-from-nexus-core.mjs, plugins/codex-nexus/agents/*.toml, scripts/validate-plugin.mjs, test/plugin-layout.test.js, installer tests.",
+          "acceptance": "`plugins/codex-nexus/agents/*.toml` have no top-level `model`; after fresh install, scoped `.codex/agents/*.toml` have no top-level `model`; explicit `modelsCommand` overrides still create/reapply top-level `model` for selected non-lead targets.",
+          "approach": "Add sync post-processing helper that parses each agent TOML and deletes top-level `model`. Run sync or apply equivalent update. Add validation/test assertions that publishable and fresh installed runtime agents have no top-level model unless explicit model overrides are applied.",
+          "risk": "TOML.stringify may reformat generated agent TOMLs; because sync already owns generated files, acceptable if tests pass, but avoid unnecessary changes where practical.",
+          "plan_issue": 2,
+          "deps": [
+            1
+          ],
+          "owner": {
+            "role": "lead",
+            "resume_tier": "ephemeral"
+          },
+          "created_at": "2026-04-26T05:26:50.339Z"
+        },
+        {
+          "id": 3,
+          "title": "Update docs for install prompt and inherited defaults",
+          "status": "completed",
+          "context": "Update README.md, README.en.md, CHANGELOG.md. Explain that install in TTY can offer immediate model configuration; agents inherit scoped Codex default unless configured through `codex-nexus models`; explicit overrides persist across install.",
+          "acceptance": "Korean and English READMEs describe install-time prompt and default inheritance accurately; CHANGELOG records user-visible changes.",
+          "approach": "Keep docs concise near model selection / installer sections. Changelog under Unreleased should mention install handoff and inherited default model behavior.",
+          "risk": "Docs should not imply lead is configurable via model selector.",
+          "plan_issue": 3,
+          "deps": [
+            1,
+            2
+          ],
+          "owner": {
+            "role": "lead",
+            "resume_tier": "ephemeral"
+          },
+          "created_at": "2026-04-26T05:26:55.810Z"
+        },
+        {
+          "id": 4,
+          "title": "Verify install model setup changes",
+          "status": "completed",
+          "context": "Run changed tests and full release-style checks. Check that generated agents no longer contain `model =`, explicit model selector still writes overrides, and install can hand off to model setup when requested.",
+          "acceptance": "All verification commands pass; no publishable agent TOML has top-level model; tests cover install prompt and inherited defaults.",
+          "approach": "Run `bun run sync:core`, `bun run validate`, `bun test`, `node scripts/codex-nexus.mjs --help`, `node scripts/codex-nexus.mjs doctor --scope project`, and inspect git diff/status. Fix failures before closing.",
+          "risk": "`doctor --scope project` may inspect local install artifacts; if needed, use context checklist guidance to avoid polluting source paths.",
+          "plan_issue": 3,
+          "deps": [
+            1,
+            2,
+            3
+          ],
+          "owner": {
+            "role": "lead",
+            "resume_tier": "ephemeral"
+          },
+          "created_at": "2026-04-26T05:27:01.981Z"
+        }
+      ]
     }
   ]
 }

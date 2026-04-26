@@ -315,7 +315,6 @@ After completing a design evaluation, report to Lead with the following structur
 - **Recommendations**: Prioritized list of changes with rationale
 - **Open questions**: Decisions requiring Lead input or additional user research
 """
-model = "gpt-5.4"
 sandbox_mode = "read-only"
 
 [mcp_servers.nx]

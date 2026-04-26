@@ -172,7 +172,6 @@ When Lead requests a formal deliverable or concludes a strategy engagement, repo
 
 Send this report to Lead when analysis is complete.
 """
-model = "gpt-5.4"
 sandbox_mode = "read-only"
 
 [mcp_servers.nx]

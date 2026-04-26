@@ -88,10 +88,15 @@ for (const skillName of requiredSkills) {
 }
 
 assert(existsSync(path.join(agentsPath, "lead.toml")), "Missing generated lead agent.");
+assert(
+  !Object.prototype.hasOwnProperty.call(TOML.parse(readFileSync(path.join(agentsPath, "lead.toml"), "utf8")), "model"),
+  "Lead agent must inherit the top-level Codex model by default."
+);
 assert(readdirSync(agentsPath).length >= 3, "Expected multiple generated agents in plugins/codex-nexus/agents.");
 for (const agentFile of ["architect.toml", "designer.toml", "engineer.toml", "postdoc.toml", "researcher.toml", "reviewer.toml", "strategist.toml", "tester.toml", "writer.toml"].filter((entry) => existsSync(path.join(agentsPath, entry)))) {
   const parsed = TOML.parse(readFileSync(path.join(agentsPath, agentFile), "utf8"));
   const nxConfig = parsed?.mcp_servers?.nx ?? {};
+  assert(!Object.prototype.hasOwnProperty.call(parsed, "model"), `Agent ${agentFile} must inherit the top-level Codex model by default.`);
   assert(nxConfig.command === "nexus-mcp", `Agent ${agentFile} must keep bare nexus-mcp in publishable source.`);
   assert(Array.isArray(nxConfig.disabled_tools), `Agent ${agentFile} must define nx disabled_tools.`);
 }

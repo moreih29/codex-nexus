@@ -34,6 +34,7 @@ npx -y codex-nexus install
 In a TTY session, the installer lets you choose:
 
 1. whether to install to `user` or `project` scope
+2. whether to configure models immediately after installation
 
 The installed version is always the same as the currently executed `codex-nexus` package.
 If you want a different version, change the package version at invocation time.
@@ -60,19 +61,26 @@ npx -y codex-nexus --version
 ## Model selection
 
 After installation, you can configure the Codex default model and Nexus subagent models per scope.
+When you run `install` in a TTY, the installer also asks whether to continue directly into this model setup flow.
 
 ```bash
 npx -y codex-nexus models --scope project
 npx -y codex-nexus models --scope project --targets default,engineer,tester --model gpt-5.4
+npx -y codex-nexus models --scope project --targets engineer,tester --model inherit
 ```
 
 - In a TTY, the command prompts for scope, targets, and model. The initial scope selection is `project`.
 - In non-interactive direct mode, pass `--targets` and `--model` together.
+- The model choices include `inherit`. In direct mode, use `--model inherit`.
 - `--agents` is supported as an alias for `--targets`.
 - Valid targets are `default`, `architect`, `designer`, `postdoc`, `strategist`, `engineer`, `researcher`, `writer`, `reviewer`, `tester`, and `all`.
 - `default` writes the top-level `model` in the scoped `.codex/config.toml`.
 - Subagent targets write the top-level `model` in the scoped `.codex/agents/<agent>.toml`.
+- Choosing `inherit` removes the target TOML's top-level `model` field. Subagents then inherit the top-level model from the scoped `.codex/config.toml`.
 - `lead` is intentionally not configurable through this command.
+
+Freshly installed subagent TOMLs do not include a `model` field.
+Unless an explicit override is configured, subagents inherit the top-level model from the scoped `.codex/config.toml`.
 
 Selections are also stored in the scoped `.codex/.codex-nexus/model-overrides.json`, so non-lead agent model overrides are reapplied after future `codex-nexus install` runs.
 

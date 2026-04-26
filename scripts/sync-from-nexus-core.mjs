@@ -2,6 +2,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import TOML from "@iarna/toml";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const packageJsonPath = path.join(repoRoot, "package.json");
@@ -19,6 +20,7 @@ const downstreamManagedAgentFiles = [
   "tester.toml",
   "writer.toml"
 ];
+const generatedAgentFiles = ["lead.toml", ...downstreamManagedAgentFiles];
 const nexusCoreSpecLeadPath = path.join(
   repoRoot,
   "node_modules",
@@ -73,6 +75,69 @@ function ensureBareNxLauncherInPublishableAgent(agentPath) {
   writeFile(agentPath, next);
 }
 
+function toggleMultilineTomlState(line, currentDelimiter) {
+  if (currentDelimiter) {
+    return line.includes(currentDelimiter) ? null : currentDelimiter;
+  }
+
+  const doubleIndex = line.indexOf('"""');
+  const singleIndex = line.indexOf("'''");
+  if (doubleIndex === -1 && singleIndex === -1) {
+    return null;
+  }
+  if (doubleIndex !== -1 && (singleIndex === -1 || doubleIndex < singleIndex)) {
+    return line.indexOf('"""', doubleIndex + 3) === -1 ? '"""' : null;
+  }
+  return line.indexOf("'''", singleIndex + 3) === -1 ? "'''" : null;
+}
+
+function stripTopLevelModelFromPublishableAgent(agentPath) {
+  const current = readFileSync(agentPath, "utf8");
+  const parsed = TOML.parse(current);
+  if (!Object.prototype.hasOwnProperty.call(parsed, "model")) {
+    return;
+  }
+
+  const lines = current.replace(/\r\n/g, "\n").split("\n");
+  const hadTrailingNewline = lines.at(-1) === "";
+  if (hadTrailingNewline) {
+    lines.pop();
+  }
+
+  let multilineDelimiter = null;
+  let removed = false;
+  const nextLines = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!multilineDelimiter && /^\s*\[\[?[^\]]+\]\]?\s*(?:#.*)?$/.test(line)) {
+      nextLines.push(line);
+      nextLines.push(...lines.slice(index + 1));
+      break;
+    }
+
+    if (!multilineDelimiter && /^\s*model\s*=/.test(line)) {
+      removed = true;
+      continue;
+    }
+
+    nextLines.push(line);
+    multilineDelimiter = toggleMultilineTomlState(line, multilineDelimiter);
+  }
+
+  if (!removed) {
+    throw new Error(`Unable to locate top-level model field for ${agentPath}`);
+  }
+
+  const next = `${nextLines.join("\n")}${hadTrailingNewline ? "\n" : ""}`;
+  const nextParsed = TOML.parse(next);
+  if (Object.prototype.hasOwnProperty.call(nextParsed, "model")) {
+    throw new Error(`Unable to strip top-level model field for ${agentPath}`);
+  }
+
+  writeFile(agentPath, next);
+}
+
 function applyDownstreamAgentLauncherCompatibilityFix(agentDir) {
   for (const agentFile of downstreamManagedAgentFiles) {
     const agentPath = path.join(agentDir, agentFile);
@@ -80,6 +145,16 @@ function applyDownstreamAgentLauncherCompatibilityFix(agentDir) {
       continue;
     }
     ensureBareNxLauncherInPublishableAgent(agentPath);
+  }
+}
+
+function stripDefaultModelsFromPublishableAgents(agentDir) {
+  for (const agentFile of generatedAgentFiles) {
+    const agentPath = path.join(agentDir, agentFile);
+    if (!existsSync(agentPath)) {
+      continue;
+    }
+    stripTopLevelModelFromPublishableAgent(agentPath);
   }
 }
 
@@ -105,6 +180,7 @@ try {
   replaceDirectory(path.join(stagingRoot, ".codex", "skills"), path.join(pluginRoot, "skills"));
   replaceDirectory(path.join(stagingRoot, ".codex", "agents"), path.join(pluginRoot, "agents"));
   applyDownstreamAgentLauncherCompatibilityFix(path.join(pluginRoot, "agents"));
+  stripDefaultModelsFromPublishableAgents(path.join(pluginRoot, "agents"));
   writeLeadInstructions();
 
   console.log(`Synced Codex artifacts from @moreih29/nexus-core@${nexusCoreVersion}.`);
