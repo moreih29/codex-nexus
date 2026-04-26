@@ -44,6 +44,7 @@ const HOOK_SURFACE_INLINE = "config.toml";
 const HOOK_SURFACE_JSON = "hooks.json";
 const MANAGED_TOOL_HOOK_MATCHER = "^(Bash|apply_patch|Edit|Write|mcp__.*)$";
 const MODEL_TARGET_DEFAULT = "default";
+const MODEL_TARGET_DONE = "__done__";
 const MODEL_AGENT_TARGETS = [
   "architect",
   "designer",
@@ -1757,6 +1758,11 @@ function modelSelectOptions(models) {
 function modelTargetSelectOptions(scopePaths, pendingTargetModels = {}) {
   return [
     {
+      value: MODEL_TARGET_DONE,
+      label: "Done",
+      hint: Object.keys(pendingTargetModels).length > 0 ? "save pending changes" : "exit without changes"
+    },
+    {
       value: MODEL_TARGET_ALL,
       label: "all",
       hint: "default + non-lead agents"
@@ -1774,13 +1780,26 @@ async function configureModelsInteractive(scopePaths, models) {
 
   while (true) {
     const selectedTargets = await multiselect({
-      message: "Which model targets do you want to update?",
-      required: true,
-      options: modelTargetSelectOptions(scopePaths, pendingTargetModels)
+      message: "Select model targets. Space toggles, Enter continues; submit empty or select Done to finish.",
+      required: false,
+      options: modelTargetSelectOptions(scopePaths, pendingTargetModels),
+      validate(value) {
+        if (value.includes(MODEL_TARGET_DONE) && value.length > 1) {
+          return "Choose Done by itself, or choose only model targets.";
+        }
+      }
     });
 
     if (isCancel(selectedTargets)) {
       return { cancelled: true };
+    }
+
+    if (selectedTargets.length === 0 || selectedTargets.includes(MODEL_TARGET_DONE)) {
+      const result = applyModelTargetMap(scopePaths, pendingTargetModels);
+      return {
+        cancelled: false,
+        ...result
+      };
     }
 
     const selectedModel = await select({
