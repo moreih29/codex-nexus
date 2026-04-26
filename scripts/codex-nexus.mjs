@@ -1755,6 +1755,13 @@ function modelSelectOptions(models) {
   }));
 }
 
+function terminalKeycap(label) {
+  if (process.env.NO_COLOR || process.env.FORCE_COLOR === "0") {
+    return label;
+  }
+  return `\x1b[7m ${label} \x1b[0m`;
+}
+
 function modelTargetSelectOptions(scopePaths, pendingTargetModels = {}) {
   return [
     {
@@ -1780,7 +1787,7 @@ async function configureModelsInteractive(scopePaths, models) {
 
   while (true) {
     const selectedTargets = await multiselect({
-      message: "Select model targets. Space toggles, Enter continues; submit empty or select Done to finish.",
+      message: `Select model targets. ${terminalKeycap("Space")} toggles, ${terminalKeycap("Enter")} continues; ${terminalKeycap("Enter")} with no selection finishes.`,
       required: false,
       options: modelTargetSelectOptions(scopePaths, pendingTargetModels),
       validate(value) {
