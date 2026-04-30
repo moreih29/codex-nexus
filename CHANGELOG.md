@@ -6,6 +6,13 @@
 
 ## [Unreleased]
 
+## [0.3.17] - 2026-04-30
+
+### Changed
+
+- `@moreih29/nexus-core`를 `0.20.1`로 올리고 `nx-plan` / `nx-auto-plan` generated skill 문서를 최신 upstream 계약에 맞게 다시 동기화
+- plugin manifest와 hook self-pin을 `0.3.17`로 갱신해 다음 downstream 배포 메타데이터를 맞췄다
+
 ## [0.3.16] - 2026-04-26
 
 ### Changed

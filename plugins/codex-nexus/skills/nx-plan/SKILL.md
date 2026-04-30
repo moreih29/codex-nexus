@@ -29,6 +29,7 @@ If the user requests full delegation such as "you decide" or "whatever you think
 - NEVER execute — this skill's purpose is planning and decision alignment.
 - MUST handle one issue at a time. NEVER present multiple issues simultaneously.
 - NEVER ask groundless questions. MUST investigate code, existing knowledge, and prior decisions first.
+- **MUST gather multi-angle evidence before presenting a recommendation.** Bring in the HOW subagent matching the issue's domain, explore for code understanding, and researcher for external investigation to collect independent analysis before forming the recommendation. NEVER form a recommendation from Lead's solo reasoning.
 - MUST present a comparison table when requesting a decision. NEVER describe options in prose alone.
 - Lead is synthesizer and participant — form independent recommendations and push back when warranted, not merely relay subagent results. **But never take over final decision authority.**
 

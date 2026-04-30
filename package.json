@@ -1,6 +1,6 @@
 {
   "name": "codex-nexus",
-  "version": "0.3.16",
+  "version": "0.3.17",
   "private": false,
   "type": "module",
   "description": "Thin Codex plugin wrapper around @moreih29/nexus-core",
@@ -50,6 +50,6 @@
   "dependencies": {
     "@clack/prompts": "^0.11.0",
     "@iarna/toml": "^2.2.5",
-    "@moreih29/nexus-core": "0.20.0"
+    "@moreih29/nexus-core": "0.20.1"
   }
 }
