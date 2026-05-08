@@ -6,10 +6,12 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync
 } from "node:fs";
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,13 +38,41 @@ const MANAGED_GITIGNORE_LINES = [
   ".codex/",
   ".agents/"
 ];
-const MANAGED_FEATURE_KEYS = ["multi_agent", "child_agents_md", "codex_hooks"];
+const MANAGED_FEATURE_KEYS = ["multi_agent", "child_agents_md", "hooks", "codex_hooks"];
 const DEFAULT_MARKETPLACE_NAME = "codex-nexus";
 const DEFAULT_MARKETPLACE_DISPLAY_NAME = "Codex Nexus";
 const STABLE_INLINE_HOOKS_MIN_CODEX_VERSION = "0.124.0";
 const HOOK_SURFACE_INLINE = "config.toml";
 const HOOK_SURFACE_JSON = "hooks.json";
 const MANAGED_TOOL_HOOK_MATCHER = "^(Bash|apply_patch|Edit|Write|mcp__.*)$";
+const HOOK_EVENT_ORDER = [
+  "PreToolUse",
+  "PermissionRequest",
+  "PostToolUse",
+  "PreCompact",
+  "PostCompact",
+  "SessionStart",
+  "UserPromptSubmit",
+  "Stop"
+];
+const HOOK_EVENT_KEY_LABELS = {
+  PreToolUse: "pre_tool_use",
+  PermissionRequest: "permission_request",
+  PostToolUse: "post_tool_use",
+  PreCompact: "pre_compact",
+  PostCompact: "post_compact",
+  SessionStart: "session_start",
+  UserPromptSubmit: "user_prompt_submit",
+  Stop: "stop"
+};
+const HOOK_EVENTS_WITH_MATCHERS = new Set([
+  "PreToolUse",
+  "PermissionRequest",
+  "PostToolUse",
+  "PreCompact",
+  "PostCompact",
+  "SessionStart"
+]);
 const MODEL_TARGET_DEFAULT = "default";
 const MODEL_AGENT_TARGETS = [
   "architect",
@@ -449,6 +479,233 @@ function hasManagedHooksRecord(hooksRecord) {
   return false;
 }
 
+function hookSourcePath(filePath) {
+  return existsSync(filePath) ? realpathSync(filePath) : path.resolve(filePath);
+}
+
+function hookMatcherForEvent(eventName, matcher) {
+  return HOOK_EVENTS_WITH_MATCHERS.has(eventName) && typeof matcher === "string" ? matcher : null;
+}
+
+function normalizedHookTimeout(hook) {
+  const timeout = Number(hook?.timeout);
+  return Number.isFinite(timeout) ? Math.max(1, Math.trunc(timeout)) : 600;
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) {
+    return value.map(canonicalJson);
+  }
+  if (value && typeof value === "object") {
+    const next = {};
+    for (const key of Object.keys(value).sort()) {
+      if (value[key] !== undefined) {
+        next[key] = canonicalJson(value[key]);
+      }
+    }
+    return next;
+  }
+  return value;
+}
+
+function codexVersionForToml(value) {
+  const serialized = JSON.stringify(canonicalJson(value));
+  return `sha256:${createHash("sha256").update(serialized).digest("hex")}`;
+}
+
+function commandHookHash(eventName, matcher, hook) {
+  const normalizedHandler = {
+    async: false,
+    command: hook.command,
+    timeout: normalizedHookTimeout(hook),
+    type: "command"
+  };
+  if (typeof hook.statusMessage === "string") {
+    normalizedHandler.statusMessage = hook.statusMessage;
+  }
+
+  const group = {
+    hooks: [normalizedHandler]
+  };
+  if (matcher !== null) {
+    group.matcher = matcher;
+  }
+
+  // Mirrors Codex v0.129's normalized command hook identity hashing in
+  // codex-rs/hooks/src/engine/discovery.rs and codex-rs/config/src/fingerprint.rs.
+  return codexVersionForToml({
+    event_name: HOOK_EVENT_KEY_LABELS[eventName],
+    ...group
+  });
+}
+
+function hookStateForKey(stateRecord, key) {
+  return safeObject(safeObject(stateRecord)[key]);
+}
+
+function classifyManagedHookState(currentHash, state) {
+  const enabled = state.enabled !== false;
+  const trustedHash = typeof state.trusted_hash === "string" ? state.trusted_hash : null;
+  const trustStatus = trustedHash === null
+    ? "untrusted"
+    : trustedHash === currentHash
+      ? "trusted"
+      : "modified";
+
+  return {
+    enabled,
+    trustStatus,
+    status: enabled ? trustStatus : "disabled"
+  };
+}
+
+function appendManagedHookTrustEntries(entries, hooksRecord, sourcePath, surface, stateRecord) {
+  const hooks = safeObject(hooksRecord);
+
+  for (const eventName of HOOK_EVENT_ORDER) {
+    const groups = hooks[eventName];
+    if (!Array.isArray(groups)) {
+      continue;
+    }
+
+    for (const [groupIndex, group] of groups.entries()) {
+      if (!group || typeof group !== "object" || !Array.isArray(group.hooks)) {
+        continue;
+      }
+
+      const matcher = hookMatcherForEvent(eventName, group.matcher);
+      for (const [hookIndex, hook] of group.hooks.entries()) {
+        if (
+          !hook ||
+          hook.type !== "command" ||
+          hook.async === true ||
+          typeof hook.command !== "string" ||
+          hook.command.trim().length === 0 ||
+          !isManagedHookCommand(hook.command)
+        ) {
+          continue;
+        }
+
+        const timeoutSec = normalizedHookTimeout(hook);
+        const key = `${sourcePath}:${HOOK_EVENT_KEY_LABELS[eventName]}:${groupIndex}:${hookIndex}`;
+        const currentHash = commandHookHash(eventName, matcher, {
+          command: hook.command,
+          timeout: timeoutSec,
+          statusMessage: hook.statusMessage
+        });
+        const state = hookStateForKey(stateRecord, key);
+        const classification = classifyManagedHookState(currentHash, state);
+
+        entries.push({
+          key,
+          eventName,
+          eventLabel: HOOK_EVENT_KEY_LABELS[eventName],
+          surface,
+          sourcePath,
+          groupIndex,
+          hookIndex,
+          matcher,
+          command: hook.command,
+          timeoutSec,
+          statusMessage: typeof hook.statusMessage === "string" ? hook.statusMessage : null,
+          currentHash,
+          enabled: classification.enabled,
+          trustStatus: classification.trustStatus,
+          status: classification.status
+        });
+      }
+    }
+  }
+}
+
+function resolveUserHookStateConfigPath(scopePaths, runtime = {}) {
+  if (scopePaths.scope === "user") {
+    return scopePaths.configTomlPath;
+  }
+
+  const env = runtime.env ?? process.env;
+  const cwd = runtime.cwd ?? scopePaths.projectRoot ?? process.cwd();
+  return resolveScopePaths("user", cwd, env).configTomlPath;
+}
+
+function readTomlObjectIfExists(filePath) {
+  const content = readTextIfExists(filePath);
+  return content ? TOML.parse(content) : {};
+}
+
+function readUserHookState(scopePaths, runtime = {}) {
+  const userConfigTomlPath = resolveUserHookStateConfigPath(scopePaths, runtime);
+  const parsed = readTomlObjectIfExists(userConfigTomlPath);
+  return safeObject(safeObject(parsed.hooks).state);
+}
+
+function listManagedHookTrustEntries(scopePaths, runtime = {}) {
+  const stateRecord = readUserHookState(scopePaths, runtime);
+  const entries = [];
+  const configContent = readTextIfExists(scopePaths.configTomlPath);
+  const hooksContent = readTextIfExists(scopePaths.hooksJsonPath);
+
+  if (configContent !== null) {
+    const parsedConfig = TOML.parse(configContent);
+    appendManagedHookTrustEntries(
+      entries,
+      parsedConfig.hooks,
+      hookSourcePath(scopePaths.configTomlPath),
+      HOOK_SURFACE_INLINE,
+      stateRecord
+    );
+  }
+
+  if (hooksContent !== null) {
+    const parsedHooks = JSON.parse(hooksContent);
+    appendManagedHookTrustEntries(
+      entries,
+      parsedHooks.hooks,
+      hookSourcePath(scopePaths.hooksJsonPath),
+      HOOK_SURFACE_JSON,
+      stateRecord
+    );
+  }
+
+  return entries;
+}
+
+function trustManagedHooks(scopePaths, runtime = {}) {
+  const userConfigTomlPath = resolveUserHookStateConfigPath(scopePaths, runtime);
+  const entries = listManagedHookTrustEntries(scopePaths, runtime);
+
+  if (entries.length === 0) {
+    return {
+      userConfigTomlPath,
+      entries
+    };
+  }
+
+  const parsed = readTomlObjectIfExists(userConfigTomlPath);
+  const hooks = {
+    ...safeObject(parsed.hooks)
+  };
+  const state = {
+    ...safeObject(hooks.state)
+  };
+
+  for (const entry of entries) {
+    state[entry.key] = {
+      ...safeObject(state[entry.key]),
+      trusted_hash: entry.currentHash
+    };
+  }
+
+  hooks.state = state;
+  parsed.hooks = hooks;
+  writeText(userConfigTomlPath, TOML.stringify(parsed));
+
+  return {
+    userConfigTomlPath,
+    entries: listManagedHookTrustEntries(scopePaths, runtime)
+  };
+}
+
 function stripManagedHookGroup(group) {
   if (!group || typeof group !== "object" || !Array.isArray(group.hooks)) {
     return group;
@@ -589,28 +846,7 @@ async function supportsStableInlineHooks(scopePaths, runtime = {}) {
 }
 
 async function resolveManagedHookSurface(scopePaths, runtime = {}) {
-  const configContent = readTextIfExists(scopePaths.configTomlPath);
-  const hooksContent = readTextIfExists(scopePaths.hooksJsonPath);
-  const parsedConfig = configContent ? TOML.parse(configContent) : {};
-  const inlineHooks = safeObject(parsedConfig.hooks);
-  const jsonHooks = hooksContent ? safeObject(JSON.parse(hooksContent).hooks) : {};
-
-  if (hasManagedHooksRecord(inlineHooks)) {
-    return HOOK_SURFACE_INLINE;
-  }
-  if (hasManagedHooksRecord(jsonHooks)) {
-    return HOOK_SURFACE_JSON;
-  }
-  if (Object.keys(inlineHooks).length > 0) {
-    return HOOK_SURFACE_INLINE;
-  }
-  if (hooksContent !== null) {
-    return HOOK_SURFACE_JSON;
-  }
-
-  return await supportsStableInlineHooks(scopePaths, runtime)
-    ? HOOK_SURFACE_INLINE
-    : HOOK_SURFACE_JSON;
+  return HOOK_SURFACE_INLINE;
 }
 
 function managedInstalledNxServerConfig(runtimeCommand, serverPath) {
@@ -684,17 +920,23 @@ function managedConfigPatch(runtimeCommand, serverPath) {
     features: {
       multi_agent: true,
       child_agents_md: true,
-      codex_hooks: true
+      hooks: true
     },
     mcpServerNx: managedInstalledNxServerConfig(runtimeCommand, serverPath)
   };
 }
 
-function mergeConfigToml(existingContent, runtimeCommand, serverPath, managedHookSpec = null) {
+function mergeConfigToml(existingContent, runtimeCommand, serverPath, managedHookSpec = null, configState = null) {
   const parsed = existingContent ? TOML.parse(existingContent) : {};
-  const features = safeObject(parsed.features);
+  const features = {
+    ...safeObject(parsed.features)
+  };
   const mcpServers = safeObject(parsed.mcp_servers);
   const managed = managedConfigPatch(runtimeCommand, serverPath);
+
+  if (features.codex_hooks === true && configState?.features?.codex_hooks?.existed === false) {
+    delete features.codex_hooks;
+  }
 
   parsed.model_instructions_file = managed.modelInstructionsFile;
   parsed.features = {
@@ -1526,7 +1768,28 @@ function modelTargetHint(scopePaths, target, pendingTargetModels = {}) {
   return isModelAgentTarget(target) && !existsSync(modelTargetPath(scopePaths, target)) ? "missing" : "inherit";
 }
 
-async function installManagedSurfaces(installedPackageRoot, scopePaths, runtime = {}) {
+function summarizeHookTrust(scopePaths, runtime = {}, requested = false, trustResult = null) {
+  const userConfigTomlPath = trustResult?.userConfigTomlPath ?? resolveUserHookStateConfigPath(scopePaths, runtime);
+  const entries = trustResult?.entries ?? listManagedHookTrustEntries(scopePaths, runtime);
+  const counts = entries.reduce((record, entry) => {
+    record[entry.status] = (record[entry.status] ?? 0) + 1;
+    return record;
+  }, {});
+
+  return {
+    requested,
+    userConfigTomlPath,
+    projectScopeUserConfig: scopePaths.scope === "project",
+    total: entries.length,
+    trusted: counts.trusted ?? 0,
+    untrusted: counts.untrusted ?? 0,
+    disabled: counts.disabled ?? 0,
+    modified: counts.modified ?? 0,
+    entries
+  };
+}
+
+async function installManagedSurfaces(installedPackageRoot, scopePaths, runtime = {}, managedState = null) {
   const pluginSourceRoot = path.join(installedPackageRoot, "plugins", PLUGIN_NAME);
   const nexusCoreVersion = resolveNexusCoreVersion(installedPackageRoot);
   const runtimeCommand = resolveRuntimeCommand();
@@ -1550,13 +1813,19 @@ async function installManagedSurfaces(installedPackageRoot, scopePaths, runtime 
       readTextIfExists(scopePaths.configTomlPath),
       runtimeCommand,
       nexusCoreServerPath,
-      hookSurface === HOOK_SURFACE_INLINE ? managedHookSpec : null
+      hookSurface === HOOK_SURFACE_INLINE ? managedHookSpec : null,
+      managedState?.config ?? null
     )
   );
   if (hookSurface === HOOK_SURFACE_JSON) {
     writeText(
       scopePaths.hooksJsonPath,
       mergeHooksJson(readTextIfExists(scopePaths.hooksJsonPath), installedPackageRoot)
+    );
+  } else if (readTextIfExists(scopePaths.hooksJsonPath) !== null) {
+    writeMaybeText(
+      scopePaths.hooksJsonPath,
+      stripManagedHooksJson(readTextIfExists(scopePaths.hooksJsonPath), false)
     );
   }
   writeText(
@@ -1586,7 +1855,7 @@ async function installCommand(options = {}, runtime = {}) {
   const managedState = ensureManagedInstallState(scopePaths);
   const installedPackageRoot = await resolveInstalledPackageRoot(scopePaths, requestedVersion, runtime);
   const installedVersion = await readInstalledPackageVersion(installedPackageRoot);
-  const assets = await installManagedSurfaces(installedPackageRoot, scopePaths, runtime);
+  const assets = await installManagedSurfaces(installedPackageRoot, scopePaths, runtime, managedState);
   if (!managedState.legacy) {
     writeManagedInstallState(scopePaths, {
       ...managedState,
@@ -1597,6 +1866,9 @@ async function installCommand(options = {}, runtime = {}) {
       }
     });
   }
+  const hookTrust = options.trustHooks
+    ? summarizeHookTrust(scopePaths, runtime, true, trustManagedHooks(scopePaths, runtime))
+    : summarizeHookTrust(scopePaths, runtime, false);
 
   return {
     scope,
@@ -1618,7 +1890,8 @@ async function installCommand(options = {}, runtime = {}) {
     nexusCoreVersion: assets.nexusCoreVersion,
     runtimeCommand: assets.runtimeCommand,
     nexusCoreServerPath: assets.nexusCoreServerPath,
-    hooksSurface: assets.hookSurface
+    hooksSurface: assets.hookSurface,
+    hookTrust
   };
 }
 
@@ -1721,6 +1994,16 @@ function doctorCommand(options = {}, runtime = {}) {
   const packageStoreRoot = env[TEST_PACKAGE_ROOT_ENV]
     ? path.resolve(env[TEST_PACKAGE_ROOT_ENV])
     : paths.managedInstalledPackageRoot;
+  const hookTrustEntries = listManagedHookTrustEntries(paths, runtime);
+  const untrustedHookCount = hookTrustEntries.filter((entry) => entry.status === "untrusted").length;
+  const disabledHookCount = hookTrustEntries.filter((entry) => entry.status === "disabled").length;
+  const modifiedHookCount = hookTrustEntries.filter((entry) => entry.status === "modified").length;
+  const features = safeObject(parsedConfig.features);
+  const pluginManifest = readJsonIfExists(path.join(paths.pluginInstallDir, ".codex-plugin", "plugin.json"));
+  const nativePluginHooksEnabled = features.plugin_hooks === true &&
+    typeof pluginManifest?.hooks === "string" &&
+    pluginManifest.hooks.trim().length > 0;
+  const hasNativeDirectDuplicate = nativePluginHooksEnabled && hookTrustEntries.length > 0;
   const usesLocalDevelopmentHooks = [config, hooks].some((content) =>
     content.includes(path.join(PACKAGE_ROOT, "scripts", "codex-nexus-hook.mjs")) ||
     content.includes("node ./scripts/codex-nexus-hook.mjs")
@@ -1750,7 +2033,21 @@ function doctorCommand(options = {}, runtime = {}) {
         nxServerPath.length > 0 &&
         existsSync(nxServerPath)
     },
+    { label: "hook feature ([features].hooks)", ok: features.hooks === true },
     { label: hooksSurface ? `hooks surface (${hooksSurface})` : "hooks surface", ok: hooksSurface !== null },
+    {
+      label: untrustedHookCount > 0 ? `hook trust (${untrustedHookCount} untrusted)` : "hook trust (untrusted)",
+      ok: untrustedHookCount === 0
+    },
+    {
+      label: disabledHookCount > 0 ? `hook enabled state (${disabledHookCount} disabled)` : "hook enabled state",
+      ok: disabledHookCount === 0
+    },
+    {
+      label: modifiedHookCount > 0 ? `hook trust (${modifiedHookCount} modified)` : "hook trust (modified)",
+      ok: modifiedHookCount === 0
+    },
+    { label: "native/direct hook duplicate", ok: !hasNativeDirectDuplicate },
     { label: "marketplace.json", ok: existsSync(paths.marketplacePath) && marketplace.includes(paths.pluginSourcePath) },
     { label: ".codex/agents/lead.toml", ok: existsSync(path.join(paths.agentsDir, "lead.toml")) },
     { label: ".codex/agents use resolved nx MCP launcher", ok: usesResolvedNxLauncher(installedAgentNxConfigs) },
@@ -1761,13 +2058,24 @@ function doctorCommand(options = {}, runtime = {}) {
   return {
     scope,
     hooksSurface,
+    hookTrustEntries,
+    hookTrust: {
+      trusted: hookTrustEntries.filter((entry) => entry.status === "trusted").length,
+      untrusted: untrustedHookCount,
+      disabled: disabledHookCount,
+      modified: modifiedHookCount,
+      total: hookTrustEntries.length
+    },
+    nativePluginHooksEnabled,
+    hasNativeDirectDuplicate,
     failed: checks.filter((check) => !check.ok).length,
+    failedLabels: checks.filter((check) => !check.ok).map((check) => check.label),
     checks
   };
 }
 
 function formatInstallSummary(result) {
-  return [
+  const lines = [
     "codex-nexus install complete",
     `scope: ${result.scope}`,
     `requested version: ${result.requestedVersion}`,
@@ -1786,7 +2094,18 @@ function formatInstallSummary(result) {
     `lead instructions: ${result.leadInstructionsPath}`,
     `agents: ${result.agentsDir}`,
     `skills: ${result.skillsDir}`
-  ].join("\n");
+  ];
+
+  if (result.hookTrust) {
+    lines.push(result.hookTrust.requested
+      ? `hook trust: trusted ${result.hookTrust.trusted}/${result.hookTrust.total} codex-nexus hook(s)`
+      : `hook trust: not written by default (${result.hookTrust.untrusted} untrusted hook(s))`);
+    lines.push(result.hookTrust.projectScopeUserConfig
+      ? `hook trust state: ${result.hookTrust.userConfigTomlPath} (current user Codex config; project config is not used for hooks.state)`
+      : `hook trust state: ${result.hookTrust.userConfigTomlPath}`);
+  }
+
+  return lines.join("\n");
 }
 
 function formatUninstallSummary(result) {
@@ -1999,6 +2318,45 @@ async function shouldConfigureModelsAfterInstall(runtime = {}) {
   return isCancel(selection) ? false : Boolean(selection);
 }
 
+async function shouldTrustHooksAfterInstall(installResult, runtime = {}) {
+  if (installResult.hookTrust?.requested || installResult.hookTrust?.total === 0) {
+    return false;
+  }
+  if (typeof runtime.trustHooksAfterInstall === "boolean") {
+    return runtime.trustHooksAfterInstall;
+  }
+  if (typeof runtime.trustHooksAfterInstall === "function") {
+    return Boolean(await runtime.trustHooksAfterInstall(installResult, runtime));
+  }
+
+  const target = installResult.hookTrust?.projectScopeUserConfig
+    ? `current user Codex config (${installResult.hookTrust.userConfigTomlPath}); project config will not receive hooks.state`
+    : `Codex config (${installResult.hookTrust?.userConfigTomlPath})`;
+  const selection = await confirm({
+    message: `Trust installed codex-nexus hooks by writing hooks.state to ${target}?`,
+    initialValue: false
+  });
+
+  return isCancel(selection) ? false : Boolean(selection);
+}
+
+async function runTrustAfterInstall(installResult, runtime = {}) {
+  if (!(await shouldTrustHooksAfterInstall(installResult, runtime))) {
+    return null;
+  }
+
+  const cwd = runtime.cwd ?? process.cwd();
+  const env = runtime.env ?? process.env;
+  const scopePaths = resolveScopePaths(installResult.scope, cwd, env);
+  installResult.hookTrust = summarizeHookTrust(
+    scopePaths,
+    runtime,
+    true,
+    trustManagedHooks(scopePaths, runtime)
+  );
+  return installResult.hookTrust;
+}
+
 async function runModelsAfterInstall(installResult, runtime = {}) {
   if (!(await shouldConfigureModelsAfterInstall(runtime))) {
     return null;
@@ -2048,6 +2406,10 @@ function parseArgs(argv) {
     }
     if (token === "--help" || token === "-h") {
       options.help = true;
+      continue;
+    }
+    if (command === "install" && token === "--trust-hooks") {
+      options.trustHooks = true;
       continue;
     }
     if (command === "models" && token === "--model" && rest[index + 1]) {
@@ -2203,6 +2565,7 @@ function printHelp() {
 
 Usage:
   codex-nexus install [--scope user|project]
+  codex-nexus install [--scope user|project] --trust-hooks
   codex-nexus models [--scope user|project]
   codex-nexus models [--scope user|project] --targets default,engineer --model gpt-5.4
   codex-nexus models [--scope user|project] --targets engineer --model inherit
@@ -2221,6 +2584,11 @@ Model values:
 Aliases:
   codex-nexus model
   --agents (alias for --targets)
+
+Hook trust:
+  By default install writes hook definitions only. Use --trust-hooks, or accept
+  the interactive prompt, to write hooks.state trust entries. Project-scope
+  trust is written to the current user Codex config, not project config.
 `);
 }
 
@@ -2295,6 +2663,7 @@ async function runCli(argv = process.argv, runtime = {}) {
       const result = await installCommand(options, runtime);
       if (s) {
         s.stop("Install complete");
+        await runTrustAfterInstall(result, runtime);
         outro(formatInstallSummary(result));
         const modelResult = await runModelsAfterInstall(result, runtime);
         if (modelResult) {
@@ -2363,6 +2732,7 @@ export {
   formatModelsSummary,
   formatUninstallSummary,
   installCommand,
+  listManagedHookTrustEntries,
   listCodexModels,
   mergeConfigToml,
   mergeHooksJson,
@@ -2378,5 +2748,6 @@ export {
   resolveScopePaths,
   runCli,
   setTopLevelTomlString,
+  trustManagedHooks,
   uninstallCommand
 };

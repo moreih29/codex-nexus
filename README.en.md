@@ -9,12 +9,12 @@ After installation, it wires:
 - the Lead main instruction file
 - Nexus subagents
 - the `nx` MCP server
-- Codex hooks for Nexus tags
+- Codex hook definitions for Nexus tags (Codex v0.129+ requires trust opt-in)
 - the Codex skill discovery path
 
 ## What it gives you
 
-Once installed, you can use flows like:
+After installation and hook trust, you can use flows like:
 
 - `[plan]` to structure decisions before implementation
 - `[auto-plan]` for Lead-driven planning
@@ -22,6 +22,14 @@ Once installed, you can use flows like:
 - `[m]` to store memory
 - `[m:gc]` to clean memory
 - `[d]` to record the current plan decision
+
+## Codex compatibility
+
+This release targets **Codex CLI v0.129 and newer**. It installs against the canonical hook feature and trust model introduced for that line; older Codex fallback behavior is not documented as current behavior.
+
+- Fresh installs write `[features].hooks = true`.
+- Fresh installs do not write `[features].codex_hooks`.
+- `codex_hooks` is mentioned only for migration/history handling of older codex-nexus installs or user-owned values.
 
 ## Quick install
 
@@ -34,7 +42,14 @@ npx -y codex-nexus install
 In a TTY session, the installer lets you choose:
 
 1. whether to install to `user` or `project` scope
-2. whether to configure models immediately after installation
+2. whether to trust the installed codex-nexus hooks by writing `hooks.state`
+3. whether to configure models immediately after installation
+
+The default install writes hook definitions only and does not write trust state. For non-interactive trust, pass `--trust-hooks` explicitly.
+
+```bash
+npx -y codex-nexus install --trust-hooks
+```
 
 The installed version is always the same as the currently executed `codex-nexus` package.
 If you want a different version, change the package version at invocation time.
@@ -43,6 +58,7 @@ If you want a different version, change the package version at invocation time.
 
 ```bash
 codex-nexus install [--scope user|project]
+codex-nexus install [--scope user|project] --trust-hooks
 codex-nexus models [--scope user|project]
 codex-nexus models [--scope user|project] --targets default,engineer --model gpt-5.4
 codex-nexus uninstall [--scope user|project]
@@ -121,27 +137,46 @@ The installer writes or updates:
 - `model_instructions_file = "lead.instructions.md"`
 - `[features].multi_agent = true`
 - `[features].child_agents_md = true`
-- `[features].codex_hooks = true`
+- `[features].hooks = true`
 - `[mcp_servers.nx]`
-- managed Codex hook wiring (inline `config.toml [hooks]` or legacy `.codex/hooks.json`)
+- Codex v0.129+ inline hook wiring (`config.toml` `[hooks]`)
+- hook definitions by default, without `hooks.state` trust entries unless you opt in
 - `.codex/agents/*`
 - `.agents/skills/*`
 - the marketplace entry
+- a native hook-ready plugin manifest entry (`hooks: "./hooks.json"`)
 
 This is the important distinction: it does not just copy a plugin folder. It wires the final-user config paths that Codex actually reads.
 It also wires `nx` MCP through the installed runtime plus the installed `nexus-core` server entry, instead of relying on `npx` being present on PATH.
 By contrast, the installed plugin bundle keeps its `agents/*.toml` files in their distributed `nexus-mcp` source form, while the runtime agent copies under `.codex/agents/*` get the resolved absolute launcher.
 
-## Hook compatibility
+## Codex v0.129+ hooks and trust
 
-`codex-nexus` writes its **managed Codex hooks** to exactly one surface per `.codex/` layer. Re-running install/update does not duplicate the same managed hooks across both inline `[hooks]` and `.codex/hooks.json`.
+`codex-nexus` now assumes Codex CLI v0.129 or newer and uses the **canonical `[features].hooks` + inline `config.toml` `[hooks]`** surface. Fresh installs do not write `[features].codex_hooks`, and older `.codex/hooks.json` fallback behavior is not supported as current behavior.
 
-The selection rules are conservative:
+Update / migration rules:
 
-- if inline `[hooks]` already exist in `config.toml`, codex-nexus keeps using that surface
-- if inline `[hooks]` do not already exist and `.codex/hooks.json` does, codex-nexus keeps using the legacy surface
-- if neither surface exists yet, inline `config.toml [hooks]` is enabled only when `codex --version` is `0.124.0` or newer
-- if the Codex CLI version is unknown or older than `0.124.0`, codex-nexus falls back to `.codex/hooks.json`
+- A prior codex-nexus-managed `[features].codex_hooks = true` is migrated/cleaned in favor of `[features].hooks = true`.
+- User-owned `codex_hooks` values are preserved for migration and uninstall safety.
+- Old codex-nexus-managed hooks in `.codex/hooks.json` are moved to or removed in favor of inline `[hooks]`; user-owned hooks are preserved.
+
+Trust rules:
+
+- Default `install` writes hook definitions only. It does not automatically write `hooks.state` trust entries.
+- In a TTY, accept the “Trust installed codex-nexus hooks...” prompt to write trust entries.
+- In non-interactive mode, pass `codex-nexus install --trust-hooks` to write trust entries.
+- Even for `project` scope, trust entries are written to the current user's Codex config (`~/.codex/config.toml` by default). Project config does not receive `hooks.state`.
+
+`doctor` checks v0.129 trust/runability states:
+
+- missing or disabled `[features].hooks`
+- missing codex-nexus hook surface
+- untrusted hooks
+- disabled hook state
+- modified hooks after trust, such as command or timeout changes
+- duplicate active native plugin hook and direct installer hook sources
+
+The native plugin hook surface is prepared, but direct installer hooks remain the default runtime path. The plugin manifest includes `hooks: "./hooks.json"` so Codex native plugin loading can discover the hook spec, but this document does not claim native plugin hook runtime smoke while `plugin_hooks` remains default-off/experimental. If `plugin_hooks` is enabled while direct hooks are also active, `doctor` reports `native/direct hook duplicate` because duplicate execution is possible.
 
 Managed matcher/runtime coverage:
 
@@ -175,7 +210,14 @@ npx -y codex-nexus doctor --scope user
 npx -y codex-nexus doctor --scope project
 ```
 
-A healthy setup prints `Doctor passed.`.
+Immediately after the default install, `doctor` may report `hook trust (... untrusted)` because hook definitions exist but trust entries do not. To install and trust in one non-interactive step:
+
+```bash
+npx -y codex-nexus install --scope user --trust-hooks
+npx -y codex-nexus doctor --scope user
+```
+
+After explicit trust or accepting the interactive trust prompt, a healthy setup prints `Doctor passed.`.
 
 ## cmux notifications
 
@@ -208,7 +250,7 @@ CODEX_NEXUS_CMUX=false codex
 
 ## Example usage
 
-After installation, you can start with prompts like:
+After installation and the required hook trust, you can start with prompts like:
 
 ```text
 [plan] Help me break down the authentication flow
@@ -241,7 +283,9 @@ The installer also aligns the pinned `@moreih29/nexus-core` version from the cur
 
 ## Notes
 
-- codex-nexus-managed hooks follow conservative surface-selection rules. Existing inline hooks stay inline, existing `hooks.json` stays legacy when inline hooks are not already present, and only a fresh surface selection on supported Codex enables inline `config.toml [hooks]`.
+- Hook behavior in this release targets Codex CLI v0.129 and newer. Older `codex_hooks` / `.codex/hooks.json` fallback behavior is not documented as current behavior.
+- Default install does not automatically trust hooks. Until you pass `--trust-hooks` or accept the interactive prompt, `doctor` may report untrusted hooks.
+- For project scope, hook trust still writes `hooks.state` to the current user's Codex config, not to project config.
 - `nx` MCP uses the installer runtime path rather than a bare `npx` command.
 - For project installs, the installer adds ignore entries for local install artifact directories to `.gitignore`.
 - Uninstall is designed to preserve unrelated settings, but old installs without rollback metadata can only be cleaned up on a best-effort basis.

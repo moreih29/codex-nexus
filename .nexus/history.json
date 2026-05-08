@@ -1243,6 +1243,381 @@
           "created_at": "2026-05-08T04:59:28.970Z"
         }
       ]
+    },
+    {
+      "schema_version": "1.0",
+      "completed_at": "2026-05-08T15:05:19.822Z",
+      "branch": "feat/codex-0.129-hooks",
+      "plan": {
+        "id": 12,
+        "topic": "Codex CLI v0.129.0 대응을 위한 codex-nexus 수정 계획",
+        "issues": [
+          {
+            "id": 1,
+            "title": "v0.129.0 hook trust 모델에 맞춰 codex-nexus installer/doctor가 어떤 수준으로 대응할지 결정",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "explorer",
+                "summary": "Inspected codex-nexus hook install/doctor surfaces. Current code writes codex-nexus hooks into scoped config.toml [hooks] or .codex/hooks.json via buildManagedHookSpec/mergeConfigToml/mergeHooksJson/installManagedSurfaces, records only hook surface in install-state, and doctor checks only hook presence. There is no Codex >=0.129 detection for trust, no hooks.state read/write, no trusted_hash computation, no user config trust-state path, and no install/doctor guidance. Project-scope install cannot safely make hooks trusted by writing project-local config because v0.129 trust state is user/session-level. Minimal surfaces: scripts/codex-nexus.mjs install/doctor/format/arg parsing, tests in installer.test.js, docs README/CHANGELOG. scripts/codex-nexus-hook.mjs likely unaffected.",
+                "recorded_at": "2026-05-08T13:38:06.753Z",
+                "agent_id": "019e07cb-be0e-75f0-89c0-3aa0ea3da0cc"
+              },
+              {
+                "role": "architect",
+                "summary": "Recommend trust-aware doctor plus explicit opt-in trust flow; reject automatic trust. For Codex <0.129, current surface check is sufficient. For >=0.129, doctor should determine runnability by trusted hash/not disabled or native managed status; untrusted/disabled codex-nexus hooks should fail doctor. Installer should not auto-trust; interactive consent or explicit --trust-hooks can write user/session trust state. Project-scope trust, if supported, must clearly mutate current user config, not project config. Do not add PreCompact/PostCompact until codex-nexus has concrete behavior. Key risks: matching upstream trusted_hash schema and avoiding silent trust of repo-local hooks.",
+                "recorded_at": "2026-05-08T13:38:07.061Z",
+                "agent_id": "019e07cb-e781-7d02-b0ce-4f0986491508"
+              }
+            ],
+            "decision": "Codex v0.129.0 이상 hook trust 대응은 C안으로 진행한다. 즉, doctor는 codex-nexus hook의 trust/runability를 검사하고, 기본 install은 자동 trust하지 않는다. Interactive install에서는 hooks 설치 후 codex-nexus hooks를 신뢰할지 사용자에게 묻고, 사용자가 승낙한 경우에만 user-level hooks.state에 trust를 기록한다. Non-interactive 환경에서는 명시적 옵션(예: --trust-hooks)이 있을 때만 trust를 기록한다. Project scope에서도 trust state는 project config가 아니라 현재 사용자 Codex config에 기록된다는 점을 prompt/출력에 명확히 안내한다. 자동 trust write는 금지한다."
+          },
+          {
+            "id": 2,
+            "title": "plugin-bundled hooks discovery를 위해 plugin manifest/hooks layout을 native Codex surface와 어떻게 정렬할지 결정",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "architect",
+                "summary": "Reviewed plugin manifest/layout and installer/doctor hook paths. Recommendation: align the publishable plugin with native Codex discovery by adding an explicit manifest hooks pointer to the existing root ./hooks.json, not by moving to implicit hooks/hooks.json or inlining. Keep direct installer hooks as the default runnable path because plugin_hooks is under-development/disabled by default and plugin hook trust must not be assumed. Treat direct and native-plugin hooks as mutually exclusive active sources: installer/doctor must detect plugin_hooks-enabled/native-active configurations and avoid or flag duplicate execution; doctor must include native plugin hook runnability/trust in the same trust-aware model from issue 1. Automatic trust remains forbidden for both sources. Validation should assert manifest path resolves, packaging includes it, and smoke should verify one execution path only with plugin_hooks disabled/enabled.",
+                "recorded_at": "2026-05-08T13:44:17.047Z"
+              },
+              {
+                "role": "explorer",
+                "summary": "Local plugin layout: plugins/codex-nexus/hooks.json exists at plugin root and defines SessionStart/UserPromptSubmit/PreToolUse/PermissionRequest/Stop with self-pinned npx commands; .codex-plugin/plugin.json has skills and mcpServers but no hooks field; hooks/hooks.json does not exist. validate-plugin.mjs and plugin-layout.test.js hardcode root hooks.json and do not validate native discoverability. Installer copies the plugin bundle but independently writes direct hooks into config.toml or .codex/hooks.json. Options: add manifest hooks './hooks.json' with minimal churn; move/copy to hooks/hooks.json with path/test churn and possible duplicate files; inline hooks in manifest with bloat; leave native hooks unused. Duplicate risk exists if plugin_hooks is enabled while direct installer hooks remain active.",
+                "recorded_at": "2026-05-08T13:48:42.838Z",
+                "agent_id": "019e07d2-c38c-7012-8aab-9189c59b8b9f"
+              },
+              {
+                "role": "researcher",
+                "summary": "Primary-source v0.129.0 facts: plugin manifest hooks supports string path, path array, inline HooksFile object, or object array; manifest paths must be plugin-root-relative and start with './'; fallback when no manifest hooks exists is <plugin_root>/hooks/hooks.json, not root hooks.json. Feature hooks/CodexHooks and plugins are stable default-enabled, but plugin_hooks/PluginHooks is under-development and default false; runtime loads plugin hook sources only when PluginHooks is enabled. Plugin hooks are HookSource::Plugin with is_managed=false; only Managed or Trusted hooks become executable, so plugin hooks are not trusted by default and need trusted_hash.",
+                "recorded_at": "2026-05-08T13:48:43.143Z",
+                "agent_id": "019e07d2-c8a1-7862-85f0-02bfe3da706d"
+              },
+              {
+                "role": "architect",
+                "summary": "Recommend adding explicit manifest field hooks: './hooks.json' while keeping root hooks.json and direct installer hooks as the default runtime path because plugin_hooks is under-development/default disabled. Treat native plugin hooks and installer-written hooks as mutually exclusive active sources: add duplicate-source detection/doctor warning or failure; do not silently create direct hooks if active plugin_hooks for the same plugin are detected. Apply issue 1 trust policy to both sources because plugin hooks are not proven managed/trusted. Do not move to hooks/hooks.json or inline hooks due to churn/duplication/readability costs.",
+                "recorded_at": "2026-05-08T13:48:43.440Z",
+                "agent_id": "019e07cb-e781-7d02-b0ce-4f0986491508"
+              }
+            ],
+            "decision": "미래 호환을 위해 codex-nexus plugin bundle을 Codex v0.129 native plugin hook surface에 맞춰 준비한다. 구체적으로 기존 root `plugins/codex-nexus/hooks.json`를 유지하고, `plugins/codex-nexus/.codex-plugin/plugin.json`에 `\"hooks\": \"./hooks.json\"`를 명시해 Codex native plugin loader가 해당 hook spec을 발견할 수 있게 한다. 다만 v0.129.0에서 `plugin_hooks`는 default-disabled이고 plugin hooks도 unmanaged/untrusted이므로, 런타임 기본 hook 경로는 계속 installer-written direct hooks로 유지한다. Native plugin hooks와 direct installer hooks가 동시에 active source가 되어 중복 실행되는 상태는 doctor/installer에서 감지해 실패 또는 강한 경고로 처리한다. Issue 1의 trust 정책은 direct hooks와 plugin-bundled hooks 모두에 적용한다."
+          },
+          {
+            "id": 3,
+            "title": "[features].codex_hooks legacy alias를 canonical [features].hooks로 전환할지와 구버전 호환 정책 결정",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "architect",
+                "summary": "Reviewed current feature-key handling: MANAGED_FEATURE_KEYS includes only codex_hooks; managedConfigPatch always writes codex_hooks=true; capture/restore and best-effort uninstall use that managed key list; tests/docs assert codex_hooks. Recommendation: choose a version-gated minimal policy. For Codex >=0.129, do not write a hook feature flag by default because hooks are stable/default-enabled; stop adding legacy codex_hooks and treat explicit hooks=false/codex_hooks=false as a disabled-hook condition for doctor/trust guidance rather than silently overriding. For Codex >=0.124 and <0.129, keep writing codex_hooks=true where inline direct hooks need the legacy feature gate. For unknown/<0.124 legacy hooks.json fallback, avoid canonical hooks to prevent speculative parser/feature breakage; preserve current conservative behavior only if needed for legacy surface. Track both hooks and codex_hooks in managed-state/uninstall so migration preserves user settings and can remove prior managed codex_hooks. Reject hooks-only for older versions and reject writing both because both add compatibility/restore ambiguity without benefit. Tests/docs must cover v0.129 absent feature flag, older codex_hooks, explicit disabled feature, migration from managed codex_hooks, and uninstall restore of preexisting user values.",
+                "recorded_at": "2026-05-08T13:58:56.302Z"
+              },
+              {
+                "role": "explorer",
+                "summary": "Local usages: scripts/codex-nexus.mjs MANAGED_FEATURE_KEYS includes codex_hooks only; managedConfigPatch always writes features.codex_hooks=true; capture/restore/removeExactManagedConfigToml manage codex_hooks only. test/installer.test.js asserts features.codex_hooks=true for inline install. README.md/en document codex_hooks. Doctor currently detects hook presence from [hooks]/hooks.json, not feature key. Options: keep codex_hooks only (max compatibility, outdated docs), switch to hooks only (v0.129 aligned but breaks 0.124-0.128 risk), write both (compat but conflicts/uninstall complexity), version-gated (clean but more branching).",
+                "recorded_at": "2026-05-08T14:00:48.793Z",
+                "agent_id": "019e07e0-c4b1-7510-af0d-54acc3b4750e"
+              },
+              {
+                "role": "researcher",
+                "summary": "Primary-source verification: in v0.129.0 Feature::CodexHooks canonical key is hooks, stable/default_enabled=true; codex_hooks is mapped as a legacy alias. Rename landed in PR #20522 and release notes mention aliasing codex_hooks as hooks. In v0.124/v0.125 and through v0.128, canonical key remained codex_hooks and legacy.rs did not list hooks alias, so older versions likely do not accept [features].hooks. Current public docs still show codex_hooks, likely lagging source.",
+                "recorded_at": "2026-05-08T14:00:49.101Z",
+                "agent_id": "019e07e1-0f3a-7470-b8c0-e8129a1e725a"
+              },
+              {
+                "role": "architect",
+                "summary": "Recommend version-gated minimal policy. For Codex >=0.129, do not write any hook feature flag by default because hooks are stable/default-enabled; do not override explicit user disable. For 0.124 <= Codex <0.129 and unknown/<0.124 fallback paths, keep writing legacy codex_hooks=true for compatibility. Track both codex_hooks and hooks in managed state for safe restore/removal. Doctor should surface disabled hook feature state. Avoid switch-to-hooks-only and write-both due to backward compatibility/conflict and uninstall complexity.",
+                "recorded_at": "2026-05-08T14:00:49.408Z",
+                "agent_id": "019e07cb-e781-7d02-b0ce-4f0986491508"
+              }
+            ],
+            "decision": "`[features].codex_hooks` legacy alias 지원을 유지하지 않고 B안으로 진행한다. 즉, installer/config/docs/tests는 Codex v0.129.0 canonical feature key인 `[features].hooks` 기준으로 전환한다. Codex 0.124~0.128 등 구버전에서 `[features].hooks`를 인식하지 못할 수 있는 위험은 수용하며, 구버전 지원은 이번 대응 범위에서 포기한다. 이에 따라 managed config state/uninstall/doctor/docs/tests도 `hooks` 기준으로 갱신하고, 필요한 경우 기존 codex-nexus-managed `codex_hooks = true`는 마이그레이션/정리 대상으로 다룬다."
+          },
+          {
+            "id": 4,
+            "title": "검증·문서화 범위: v0.129.0 smoke/test/docs/changelog에서 무엇을 완료 기준으로 삼을지 결정",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "architect",
+                "summary": "Reviewed package scripts, release checklist, current test inventory, and prior v0.129 decisions. Recommendation: completion standard should be automated tests + docs/changelog + blocking manual v0.129 smoke when a v0.129 Codex environment is available; if unavailable, release may proceed only with an explicit documented smoke deferral/risk note. Automated-only is insufficient because trust status, /hooks TUI, plugin_hooks duplicate-source behavior, and actual v0.129 feature key behavior are integration surfaces not fully modeled by local unit tests. Must-have automated checks: trust-aware doctor pass/fail, explicit trust opt-in/no auto trust, user-vs-project trust-state location, plugin manifest hooks path validation, direct/native duplicate-source detection, canonical features.hooks and codex_hooks cleanup/uninstall behavior, package validation, existing hook runtime tests, bun run check, CLI help/doctor, npm pack dry-run. Must-have docs: README/README.en, CHANGELOG, release checklist/smoke steps. Must-have manual smoke: fresh user and project installs on Codex v0.129, /hooks status/trust, doctor agreement, explicit trust flow, [plan] context, deny rule, cmux notification/status, plugin_hooks disabled default and enabled duplicate detection.",
+                "recorded_at": "2026-05-08T14:03:22.770Z"
+              },
+              {
+                "role": "explorer",
+                "summary": "Current validation: package scripts sync:core, validate, test, check; CI validate runs bun install, sync:core/check, CLI help, temp project install+doctor with CODEX_NEXUS_TEST_PACKAGE_ROOT, npm pack --dry-run; publish workflow reuses validate and checks tag/version. Tests to update: installer.test.js for trust default/no auto trust, explicit/interactive trust, project trust to user state, doctor diagnostics, duplicate source detection, canonical hooks; plugin-layout/validate-plugin for manifest hooks './hooks.json'; hooks.test.js existing runtime behavior remains. Docs/CHANGELOG need trust, canonical hooks, old support dropped, native plugin manifest, duplicate detection. Manual smoke matrix covers clean user/project install, trust behavior, native plugin path, duplicate source, uninstall.",
+                "recorded_at": "2026-05-08T14:08:18.428Z",
+                "agent_id": "019e07e5-ce4c-7e51-94a3-53f90670dfbe"
+              },
+              {
+                "role": "postdoc",
+                "summary": "Verification sufficiency: automated tests plus docs/changelog are blocking; live v0.129 smoke is needed before claiming runtime verification, otherwise record explicit deferred risk. Automated blockers should cover baseline commands, trust model tests, plugin surface tests, feature-key tests, existing hook runtime behavior. Manual smoke in clean temp HOME/project should record codex version, /hooks status, default no-auto-trust, explicit/interactive trust makes hooks runnable, [plan]/PreToolUse/PermissionRequest path fires, project trust messaging, and plugin_hooks duplicate detection if feasible. PreCompact/PostCompact not release criterion unless behavior added.",
+                "recorded_at": "2026-05-08T14:08:18.712Z",
+                "agent_id": "019e07e5-d34b-78b1-aa18-b632be5ca053"
+              },
+              {
+                "role": "architect",
+                "summary": "Recommend completion standard: automated tests + docs/changelog + blocking manual v0.129 smoke. If real v0.129 environment is unavailable, release only with explicit documented deferral/risk and avoid strong runtime verification claims. Must-have automated checks include bun run check, CLI help, doctor for user/project controlled temp installs, npm pack --dry-run, and tests for trust-aware doctor, explicit trust, project user-state trust, manifest hooks, duplicate source detection, canonical hooks/no codex_hooks, uninstall preservation, and existing hook behavior. Docs must cover v0.129 requirement, trust flow, project trust user-state mutation, plugin hooks future-compatible/direct default, duplicate diagnostics.",
+                "recorded_at": "2026-05-08T14:08:18.997Z",
+                "agent_id": "019e07cb-e781-7d02-b0ce-4f0986491508"
+              },
+              {
+                "role": "retrospective",
+                "summary": "Cycle-end review completed after all tasks: final `bun run check` passed (sync, validation, 51 tests), docs were updated after live smoke so CHANGELOG no longer claims smoke is pending, and live Codex v0.129 smoke passed with documented limitations (`/hooks` TUI and PreToolUse/PermissionRequest not automated; SessionStart hook dispatch verified). Attempted HOW architect consultation but the architect agent type was unavailable, so Lead performed evidence-based review using task results, final test output, and grep/diff checks.",
+                "recorded_at": "2026-05-08T15:05:13.304Z"
+              }
+            ],
+            "decision": "v0.129 대응 완료 기준은 C안으로 진행한다. 즉, 자동 테스트 + 문서/CHANGELOG 갱신 + live Codex v0.129 smoke를 blocking 완료 기준으로 삼는다. 자동 테스트는 trust-aware doctor, 기본 install no-auto-trust, interactive/explicit trust write, project-scope trust가 user config에 기록되는지, plugin manifest `hooks: \"./hooks.json\"`, native/direct duplicate detection, canonical `[features].hooks` 및 `codex_hooks` 미작성/마이그레이션, uninstall preservation, 기존 hook runtime 동작을 포함한다. 문서는 README.md/en, CHANGELOG.md, release checklist를 갱신한다. live v0.129 smoke는 clean user/project install, `/hooks` trust status, default no-auto-trust, explicit/interactive trust 후 hook runnable, `[plan]`/PreToolUse/PermissionRequest 실동작, duplicate source 감지를 확인한다. 실제 v0.129 환경을 사용할 수 없는 경우에는 smoke deferred risk를 명시하고 `runtime verified` 표현은 하지 않는다."
+          }
+        ],
+        "research_summary": "Upstream v0.129.0 조사 결과: 2026-05-07 openai/codex rust-v0.129.0에서 hooks trust/enablement, /hooks browser, PreCompact/PostCompact, PreToolUse.additionalContext, plugin sharing/marketplace 확장, app-server protocol 변화, project-local config 제한, MCP elicitation 변화가 확인됐다. 로컬 검사 결과 codex-nexus는 app-server protocol/SDK를 직접 사용하지 않아 sessionId/ServiceTier/persistExtendedHistory 등은 영향 낮음. 반면 installer가 user/project config.toml 또는 hooks.json에 codex-nexus hooks를 직접 쓰고 hooks.state trusted_hash를 쓰지 않아 v0.129.0의 unmanaged hook trust 모델에서 실제 hook 미작동 가능성이 있다. plugins/codex-nexus/.codex-plugin/plugin.json에는 hooks field가 없어 native plugin hook discovery surface와 정렬되지 않는다. scripts/codex-nexus.mjs와 docs/tests는 [features].codex_hooks legacy alias를 계속 사용한다. .nexus/history 검색에서는 2026-04-25 cycle에서 Codex 0.124.0 hooks stable 변경에 대해 stable inline hooks와 legacy hooks.json을 단계 적용하기로 한 선행 결정이 있었고, 이번 검색에서 hooks trust/plugin hooks 관련 결정은 찾지 못했다.",
+        "created_at": "2026-05-08T13:33:30.025Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Implement hook trust primitives for Codex v0.129",
+          "status": "completed",
+          "context": "Decisions: v0.129+ requires trust-aware handling; no automatic trust; interactive/explicit opt-in may write trust. Trust state must be user-level, including project-scope installs. Direct/plugin hooks are unmanaged unless trusted. Target primarily `scripts/codex-nexus.mjs` and related installer tests.",
+          "acceptance": "Automated tests show codex-nexus hook entries can be classified as trusted/untrusted/disabled/modified; explicit trust writes only codex-nexus-owned hook state in the user-level config; project-scope trust does not write project-local `hooks.state`; unrelated hook state is preserved; no trust state is written by default.",
+          "approach": "Port/replicate the v0.129 hook identity/trusted_hash behavior enough for codex-nexus-owned command hooks; add helpers to enumerate codex-nexus hook entries, compute expected hashes, read/write `hooks.state` in user Codex config, preserve unrelated state, and expose a status model usable by install/doctor. Keep helpers scoped to codex-nexus-owned hooks only.",
+          "risk": "High risk: trusted_hash algorithm or key shape may diverge from Codex v0.129 source. Implementation must be source-backed and covered by focused fixtures.",
+          "plan_issue": 1,
+          "owner": {
+            "role": "engineer",
+            "resume_tier": "persistent",
+            "agent_id": "019e07f3-1407-7b12-98d4-e0cc7c741de1"
+          },
+          "created_at": "2026-05-08T14:10:28.245Z",
+          "result": {
+            "outcome": "success",
+            "summary": "Added Codex v0.129-style hook trust primitives, status classification, and user-level trust-state writer for codex-nexus-owned command hooks. Focused tests cover trusted/untrusted/disabled/modified states, explicit trust preservation of unrelated state, project-scope user-level writes, and default no trust writes.",
+            "artifacts": [
+              "scripts/codex-nexus.mjs",
+              "test/installer.test.js"
+            ],
+            "recorded_at": "2026-05-08T14:24:50.980Z"
+          }
+        },
+        {
+          "id": 2,
+          "title": "Integrate v0.129 install/doctor behavior and canonical hooks feature",
+          "status": "completed",
+          "context": "Build on task 1. Implement the user-facing installer/doctor behavior decided in issues 1 and 3. Target `scripts/codex-nexus.mjs`, `test/installer.test.js`, and any helper/test fixtures needed. Old Codex support is intentionally dropped; fresh config should use canonical `[features].hooks` and should not write `codex_hooks`.",
+          "acceptance": "`install` supports explicit and interactive trust opt-in; non-interactive/default install never writes trust; project-scope trust writes only current user config and clearly reports that; `doctor` distinguishes missing hook surface, untrusted/disabled/modified hooks, duplicate native/direct sources, and success after trust; fresh installs write/use `[features].hooks` and do not write `codex_hooks`; prior managed `codex_hooks = true` is safely migrated/cleaned; uninstall/restore preserves user-owned feature and hook-state values; installer tests cover user and project scopes.",
+          "approach": "Wire trust primitives into install and doctor. Add CLI explicit trust option such as `--trust-hooks`; add interactive trust prompt after install in TTY mode; ensure default install does not trust. Make doctor fail or clearly report untrusted/disabled/modified codex-nexus hooks, hook feature disabled, and native/direct duplicate active sources. Switch managed feature handling to canonical `hooks`, including migration/cleanup of prior codex-nexus-managed `codex_hooks = true` while preserving user-owned values. Prefer v0.129+ direct inline hook surface for fresh installs; any retained legacy surface handling must be explicitly covered by tests and not framed as old Codex support.",
+          "risk": "Large change in one core installer file; avoid broad refactors outside necessary hook/config paths. Need exact user-facing messages for trust and project-scope user-config mutation.",
+          "plan_issue": 1,
+          "deps": [
+            1
+          ],
+          "owner": {
+            "role": "engineer",
+            "resume_tier": "persistent",
+            "agent_id": "019e07f3-1407-7b12-98d4-e0cc7c741de1"
+          },
+          "created_at": "2026-05-08T14:10:38.793Z",
+          "result": {
+            "outcome": "success",
+            "summary": "Integrated v0.129 install/doctor behavior: canonical `[features].hooks`, explicit `--trust-hooks`, interactive trust opt-in, no default trust writes, project trust to user config, doctor trust/runability/duplicate diagnostics, and managed `codex_hooks` cleanup with user-owned preservation tests.",
+            "artifacts": [
+              "scripts/codex-nexus.mjs",
+              "test/installer.test.js"
+            ],
+            "recorded_at": "2026-05-08T14:36:41.113Z"
+          }
+        },
+        {
+          "id": 3,
+          "title": "Align plugin manifest hooks surface and validation",
+          "status": "completed",
+          "context": "Decision issue 2: keep root `plugins/codex-nexus/hooks.json`, add `\"hooks\": \"./hooks.json\"` to `plugins/codex-nexus/.codex-plugin/plugin.json`, and validate the native plugin hook surface. Direct installer hooks remain default runtime path; native/direct duplicate runtime detection is handled in task 2.",
+          "acceptance": "`plugins/codex-nexus/.codex-plugin/plugin.json` contains `\"hooks\": \"./hooks.json\"`; `scripts/validate-plugin.mjs` validates that the manifest hook path resolves to `plugins/codex-nexus/hooks.json`; `test/plugin-layout.test.js` asserts manifest/path alignment; existing hook event/matcher/version-pin checks still pass; package validation confirms the hook file is included.",
+          "approach": "Update plugin manifest metadata, validation script, and plugin layout tests so the manifest hook path is explicit, root-relative, resolves to the existing hook file, and the hook file remains version-pinned and packaged. Keep existing root `hooks.json`; do not create `hooks/hooks.json` or inline hook definitions.",
+          "risk": "Native plugin discovery alignment may create duplicate execution if plugin_hooks is enabled; task 2 must detect active duplicates before runtime use.",
+          "plan_issue": 2,
+          "owner": {
+            "role": "engineer",
+            "resume_tier": "bounded",
+            "agent_id": "019e07f3-4b53-7861-9a2c-d010de980162"
+          },
+          "created_at": "2026-05-08T14:10:46.527Z",
+          "result": {
+            "outcome": "success",
+            "summary": "Added native plugin `hooks` manifest path and validation/layout assertions that it resolves to the existing root `plugins/codex-nexus/hooks.json`, while retaining version/matcher/package-file validation.",
+            "artifacts": [
+              "plugins/codex-nexus/.codex-plugin/plugin.json",
+              "scripts/validate-plugin.mjs",
+              "test/plugin-layout.test.js"
+            ],
+            "recorded_at": "2026-05-08T14:24:51.263Z"
+          }
+        },
+        {
+          "id": 4,
+          "title": "Run automated verification for v0.129 compatibility changes",
+          "status": "completed",
+          "context": "Verification task for implementation tasks 1-3. Decisions require automated tests to be blocking before manual smoke and docs finalization. Target commands are from package.json and CI: `bun run check`, CLI help, temp installs with doctor, and `npm pack --dry-run`.",
+          "acceptance": "`bun run check` passes; `node scripts/codex-nexus.mjs --help` works; controlled temp user and project installs plus `doctor` exercise trusted and untrusted states as tests or scripted checks; `npm pack --dry-run` includes expected plugin manifest/hook/script/docs assets; failures are classified with concrete file/behavior references.",
+          "approach": "After implementation, run the full automated suite and targeted command-level checks in controlled temp user/project environments. Verify tests cover trust-aware doctor, no-auto-trust, explicit/interactive trust, project user-level trust state, duplicate source detection, canonical `[features].hooks`, plugin manifest hooks, uninstall preservation, and existing hook runtime behavior.",
+          "risk": "Some checks may depend on final CLI option naming and trust-state implementation. Do not mask runtime or test failures as environment issues without evidence.",
+          "plan_issue": 4,
+          "deps": [
+            2,
+            3
+          ],
+          "owner": {
+            "role": "tester",
+            "resume_tier": "bounded",
+            "agent_id": "019e0805-27aa-7380-9ecf-aeb0628607b7"
+          },
+          "created_at": "2026-05-08T14:10:53.919Z",
+          "result": {
+            "outcome": "success",
+            "summary": "Post-fix automated verification passed: `bun run check`, CLI help, isolated temp user/project install+doctor trusted/untrusted checks, manifest hook assertion, and `npm pack --dry-run` asset check all succeeded. Prior sync/validation mismatch was resolved by task 8.",
+            "artifacts": [
+              ".nexus/state/artifacts/task-4-v0.129-verification-postfix-report.md"
+            ],
+            "recorded_at": "2026-05-08T14:50:26.796Z"
+          }
+        },
+        {
+          "id": 5,
+          "title": "Update user docs, changelog, and release checklist for v0.129 behavior",
+          "status": "completed",
+          "context": "Documentation task for decisions 1-4. Target docs: `README.md`, `README.en.md`, `CHANGELOG.md`, and `.nexus/context/releasing.md` if release checklist language is stale. Docs must reflect dropped old Codex support and avoid claiming live runtime verification unless smoke actually ran.",
+          "acceptance": "README.md and README.en.md consistently document v0.129+ behavior and no longer present `codex_hooks` or old Codex fallback as current behavior; CHANGELOG.md has user-visible changes, breaking/compatibility notes, migration points, and verification expectations; `.nexus/context/releasing.md` or equivalent release checklist includes automated commands and live v0.129 smoke fields; documentation states deferred smoke risk if applicable and avoids unsupported runtime-verified claims.",
+          "approach": "Revise install/verify/hook compatibility sections to describe canonical `[features].hooks`, v0.129 trust model, no automatic trust, interactive/explicit trust opt-in, project-scope trust writing current user config, native plugin manifest hook readiness with direct installer hooks as default, duplicate source diagnostics, and migration from prior `codex_hooks`. Add changelog entries and update release checklist/manual smoke template.",
+          "risk": "Docs must match final CLI flag names/messages from implementation and should not overpromise native plugin hook runtime behavior while `plugin_hooks` remains under-development/default-off.",
+          "plan_issue": 4,
+          "deps": [
+            2,
+            3
+          ],
+          "owner": {
+            "role": "writer",
+            "resume_tier": "bounded",
+            "agent_id": "019e0805-667c-7680-836a-e787768949a9"
+          },
+          "created_at": "2026-05-08T14:11:02.028Z",
+          "result": {
+            "outcome": "success",
+            "summary": "Updated README.md, README.en.md, CHANGELOG.md, and release checklist for Codex v0.129+ canonical hooks/trust behavior, migration notes, duplicate diagnostics, and smoke verification expectations without claiming live smoke completion.",
+            "artifacts": [
+              "README.md",
+              "README.en.md",
+              "CHANGELOG.md",
+              ".nexus/context/releasing.md"
+            ],
+            "recorded_at": "2026-05-08T14:46:16.589Z"
+          }
+        },
+        {
+          "id": 6,
+          "title": "Review v0.129 documentation for accuracy and consistency",
+          "status": "completed",
+          "context": "Review task for documentation from task 5. Compare docs against decisions 1-4 and implementation behavior from tasks 1-3. Focus on user-facing accuracy, migration clarity, and avoiding unsupported claims.",
+          "acceptance": "Reviewer approves that docs match implementation and plan decisions; any mention of old `codex_hooks` is limited to migration/history; trust behavior and project-scope user-config mutation are clear; live smoke claims are conditioned on actual smoke evidence; changelog contains compatibility and migration notes.",
+          "approach": "Check README.md, README.en.md, CHANGELOG.md, and release checklist language for consistency across Korean/English docs, correct CLI option names, correct trust/project-scope warnings, correct canonical `[features].hooks` messaging, and accurate native plugin hook wording. Flag required revisions with exact snippets/locations.",
+          "risk": "Documentation can become stale if implementation changes CLI option names after writing; review must happen after task 5 and after implementation details settle.",
+          "plan_issue": 4,
+          "deps": [
+            5
+          ],
+          "owner": {
+            "role": "reviewer",
+            "resume_tier": "bounded",
+            "agent_id": "019e080e-1e1a-7b12-8fc8-1a56805ae660"
+          },
+          "created_at": "2026-05-08T14:11:08.576Z",
+          "result": {
+            "outcome": "success",
+            "summary": "Documentation review approved README.md/en, CHANGELOG.md, and release checklist as accurate against implementation and plan decisions, with no unsupported live-smoke claims and correct migration/trust/project-scope wording.",
+            "artifacts": [
+              "README.md",
+              "README.en.md",
+              "CHANGELOG.md",
+              ".nexus/context/releasing.md"
+            ],
+            "recorded_at": "2026-05-08T14:50:27.076Z"
+          }
+        },
+        {
+          "id": 7,
+          "title": "Run live Codex v0.129 smoke test",
+          "status": "completed",
+          "context": "Blocking manual smoke required by issue 4 after implementation and documentation. The current environment has `codex-cli 0.129.0` observed during planning, but the tester must verify the actual version at run time. Use clean temp HOME and clean temp project; avoid contaminating the real repo/user config except where the smoke explicitly uses isolated temp paths.",
+          "acceptance": "A smoke artifact/result summary records v0.129+ version, clean user and project install outcomes, doctor/trust status before and after explicit or interactive trust, evidence that at least one hook path actually fires in Codex, duplicate-source detection result or explicit deferral reason, and any environment limitations. Smoke passes or produces a clearly classified blocker.",
+          "approach": "Pack or use local package root safely, then perform clean user-scope and project-scope installs against Codex v0.129+. Record `codex --version`, install command, doctor output, `/hooks` status if accessible, default no-auto-trust behavior, explicit/interactive trust behavior, at least one real hook firing path (`[plan]` additional context and PreToolUse or PermissionRequest), project-scope trust messaging, duplicate native/direct detection with `plugin_hooks` enabled if feasible. If any part cannot be run, record explicit deferred risk and avoid runtime-verified claims.",
+          "risk": "Live Codex TUI `/hooks` and hook triggering may be hard to automate; if manual interaction is required, document exact steps and observed outputs. Do not mutate the developer's real HOME/config unintentionally.",
+          "plan_issue": 4,
+          "deps": [
+            4,
+            6
+          ],
+          "owner": {
+            "role": "tester",
+            "resume_tier": "bounded",
+            "agent_id": "019e0811-ffe1-7fb0-8406-ec1fe4a58e08"
+          },
+          "created_at": "2026-05-08T14:11:18.401Z",
+          "result": {
+            "outcome": "success",
+            "summary": "Live Codex v0.129 smoke passed in isolated temp environments: verified `codex-cli 0.129.0`, clean user/project installs, default untrusted doctor failures, explicit trust doctor passes, project trust writing user config only, duplicate native/direct detection with `plugin_hooks = true`, and trusted SessionStart hook dispatch via `codex exec`. Limitations: `/hooks` TUI and PreToolUse/PermissionRequest runtime paths were not automated.",
+            "artifacts": [
+              ".nexus/state/artifacts/task-7-live-codex-v0.129-smoke-report.md"
+            ],
+            "recorded_at": "2026-05-08T15:02:59.510Z"
+          }
+        },
+        {
+          "id": 8,
+          "title": "Fix sync:core generated agent pruning for validation",
+          "status": "completed",
+          "context": "Automated verification found `bun run check` failed because `sync:core` copied an upstream `strategist.toml` generated agent while downstream validation intentionally excludes strategist. Target `scripts/sync-from-nexus-core.mjs`.",
+          "acceptance": "`bun run check` no longer fails due to `strategist.toml`; sync removes unmanaged publishable agent TOMLs and validation still passes with the downstream 8 subagents plus lead.",
+          "approach": "After copying generated agents, remove `.toml` files not in the downstream expected agent set before applying launcher/model transformations.",
+          "risk": "Generated artifact drift must remain intentional; do not mask legitimate new agent additions without downstream explicitly accepting them.",
+          "plan_issue": 4,
+          "owner": {
+            "role": "lead",
+            "resume_tier": "ephemeral"
+          },
+          "created_at": "2026-05-08T14:46:06.853Z",
+          "result": {
+            "outcome": "success",
+            "summary": "Added pruning of unmanaged publishable agent TOMLs after `sync:core` copies generated agents, preventing upstream `strategist.toml` from breaking downstream validation. Verified `bun run check` passes.",
+            "artifacts": [
+              "scripts/sync-from-nexus-core.mjs"
+            ],
+            "recorded_at": "2026-05-08T14:46:16.316Z"
+          }
+        },
+        {
+          "id": 9,
+          "title": "Update changelog after live v0.129 smoke result",
+          "status": "completed",
+          "context": "Cycle-end review found `CHANGELOG.md` still described live v0.129 smoke as pending after task 7 passed. Target single file `CHANGELOG.md`.",
+          "acceptance": "CHANGELOG verification notes state that live Codex v0.129 smoke passed with the documented limitations, rather than saying task 7 is still pending.",
+          "approach": "Replace the stale pending-smoke note with the observed task 7 result: codex-cli 0.129.0, clean user/project install/doctor/trust, duplicate detection, and SessionStart hook dispatch; keep `/hooks` TUI and PreToolUse/PermissionRequest as limitations if mentioned.",
+          "risk": "Do not overclaim full runtime coverage beyond the live smoke evidence.",
+          "plan_issue": 4,
+          "owner": {
+            "role": "lead",
+            "resume_tier": "ephemeral"
+          },
+          "created_at": "2026-05-08T15:04:29.193Z",
+          "result": {
+            "outcome": "success",
+            "summary": "Updated CHANGELOG verification notes to reflect the completed live Codex v0.129 smoke pass and its documented limitations, removing the stale pending-smoke statement.",
+            "artifacts": [
+              "CHANGELOG.md"
+            ],
+            "recorded_at": "2026-05-08T15:04:48.756Z"
+          }
+        }
+      ]
     }
   ]
 }

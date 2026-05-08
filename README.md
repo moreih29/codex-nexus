@@ -9,12 +9,12 @@
 - Lead 메인 지시 파일
 - Nexus 전용 하위 에이전트
 - `nx` MCP 서버
-- Nexus 태그용 Codex 훅
+- Nexus 태그용 Codex 훅 정의(Codex v0.129+에서는 trust opt-in 필요)
 - Codex가 읽는 스킬 디렉터리
 
 ## 무엇을 할 수 있나
 
-설치 후 Codex에서 이런 흐름을 바로 쓸 수 있다.
+설치와 hook trust가 끝나면 Codex에서 이런 흐름을 바로 쓸 수 있다.
 
 - `[plan]` 구현 전에 의사결정 정리
 - `[auto-plan]` Lead가 자동으로 계획 정리
@@ -22,6 +22,14 @@
 - `[m]` 메모 저장
 - `[m:gc]` 메모 정리
 - `[d]` 현재 plan 안건의 결정 기록
+
+## Codex 호환성
+
+현재 릴리스는 **Codex CLI v0.129 이상**을 대상으로 한다. Codex v0.129의 canonical hook feature와 trust model에 맞춰 설치하며, 이전 Codex용 fallback은 현재 동작으로 지원하지 않는다.
+
+- fresh install은 `[features].hooks = true`를 쓴다.
+- fresh install은 `[features].codex_hooks`를 쓰지 않는다.
+- `codex_hooks`는 예전 codex-nexus 설치본을 정리하거나 사용자가 직접 넣은 값을 보존하는 migration/history 맥락에서만 다룬다.
 
 ## 빠른 설치
 
@@ -34,9 +42,16 @@ npx -y codex-nexus install
 TTY 환경에서는 설치 중에:
 
 1. 설치 범위 `user` 또는 `project`
-2. 설치 완료 후 모델 설정을 바로 진행할지 여부
+2. 설치된 codex-nexus hook을 `hooks.state`에 신뢰할지 여부
+3. 설치 완료 후 모델 설정을 바로 진행할지 여부
 
 를 고를 수 있다.
+
+기본 설치는 hook 정의만 쓰고 trust state는 쓰지 않는다. 비대화형으로 바로 신뢰까지 기록하려면 명시적으로 `--trust-hooks`를 사용한다.
+
+```bash
+npx -y codex-nexus install --trust-hooks
+```
 
 설치되는 버전은 항상 현재 실행 중인 `codex-nexus` 버전이다.
 즉, 버전을 바꾸고 싶다면 installer 안에서 고르는 것이 아니라 실행할 패키지 버전을 바꿔야 한다.
@@ -45,6 +60,7 @@ TTY 환경에서는 설치 중에:
 
 ```bash
 codex-nexus install [--scope user|project]
+codex-nexus install [--scope user|project] --trust-hooks
 codex-nexus models [--scope user|project]
 codex-nexus models [--scope user|project] --targets default,engineer --model gpt-5.4
 codex-nexus uninstall [--scope user|project]
@@ -123,27 +139,46 @@ installer는 선택한 버전을 기준으로 아래를 맞춰 준다.
 - `model_instructions_file = "lead.instructions.md"`
 - `[features].multi_agent = true`
 - `[features].child_agents_md = true`
-- `[features].codex_hooks = true`
+- `[features].hooks = true`
 - `[mcp_servers.nx]`
-- Codex hook wiring (`config.toml` inline `[hooks]` 또는 `.codex/hooks.json`)
+- Codex v0.129+ inline hook wiring (`config.toml` `[hooks]`)
+- hook 정의만 기본으로 설치하고, opt-in 전에는 `hooks.state` trust entry를 쓰지 않음
 - `.codex/agents/*`
 - `.agents/skills/*`
 - marketplace entry
+- native hook surface 준비용 plugin manifest 항목 (`hooks: "./hooks.json"`)
 
 즉, 플러그인만 복사하는 것이 아니라 Codex가 실제로 읽는 최종 사용자 경로까지 함께 정리한다.
 또한 `nx` MCP는 `npx` PATH에 의존하지 않도록, 설치된 런타임과 설치된 `nexus-core` server.js 절대경로로 연결한다.
 반면 설치된 plugin bundle 내부의 `agents/*.toml`은 배포 소스 형태(`nexus-mcp`)를 유지하고, 실제 실행용 agent 사본은 `.codex/agents/*` 쪽에 절대경로 launcher로 써 넣는다.
 
-## 훅 호환성
+## Codex v0.129+ 훅과 신뢰 모델
 
-`codex-nexus`는 **자신이 관리하는 Codex hook** 을 `.codex/` 레이어마다 정확히 한 표면에만 쓴다. install/update를 다시 실행해도 같은 managed hook을 inline `[hooks]` 와 `.codex/hooks.json` 양쪽에 중복으로 쓰지 않는다.
+`codex-nexus`는 Codex CLI v0.129 이상을 기준으로 **canonical `[features].hooks` + inline `config.toml` `[hooks]`** 표면을 사용한다. fresh install은 `[features].codex_hooks`를 쓰지 않고, 예전 Codex용 `.codex/hooks.json` fallback을 현재 동작으로 제공하지 않는다.
 
-선택 규칙은 보수적이다.
+업데이트 / migration 원칙:
 
-- 이미 `config.toml` 안에 inline `[hooks]`가 있으면 그 표면을 유지한다.
-- inline `[hooks]`가 없고 이미 `.codex/hooks.json`이 있으면 legacy 표면을 유지한다.
-- 둘 다 없다면 `codex --version`이 `0.124.0` 이상일 때만 `config.toml` inline `[hooks]`를 사용한다.
-- Codex 버전을 확인할 수 없거나 `0.124.0` 미만이면 `.codex/hooks.json`으로 fallback한다.
+- 예전 codex-nexus가 관리 상태로 남긴 `[features].codex_hooks = true`는 `[features].hooks = true`로 정리된다.
+- 사용자가 직접 소유한 `codex_hooks` 값은 migration과 uninstall 보존을 위해 그대로 둔다.
+- `.codex/hooks.json`에 남아 있던 codex-nexus managed hook은 inline `[hooks]`로 옮겨지거나 제거되며, 사용자 소유 hook은 보존한다.
+
+신뢰 모델:
+
+- 기본 `install`은 hook 정의만 쓴다. `hooks.state` trust entry는 자동으로 쓰지 않는다.
+- TTY에서는 설치 후 “Trust installed codex-nexus hooks...” 프롬프트를 수락해야 trust entry를 쓴다.
+- 비대화형 설치에서는 `codex-nexus install --trust-hooks`를 명시해야 trust entry를 쓴다.
+- `project` scope 설치라도 trust entry는 현재 사용자 Codex config(`~/.codex/config.toml` 기준)에 기록된다. project config에는 `hooks.state`를 쓰지 않는다.
+
+`doctor`는 v0.129 trust/runability 상태를 점검한다.
+
+- `[features].hooks`가 빠졌거나 꺼진 상태
+- codex-nexus hook surface가 빠진 상태
+- untrusted hook
+- disabled hook state
+- trust 후 command/timeout 등이 달라진 modified hook
+- native plugin hook source와 direct installer hook source가 동시에 active인 중복 상태
+
+Native plugin hook 표면은 준비되어 있지만 기본 runtime 경로는 여전히 installer가 직접 쓰는 inline hook이다. Plugin manifest에는 `hooks: "./hooks.json"`가 들어 있어 Codex native plugin loader가 hook spec을 찾을 수 있지만, `plugin_hooks`가 default-off/experimental인 동안 이 문서는 native plugin hook runtime이 실사용 검증됐다고 주장하지 않는다. `plugin_hooks`를 켠 상태에서 direct hook도 남아 있으면 중복 실행 위험이 있으므로 `doctor`가 `native/direct hook duplicate`로 보고한다.
 
 관리되는 matcher / runtime 범위:
 
@@ -177,7 +212,14 @@ npx -y codex-nexus doctor --scope user
 npx -y codex-nexus doctor --scope project
 ```
 
-설치가 정상이면 `Doctor passed.`가 나온다.
+기본 설치 직후에는 hook 정의가 있어도 trust entry가 없으므로 `doctor`가 `hook trust (... untrusted)`를 보고할 수 있다. 설치와 동시에 신뢰까지 기록하려면 아래처럼 실행한다.
+
+```bash
+npx -y codex-nexus install --scope user --trust-hooks
+npx -y codex-nexus doctor --scope user
+```
+
+명시적 trust 또는 interactive prompt 수락 후 설정이 정상이면 `Doctor passed.`가 나온다.
 
 ## cmux 알림
 
@@ -210,7 +252,7 @@ CODEX_NEXUS_CMUX=false codex
 
 ## 사용 예시
 
-설치가 끝난 뒤 Codex에서 바로 이렇게 시작하면 된다.
+설치와 필요한 hook trust가 끝난 뒤 Codex에서 바로 이렇게 시작하면 된다.
 
 ```text
 [plan] 인증 플로우를 어떻게 나눌지 정리해줘
@@ -243,7 +285,9 @@ installer는 현재 실행 중인 `codex-nexus` 버전에 맞춰 `@moreih29/nexu
 
 ## 주의할 점
 
-- codex-nexus가 관리하는 hook은 보수적 표면 선택 규칙을 따른다. 기존 inline 표면이 있으면 inline을 유지하고, inline이 없을 때 기존 `hooks.json`은 legacy를 유지하며, 아무 표면도 없을 때만 지원되는 Codex에서 `config.toml` inline `[hooks]`를 새로 사용한다.
+- 이 릴리스의 hook 동작은 Codex CLI v0.129 이상을 대상으로 한다. 예전 Codex용 `codex_hooks`/`.codex/hooks.json` fallback은 현재 동작으로 문서화하지 않는다.
+- 기본 설치는 hook을 자동 신뢰하지 않는다. `--trust-hooks` 또는 interactive prompt 수락 전에는 `doctor`가 untrusted 상태를 보고할 수 있다.
+- project scope에서 hook trust를 기록해도 `hooks.state`는 현재 사용자 Codex config에 쓰이며, project config에는 쓰지 않는다.
 - `nx` MCP는 `npx`가 아니라 설치 시점 런타임 절대경로를 사용한다.
 - project scope 설치 시 `.gitignore`에는 로컬 install artifact 디렉터리용 ignore 항목이 자동으로 추가된다.
 - uninstall은 unrelated 설정을 최대한 보존하도록 설계됐지만, metadata가 없는 예전 설치본은 best-effort 정리만 가능하다.

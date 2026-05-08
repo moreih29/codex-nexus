@@ -21,15 +21,31 @@ function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
 }
 
+function packageFilesIncludePath(packageFiles, filePath) {
+  const normalizedPath = path.relative(repoRoot, filePath).split(path.sep).join("/");
+
+  return packageFiles.some((entry) => {
+    const normalizedEntry = entry.replace(/\/+$/, "");
+    return normalizedPath === normalizedEntry || normalizedPath.startsWith(`${normalizedEntry}/`);
+  });
+}
+
 test("wrapper metadata stays aligned", () => {
   const pkg = readJson(path.join(repoRoot, "package.json"));
   const manifest = readJson(path.join(pluginRoot, ".codex-plugin", "plugin.json"));
   const mcp = readJson(path.join(pluginRoot, ".mcp.json"));
-  const hooks = readJson(path.join(pluginRoot, "hooks.json"));
+  const hooksPath = path.join(pluginRoot, "hooks.json");
+  const manifestHooksPath = path.resolve(pluginRoot, manifest.hooks ?? "");
 
   expect(manifest.version).toBe(pkg.version);
   expect(manifest.skills).toBe("./skills/");
   expect(manifest.mcpServers).toBe("./.mcp.json");
+  expect(manifest.hooks).toBe("./hooks.json");
+  expect(manifestHooksPath).toBe(hooksPath);
+  expect(existsSync(manifestHooksPath)).toBe(true);
+
+  const hooks = readJson(manifestHooksPath);
+
   expect(mcp.mcpServers.nx.command).toBe("npx");
   expect(mcp.mcpServers.nx.args).toContain(`@moreih29/nexus-core@${pkg.dependencies["@moreih29/nexus-core"]}`);
   expect(hooks.hooks.SessionStart.length).toBeGreaterThan(0);
@@ -45,6 +61,7 @@ test("wrapper metadata stays aligned", () => {
   expect(pkg.bin["codex-nexus"]).toBe("./scripts/codex-nexus.mjs");
   expect(existsSync(path.join(pluginRoot, "lead.instructions.md"))).toBe(true);
   expect(pkg.files).toContain("plugins");
+  expect(packageFilesIncludePath(pkg.files, manifestHooksPath)).toBe(true);
   expect(pkg.files).not.toContain(".codex");
   expect(pkg.files).not.toContain(".agents");
 });

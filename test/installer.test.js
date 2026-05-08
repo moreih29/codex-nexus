@@ -6,9 +6,13 @@ import { execFileSync } from "node:child_process";
 import TOML from "@iarna/toml";
 import {
   doctorCommand,
+  formatInstallSummary,
   installCommand,
+  listManagedHookTrustEntries,
   resolveNexusCorePackageRoot,
+  resolveScopePaths,
   runCli,
+  trustManagedHooks,
   uninstallCommand
 } from "../scripts/codex-nexus.mjs";
 
@@ -87,23 +91,26 @@ test("project install wires plugin, config, hooks, agents, and skills", async ()
     const result = await installCommand({ scope: "project" }, { cwd: repoRoot, env, inlineHooksSupported: false });
 
     expect(result.scope).toBe("project");
-    expect(result.hooksSurface).toBe("hooks.json");
+    expect(result.hooksSurface).toBe("config.toml");
     expect(existsSync(path.join(repoRoot, "plugins", "codex-nexus", ".codex-plugin", "plugin.json"))).toBe(true);
     expect(existsSync(path.join(repoRoot, ".codex", "lead.instructions.md"))).toBe(true);
     expect(existsSync(path.join(repoRoot, ".codex", "agents", "lead.toml"))).toBe(true);
     expect(existsSync(path.join(repoRoot, ".agents", "skills", "nx-plan", "SKILL.md"))).toBe(true);
     expect(existsSync(result.managedStatePath)).toBe(true);
-    expect(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8")).toContain('model_instructions_file = "lead.instructions.md"');
-    expect(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8")).toContain("multi_agent = true");
-    expect(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8")).not.toContain('command = "npx"');
-    expect(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8")).toContain("dist/mcp/server.js");
-    expect(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8")).not.toContain("[[hooks.SessionStart]]");
-    const hooksContent = readFileSync(path.join(repoRoot, ".codex", "hooks.json"), "utf8");
-    expect(hooksContent).toContain(path.resolve(path.join(packageRoot, "scripts", "codex-nexus-hook.mjs")));
-    expect(hooksContent).toContain("permission-request");
-    expect(hooksContent).toContain("stop");
-    expect(hooksContent).toContain("apply_patch");
-    expect(hooksContent).toContain("mcp__");
+    const configContent = readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8");
+    const config = TOML.parse(configContent);
+    expect(configContent).toContain('model_instructions_file = "lead.instructions.md"');
+    expect(config.features.multi_agent).toBe(true);
+    expect(config.features.hooks).toBe(true);
+    expect(config.features.codex_hooks).toBeUndefined();
+    expect(configContent).not.toContain('command = "npx"');
+    expect(configContent).toContain("dist/mcp/server.js");
+    expect(config.hooks.SessionStart[0].hooks[0].command).toContain(path.resolve(path.join(packageRoot, "scripts", "codex-nexus-hook.mjs")));
+    expect(config.hooks.PermissionRequest[0].hooks[0].command).toContain("permission-request");
+    expect(config.hooks.Stop[0].hooks[0].command).toContain("stop");
+    expect(config.hooks.PreToolUse[0].matcher).toContain("apply_patch");
+    expect(config.hooks.PreToolUse[0].matcher).toContain("mcp__");
+    expect(existsSync(path.join(repoRoot, ".codex", "hooks.json"))).toBe(false);
     expect(readFileSync(path.join(repoRoot, ".gitignore"), "utf8")).toContain(".codex/");
     expect(readFileSync(path.join(repoRoot, ".gitignore"), "utf8")).toContain(".agents/");
     expect(readAgentTomlFiles(path.join(repoRoot, ".codex", "agents"))).toEqual(expectedAgentFiles);
@@ -138,13 +145,18 @@ test("user install targets home-scoped marketplace and codex directories", async
 
   try {
     const env = testEnv({ HOME: homeDir });
-    const result = await installCommand({ scope: "user" }, { cwd: workDir, env, inlineHooksSupported: false });
+    const result = await installCommand({ scope: "user", trustHooks: true }, { cwd: workDir, env, inlineHooksSupported: false });
 
     expect(result.scope).toBe("user");
-    expect(result.hooksSurface).toBe("hooks.json");
+    expect(result.hooksSurface).toBe("config.toml");
+    expect(result.hookTrust.trusted).toBe(5);
     expect(existsSync(path.join(homeDir, ".codex", "plugins", "codex-nexus", ".codex-plugin", "plugin.json"))).toBe(true);
     expect(existsSync(path.join(homeDir, ".codex", "agents", "lead.toml"))).toBe(true);
     expect(existsSync(path.join(homeDir, ".agents", "skills", "nx-run", "SKILL.md"))).toBe(true);
+    const config = TOML.parse(readFileSync(path.join(homeDir, ".codex", "config.toml"), "utf8"));
+    expect(config.features.hooks).toBe(true);
+    expect(config.features.codex_hooks).toBeUndefined();
+    expect(JSON.stringify(config.hooks.state)).toContain("trusted_hash");
     expect(readFileSync(path.join(homeDir, ".codex", "config.toml"), "utf8")).not.toContain('command = "npx"');
     expect(readFileSync(path.join(homeDir, ".codex", "config.toml"), "utf8")).toContain("dist/mcp/server.js");
     expect(readAgentTomlFiles(path.join(homeDir, ".codex", "agents"))).toEqual(expectedAgentFiles);
@@ -190,6 +202,7 @@ test("interactive install can hand off to model configuration when accepted", as
       cwd: repoRoot,
       env: testEnv(),
       inlineHooksSupported: false,
+      trustHooksAfterInstall: false,
       configureModelsAfterInstall: true,
       modelsAfterInstallCommand: async (options) => {
         modelOptions = options;
@@ -230,6 +243,7 @@ test("interactive install skips model configuration when declined", async () => 
       cwd: repoRoot,
       env: testEnv(),
       inlineHooksSupported: false,
+      trustHooksAfterInstall: false,
       configureModelsAfterInstall: false,
       modelsAfterInstallCommand: async () => {
         called = true;
@@ -272,19 +286,23 @@ test("noninteractive install does not prompt for model configuration", async () 
 });
 
 test("project install prefers inline config hooks when stable inline hooks are supported", async () => {
+  const homeDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-project-inline-home-"));
   const repoRoot = mkdtempSync(path.join(tmpdir(), "codex-nexus-project-inline-"));
   mkdirSync(path.join(repoRoot, ".git"));
   writeFileSync(path.join(repoRoot, "package.json"), "{}\n", "utf8");
 
   try {
-    const env = testEnv();
-    const result = await installCommand({ scope: "project" }, { cwd: repoRoot, env, inlineHooksSupported: true });
+    const env = testEnv({ HOME: homeDir });
+    const result = await installCommand({ scope: "project", trustHooks: true }, { cwd: repoRoot, env, inlineHooksSupported: true });
 
     expect(result.hooksSurface).toBe("config.toml");
+    expect(result.hookTrust.trusted).toBe(5);
     expect(existsSync(path.join(repoRoot, ".codex", "hooks.json"))).toBe(false);
 
     const config = TOML.parse(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8"));
-    expect(config.features.codex_hooks).toBe(true);
+    expect(config.features.hooks).toBe(true);
+    expect(config.features.codex_hooks).toBeUndefined();
+    expect(config.hooks.state).toBeUndefined();
     expect(Array.isArray(config.hooks.SessionStart)).toBe(true);
     expect(config.hooks.SessionStart[0].hooks[0].command).toContain(path.resolve(path.join(packageRoot, "scripts", "codex-nexus-hook.mjs")));
     expect(config.hooks.PreToolUse[0].matcher).toContain("apply_patch");
@@ -296,6 +314,315 @@ test("project install prefers inline config hooks when stable inline hooks are s
     expect(doctor.hooksSurface).toBe("config.toml");
     expect(doctor.failed).toBe(0);
   } finally {
+    rmSync(homeDir, { recursive: true, force: true });
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("default install does not write hook trust state", async () => {
+  const homeDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-trust-home-"));
+  const repoRoot = mkdtempSync(path.join(tmpdir(), "codex-nexus-trust-project-"));
+  mkdirSync(path.join(repoRoot, ".git"));
+
+  try {
+    const env = testEnv({ HOME: homeDir });
+    await installCommand({ scope: "project" }, { cwd: repoRoot, env, inlineHooksSupported: true });
+
+    const projectConfig = TOML.parse(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8"));
+    expect(projectConfig.hooks.state).toBeUndefined();
+    expect(existsSync(path.join(homeDir, ".codex", "config.toml"))).toBe(false);
+  } finally {
+    rmSync(homeDir, { recursive: true, force: true });
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("project install with explicit trust writes user-level hook state and reports the target", async () => {
+  const homeDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-trust-explicit-home-"));
+  const repoRoot = mkdtempSync(path.join(tmpdir(), "codex-nexus-trust-explicit-project-"));
+  mkdirSync(path.join(repoRoot, ".git"));
+
+  try {
+    const env = testEnv({ HOME: homeDir });
+    const result = await installCommand({ scope: "project", trustHooks: true }, { cwd: repoRoot, env, inlineHooksSupported: true });
+
+    expect(result.hookTrust.trusted).toBe(5);
+    expect(result.hookTrust.userConfigTomlPath).toBe(path.join(homeDir, ".codex", "config.toml"));
+    expect(result.hookTrust.projectScopeUserConfig).toBe(true);
+
+    const projectConfig = TOML.parse(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8"));
+    expect(projectConfig.hooks.state).toBeUndefined();
+
+    const userConfig = TOML.parse(readFileSync(path.join(homeDir, ".codex", "config.toml"), "utf8"));
+    expect(Object.keys(userConfig.hooks.state)).toHaveLength(5);
+    expect(formatInstallSummary(result)).toContain("current user Codex config");
+  } finally {
+    rmSync(homeDir, { recursive: true, force: true });
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("noninteractive CLI --trust-hooks writes hook trust state", async () => {
+  const homeDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-cli-trust-home-"));
+  const repoRoot = mkdtempSync(path.join(tmpdir(), "codex-nexus-cli-trust-project-"));
+  mkdirSync(path.join(repoRoot, ".git"));
+
+  try {
+    const env = testEnv({ HOME: homeDir });
+    const result = await runCli(["node", "codex-nexus", "install", "--scope", "project", "--trust-hooks"], {
+      cwd: repoRoot,
+      env,
+      inlineHooksSupported: true
+    });
+
+    expect(result).toBe(0);
+    const projectConfig = TOML.parse(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8"));
+    expect(projectConfig.hooks.state).toBeUndefined();
+    const userConfig = TOML.parse(readFileSync(path.join(homeDir, ".codex", "config.toml"), "utf8"));
+    expect(Object.keys(userConfig.hooks.state)).toHaveLength(5);
+  } finally {
+    rmSync(homeDir, { recursive: true, force: true });
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("interactive install can trust installed hooks when accepted", async () => {
+  const homeDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-trust-interactive-home-"));
+  const repoRoot = mkdtempSync(path.join(tmpdir(), "codex-nexus-trust-interactive-project-"));
+  mkdirSync(path.join(repoRoot, ".git"));
+
+  const originalForceTty = process.env.CODEX_NEXUS_FORCE_TTY;
+  process.env.CODEX_NEXUS_FORCE_TTY = "1";
+
+  try {
+    const env = testEnv({ HOME: homeDir });
+    const result = await runCli(["node", "codex-nexus", "install", "--scope", "project"], {
+      cwd: repoRoot,
+      env,
+      inlineHooksSupported: true,
+      trustHooksAfterInstall: true,
+      configureModelsAfterInstall: false
+    });
+
+    expect(result).toBe(0);
+    const userConfig = TOML.parse(readFileSync(path.join(homeDir, ".codex", "config.toml"), "utf8"));
+    expect(Object.keys(userConfig.hooks.state)).toHaveLength(5);
+  } finally {
+    if (originalForceTty === undefined) {
+      delete process.env.CODEX_NEXUS_FORCE_TTY;
+    } else {
+      process.env.CODEX_NEXUS_FORCE_TTY = originalForceTty;
+    }
+    rmSync(homeDir, { recursive: true, force: true });
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("doctor distinguishes hook trust, disabled, modified, missing, and duplicate states", async () => {
+  const homeDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-doctor-hooks-home-"));
+  const repoRoot = mkdtempSync(path.join(tmpdir(), "codex-nexus-doctor-hooks-"));
+  mkdirSync(path.join(repoRoot, ".git"));
+
+  try {
+    const env = testEnv({ HOME: homeDir });
+    await installCommand({ scope: "project" }, { cwd: repoRoot, env, inlineHooksSupported: true });
+
+    const untrustedDoctor = doctorCommand({ scope: "project" }, { cwd: repoRoot, env });
+    expect(untrustedDoctor.failedLabels).toContain("hook trust (5 untrusted)");
+
+    const scopePaths = resolveScopePaths("project", repoRoot, env);
+    trustManagedHooks(scopePaths, { cwd: repoRoot, env });
+    const trustedDoctor = doctorCommand({ scope: "project" }, { cwd: repoRoot, env });
+    expect(trustedDoctor.failed).toBe(0);
+
+    const configPath = path.join(repoRoot, ".codex", "config.toml");
+    const entries = listManagedHookTrustEntries(scopePaths, { cwd: repoRoot, env });
+    const userConfigPath = resolveScopePaths("user", repoRoot, env).configTomlPath;
+    const userConfig = TOML.parse(readFileSync(userConfigPath, "utf8"));
+    userConfig.hooks.state[entries[0].key].enabled = false;
+    writeToml(userConfigPath, userConfig);
+    const disabledDoctor = doctorCommand({ scope: "project" }, { cwd: repoRoot, env });
+    expect(disabledDoctor.failedLabels).toContain("hook enabled state (1 disabled)");
+
+    userConfig.hooks.state[entries[0].key].enabled = true;
+    writeToml(userConfigPath, userConfig);
+    const modifiedConfig = TOML.parse(readFileSync(configPath, "utf8"));
+    modifiedConfig.hooks.PreToolUse[0].hooks[0].timeout = 31;
+    writeToml(configPath, modifiedConfig);
+    const modifiedDoctor = doctorCommand({ scope: "project" }, { cwd: repoRoot, env });
+    expect(modifiedDoctor.failedLabels).toContain("hook trust (1 modified)");
+
+    modifiedConfig.hooks.PreToolUse[0].hooks[0].timeout = 30;
+    modifiedConfig.features.plugin_hooks = true;
+    writeToml(configPath, modifiedConfig);
+    trustManagedHooks(scopePaths, { cwd: repoRoot, env });
+    const duplicateDoctor = doctorCommand({ scope: "project" }, { cwd: repoRoot, env });
+    expect(duplicateDoctor.failedLabels).toContain("native/direct hook duplicate");
+
+    delete modifiedConfig.features.plugin_hooks;
+    delete modifiedConfig.hooks;
+    writeToml(configPath, modifiedConfig);
+    const missingDoctor = doctorCommand({ scope: "project" }, { cwd: repoRoot, env });
+    expect(missingDoctor.failedLabels).toContain("hooks surface");
+  } finally {
+    rmSync(homeDir, { recursive: true, force: true });
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("canonical hooks feature migrates managed codex_hooks and preserves user-owned codex_hooks", async () => {
+  const managedRepoRoot = mkdtempSync(path.join(tmpdir(), "codex-nexus-managed-codex-hooks-"));
+  const userRepoRoot = mkdtempSync(path.join(tmpdir(), "codex-nexus-user-codex-hooks-"));
+  mkdirSync(path.join(managedRepoRoot, ".git"));
+  mkdirSync(path.join(userRepoRoot, ".git"));
+
+  try {
+    const env = testEnv();
+    writeToml(path.join(managedRepoRoot, ".codex", "config.toml"), {
+      features: {
+        codex_hooks: true
+      }
+    });
+    writeJson(path.join(managedRepoRoot, ".codex", ".codex-nexus", "install-state.json"), {
+      schemaVersion: 1,
+      packageName: "codex-nexus",
+      scope: "project",
+      legacy: false,
+      config: {
+        fileExisted: true,
+        modelInstructionsFile: { existed: false },
+        features: {
+          multi_agent: { existed: false },
+          child_agents_md: { existed: false },
+          hooks: { existed: false },
+          codex_hooks: { existed: false }
+        },
+        mcpServerNx: { existed: false }
+      },
+      hooks: {
+        fileExisted: false
+      },
+      marketplace: {
+        fileExisted: false,
+        name: { existed: false },
+        interfaceDisplayName: { existed: false },
+        pluginEntry: null
+      },
+      paths: {},
+      packageStoreDirExisted: false
+    });
+
+    await installCommand({ scope: "project" }, { cwd: managedRepoRoot, env, inlineHooksSupported: true });
+    const migratedConfig = TOML.parse(readFileSync(path.join(managedRepoRoot, ".codex", "config.toml"), "utf8"));
+    expect(migratedConfig.features.hooks).toBe(true);
+    expect(migratedConfig.features.codex_hooks).toBeUndefined();
+
+    writeToml(path.join(userRepoRoot, ".codex", "config.toml"), {
+      features: {
+        codex_hooks: true,
+        experimental: true
+      }
+    });
+    const installResult = await installCommand({ scope: "project" }, { cwd: userRepoRoot, env, inlineHooksSupported: true });
+    const installedConfig = TOML.parse(readFileSync(path.join(userRepoRoot, ".codex", "config.toml"), "utf8"));
+    expect(installedConfig.features.hooks).toBe(true);
+    expect(installedConfig.features.codex_hooks).toBe(true);
+
+    await uninstallCommand({ scope: "project" }, { cwd: userRepoRoot, env });
+    const restoredConfig = TOML.parse(readFileSync(path.join(userRepoRoot, ".codex", "config.toml"), "utf8"));
+    expect(restoredConfig.features.experimental).toBe(true);
+    expect(restoredConfig.features.codex_hooks).toBe(true);
+    expect(restoredConfig.features.hooks).toBeUndefined();
+    expect(existsSync(installResult.managedStatePath)).toBe(false);
+  } finally {
+    rmSync(managedRepoRoot, { recursive: true, force: true });
+    rmSync(userRepoRoot, { recursive: true, force: true });
+  }
+});
+
+test("managed hook trust primitives classify and write user-level state", async () => {
+  const homeDir = mkdtempSync(path.join(tmpdir(), "codex-nexus-trust-home-"));
+  const repoRoot = mkdtempSync(path.join(tmpdir(), "codex-nexus-trust-project-"));
+  mkdirSync(path.join(repoRoot, ".git"));
+
+  const projectConfigPath = path.join(repoRoot, ".codex", "config.toml");
+  const userConfigPath = path.join(homeDir, ".codex", "config.toml");
+  const unrelatedStateKey = "other-hooks.json:pre_tool_use:0:0";
+
+  try {
+    writeToml(projectConfigPath, {
+      hooks: {
+        SessionStart: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: "echo keep-project-hook"
+              }
+            ]
+          }
+        ]
+      }
+    });
+    writeToml(userConfigPath, {
+      hooks: {
+        state: {
+          [unrelatedStateKey]: {
+            enabled: false,
+            trusted_hash: "sha256:keep"
+          }
+        }
+      }
+    });
+
+    const env = testEnv({ HOME: homeDir });
+    await installCommand({ scope: "project" }, { cwd: repoRoot, env, inlineHooksSupported: true });
+    const scopePaths = resolveScopePaths("project", repoRoot, env);
+
+    const untrustedEntries = listManagedHookTrustEntries(scopePaths, { cwd: repoRoot, env });
+    expect(untrustedEntries).toHaveLength(5);
+    expect(new Set(untrustedEntries.map((entry) => entry.status))).toEqual(new Set(["untrusted"]));
+    expect(untrustedEntries.every((entry) => entry.command.includes("codex-nexus-hook"))).toBe(true);
+
+    const trustResult = trustManagedHooks(scopePaths, { cwd: repoRoot, env });
+    expect(trustResult.userConfigTomlPath).toBe(userConfigPath);
+    expect(trustResult.entries).toHaveLength(untrustedEntries.length);
+
+    const projectConfigAfterTrust = TOML.parse(readFileSync(projectConfigPath, "utf8"));
+    expect(projectConfigAfterTrust.hooks.state).toBeUndefined();
+
+    const userConfigAfterTrust = TOML.parse(readFileSync(userConfigPath, "utf8"));
+    expect(userConfigAfterTrust.hooks.state[unrelatedStateKey]).toEqual({
+      enabled: false,
+      trusted_hash: "sha256:keep"
+    });
+    expect(userConfigAfterTrust.hooks.state[`${path.resolve(projectConfigPath)}:session_start:0:0`]).toBeUndefined();
+    for (const entry of untrustedEntries) {
+      expect(userConfigAfterTrust.hooks.state[entry.key].trusted_hash).toBe(entry.currentHash);
+    }
+
+    const trustedEntries = listManagedHookTrustEntries(scopePaths, { cwd: repoRoot, env });
+    expect(new Set(trustedEntries.map((entry) => entry.status))).toEqual(new Set(["trusted"]));
+
+    const disabledEntry = trustedEntries.find((entry) => entry.eventName === "SessionStart");
+    const modifiedEntry = trustedEntries.find((entry) => entry.eventName === "PreToolUse");
+    expect(disabledEntry).toBeTruthy();
+    expect(modifiedEntry).toBeTruthy();
+
+    const userConfigWithDisabledHook = TOML.parse(readFileSync(userConfigPath, "utf8"));
+    userConfigWithDisabledHook.hooks.state[disabledEntry.key].enabled = false;
+    writeToml(userConfigPath, userConfigWithDisabledHook);
+
+    const projectConfigWithModifiedHook = TOML.parse(readFileSync(projectConfigPath, "utf8"));
+    projectConfigWithModifiedHook.hooks.PreToolUse[0].hooks[0].timeout = 31;
+    writeToml(projectConfigPath, projectConfigWithModifiedHook);
+
+    const changedEntries = listManagedHookTrustEntries(scopePaths, { cwd: repoRoot, env });
+    expect(changedEntries.find((entry) => entry.key === disabledEntry.key).status).toBe("disabled");
+    expect(changedEntries.find((entry) => entry.key === modifiedEntry.key).status).toBe("modified");
+    expect(changedEntries.some((entry) => entry.status === "trusted")).toBe(true);
+  } finally {
+    rmSync(homeDir, { recursive: true, force: true });
     rmSync(repoRoot, { recursive: true, force: true });
   }
 });

@@ -8,6 +8,32 @@
 
 ## [0.4.0] - 2026-05-08
 
+### Added
+
+- `codex-nexus install --trust-hooks`를 추가해 비대화형 설치에서도 Codex v0.129 `hooks.state` trust entry를 명시적으로 기록할 수 있게 했다
+- TTY 설치 흐름에서 설치된 codex-nexus hook을 신뢰할지 묻는 prompt를 추가했다. 기본값은 trust하지 않는 쪽이다
+- `doctor`가 v0.129 hook runability 상태를 보고하도록 확장했다: missing hook surface/feature, untrusted, disabled, modified, native/direct duplicate source 상태를 구분한다
+- plugin manifest에 `hooks: "./hooks.json"`를 추가해 Codex native plugin hook discovery 표면을 준비했다. direct installer hook은 계속 기본 runtime 경로다
+
+### Breaking / Compatibility
+
+- Codex CLI v0.129 이상을 compatibility target으로 삼는다. 구버전 Codex용 hook fallback 지원은 이번 릴리스에서 의도적으로 중단했다
+- fresh install은 canonical `[features].hooks = true`만 쓰며, `[features].codex_hooks`를 새로 쓰지 않는다. `codex_hooks`는 migration/history 맥락에서만 다룬다
+- 기본 `install`은 hook 정의를 쓰지만 trust state는 쓰지 않는다. hook 실행 가능 상태까지 맞추려면 `--trust-hooks`를 사용하거나 TTY prompt를 수락해야 한다
+- project scope에서 trust를 기록해도 `hooks.state`는 project config가 아니라 현재 사용자 Codex config에 기록된다
+- `plugin_hooks`를 켜 native plugin hook source와 direct installer hook source가 동시에 active가 되면 중복 실행 위험이 있으므로 `doctor`가 진단 오류/경고로 보고한다
+
+### Migration
+
+- 기존 codex-nexus 관리 상태가 남긴 `[features].codex_hooks = true`는 install/update 중 `[features].hooks = true` 기준으로 정리된다
+- 사용자가 직접 소유한 `codex_hooks` 값은 보존된다. 오래된 Codex와 `codex_hooks`가 필요한 환경은 이 릴리스의 현재 지원 대상이 아니므로 이전 호환 조합을 유지해야 한다
+- 업데이트 후 `doctor`가 untrusted hook을 보고하면 `codex-nexus install --scope <user|project> --trust-hooks`를 실행하거나 TTY trust prompt를 수락해 trust state를 기록한다
+
+### Verification notes
+
+- 릴리스 전 자동 검증은 `bun run check`, CLI help, isolated temp install/doctor, `npm pack --dry-run`을 포함해야 한다
+- live Codex v0.129 smoke에서 `codex-cli 0.129.0` 기준 clean user/project install, 기본 untrusted doctor, `--trust-hooks` 후 doctor 통과, project trust의 user config 기록, `plugin_hooks = true` duplicate 진단, trusted `SessionStart` hook dispatch를 확인했다. `/hooks` TUI와 `PreToolUse`/`PermissionRequest` runtime path는 자동화하지 않은 제한으로 남긴다
+
 ### Changed
 
 - `@moreih29/nexus-core`를 `0.21.0`으로 올리고 generated Lead / agent / skill 자산을 최신 upstream 계약에 맞게 다시 동기화했다

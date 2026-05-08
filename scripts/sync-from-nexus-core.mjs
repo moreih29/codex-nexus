@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -50,6 +50,16 @@ function replaceDirectory(sourceDir, destinationDir) {
   rmSync(destinationDir, { recursive: true, force: true });
   mkdirSync(path.dirname(destinationDir), { recursive: true });
   cpSync(sourceDir, destinationDir, { recursive: true });
+}
+
+function removeUnmanagedPublishableAgents(agentDir) {
+  const expected = new Set(generatedAgentFiles);
+  for (const entry of readdirSync(agentDir)) {
+    if (!entry.endsWith(".toml") || expected.has(entry)) {
+      continue;
+    }
+    rmSync(path.join(agentDir, entry), { force: true });
+  }
 }
 
 function stripFrontmatter(markdown) {
@@ -178,6 +188,7 @@ try {
 
   replaceDirectory(path.join(stagingRoot, ".codex", "skills"), path.join(pluginRoot, "skills"));
   replaceDirectory(path.join(stagingRoot, ".codex", "agents"), path.join(pluginRoot, "agents"));
+  removeUnmanagedPublishableAgents(path.join(pluginRoot, "agents"));
   applyDownstreamAgentLauncherCompatibilityFix(path.join(pluginRoot, "agents"));
   stripDefaultModelsFromPublishableAgents(path.join(pluginRoot, "agents"));
   writeLeadInstructions();

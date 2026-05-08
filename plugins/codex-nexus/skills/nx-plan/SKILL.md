@@ -29,7 +29,6 @@ If the user requests full delegation such as "you decide" or "whatever you think
 - NEVER execute — this skill's purpose is planning and decision alignment.
 - MUST handle one issue at a time. NEVER present multiple issues simultaneously.
 - NEVER ask groundless questions. MUST investigate code, existing knowledge, and prior decisions first.
-- **MUST gather multi-angle evidence before presenting a recommendation.** Bring in the HOW subagent matching the issue's domain, explore for code understanding, and researcher for external investigation to collect independent analysis before forming the recommendation. NEVER form a recommendation from Lead's solo reasoning.
 - MUST present a comparison table when requesting a decision. NEVER describe options in prose alone.
 - Lead is synthesizer and participant — form independent recommendations and push back when warranted, not merely relay subagent results. **But never take over final decision authority.**
 
@@ -49,6 +48,12 @@ Assess the complexity of the request and determine how deeply to pursue the plan
 - Direction-setting request → use hypothesis-based questions to understand intent.
 - Abstract request → actively interview to uncover the root goal the user hasn't yet articulated.
 
+#### HOW Subagent Selection
+
+- If the user names HOW agents explicitly, use them as-is; propose additions if gaps are visible.
+- If the user does not specify, Lead proposes agents based on the issue scope.
+- Additional HOW subagents can be spawned at any point during analysis.
+
 ### Step 2: Research
 
 Understand code, core knowledge, and prior decisions before forming the planning agenda.
@@ -56,7 +61,7 @@ Understand code, core knowledge, and prior decisions before forming the planning
 #### Existing Knowledge First
 
 - Read `.nexus/memory/` and `.nexus/context/` first.
-- Use `nx_history_search` to check for prior decisions, failures, and retrospectives on similar topics. Narrow the call with `scope` (e.g., `'decision'`, `'analysis'`, `'task.result.outcome'`) to retrieve only the relevant cell type and reduce context consumption.
+- Use `nx_history_search` to check whether prior decisions exist on similar topics.
 - If the needed information is already available, use it directly and skip or narrow subagent spawning.
 
 #### Approach Selection
@@ -78,7 +83,7 @@ Once research is complete, open the planning session with `nx_plan_start`. Any e
 Issues must be processed one at a time. For each issue:
 
 1. Lead summarizes the current state and the problem.
-2. Spawn HOW subagents per the mapping below for independent analysis.
+2. If needed, spawn HOW subagents for independent analysis.
    - If reusing context from a prior HOW session for the same role is advantageous, check resume routing information with `nx_plan_resume` first.
    - If resumable, invoke `resume_agent({ id: "<id>" }) then send_input({ target: "<id>", message: "<resume prompt>" })` with the `agent_id` returned by `nx_plan_resume`; otherwise, spawn fresh.
 3. When HOW results return, record them on the issue with `nx_plan_analysis_add(issue_id, role, agent_id=<id from spawn>, summary)`. The `agent_id` is the value `nx_plan_resume` will return on a future resume request for the same role, so always pass the agent id obtained from the spawn tool response. Do not substitute a human-readable assigned name; names are only for messaging a currently running subagent and are not a safe resume identifier for a completed session. This record feeds both future resume paths and Step 7 task decomposition.
@@ -90,30 +95,35 @@ Issues must be processed one at a time. For each issue:
    - The final output MUST end with a question the user can easily choose from. Example: "Confirm recommendation X? Or prefer one of A/B/C?"
 6. Proceed to Step 5 only after receiving the user response. If the response does not meet the approval conditions (Absolute Rule 3), ask again.
 
-#### HOW Subagent Selection
-
-For each issue, spawning the domain-matched HOW subagent for independent analysis is the default. Use any HOW the user explicitly named as-is; propose additions for uncovered axes visible in the mapping table. Additional spawns are free at any point during analysis.
+#### HOW Domain Mapping
 
 | Domain Keywords | Recommended HOW |
 |---|---|
 | UI, UX, design, interface, user experience, layout | Designer |
 | Architecture, system design, performance, structural change, API, schema | Architect |
+| Business, market, strategy, positioning, competition, revenue | Strategist |
 | Research methodology, evidence evaluation, literature, experiment design | Postdoc |
 
-When an issue crosses multiple domains, spawn multiple HOWs together. **If you skip spawning, state the reason in the analysis text** — justified-skip examples: existing memory or history already covers the decision basis / no clear domain match in the table for a procedural issue / decision is self-evident with low irreversibility.
+- If an issue matches a domain above, spawning the corresponding HOW is the default.
+- If the issue crosses multiple domains, spawn multiple HOWs together.
+- To skip spawning, state the reason explicitly in the analysis text.
 
 #### Comparison Table Format
 
-Rows are options, columns are attributes. Column vocabulary (Pros / Cons / Tradeoff / Recommend) matches the HOW agent trade-off table. For plan-time output, an extra **When** column supports the user's decision — one line on the situation each option fits.
-
 <example>
 
-| Option | Pros | Cons | Tradeoff | When | Recommend |
-|---|---|---|---|---|---|
-| A | ... | ... | ... | ... | ✓ — one-line reason |
-| B | ... | ... | ... | ... | ✗ — one-line reason |
+| Item | A: {title} | B: {title} | C: {title} |
+|---|---|---|---|
+| Pros | ... | ... | ... |
+| Cons | ... | ... | ... |
+| Trade-offs | ... | ... | ... |
+| Best for | ... | ... | ... |
 
-**Recommendation: {option name}** — add two or three sentences below the table only when the Recommend cell's one line is insufficient. Avoid duplicating cell content.
+**Recommendation: {X} ({title})**
+
+- Option A falls short because {reason}
+- Option B falls short because {reason}
+- Option X overcomes {limitations} and delivers {core benefit}
 
 </example>
 
@@ -156,7 +166,7 @@ Fill in the following fields for each task:
 - `deps` — execution-order dependencies
 - `owner` — assigned according to the criteria below
 
-For issues where HOW subagents participated, reference the analysis recorded in Step 4, or re-spawn the same HOW to receive domain-appropriate decomposition together with cross-issue consistency and missing-coverage checks.
+For issues where HOW subagents participated, reference the analysis recorded in Step 4, or re-spawn the same HOW to request domain-appropriate decomposition.
 
 #### Owner Assignment Criteria
 

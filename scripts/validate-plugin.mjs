@@ -34,15 +34,32 @@ function assert(condition, message) {
   }
 }
 
+function packageFilesIncludePath(packageFiles, filePath) {
+  const normalizedPath = path.relative(repoRoot, filePath).split(path.sep).join("/");
+
+  return packageFiles.some((entry) => {
+    const normalizedEntry = entry.replace(/\/+$/, "");
+    return normalizedPath === normalizedEntry || normalizedPath.startsWith(`${normalizedEntry}/`);
+  });
+}
+
 const pkg = readJson(packageJsonPath);
 const manifest = readJson(manifestPath);
 const mcp = readJson(mcpPath);
-const hooks = readJson(hooksPath);
+const manifestHooksPath = path.resolve(pluginRoot, manifest.hooks ?? "");
 
 assert(pkg.version === manifest.version, "package.json and plugin.json versions must match.");
 assert(manifest.name === "codex-nexus", "plugin.json name must be codex-nexus.");
 assert(manifest.skills === "./skills/", "plugin.json skills path must be ./skills/.");
 assert(manifest.mcpServers === "./.mcp.json", "plugin.json mcpServers path must be ./.mcp.json.");
+assert(manifest.hooks === "./hooks.json", "plugin.json hooks path must be ./hooks.json.");
+assert(
+  manifestHooksPath === hooksPath,
+  "plugin.json hooks path must resolve to plugins/codex-nexus/hooks.json."
+);
+assert(existsSync(manifestHooksPath), "Plugin hooks file referenced by plugin.json must exist.");
+
+const hooks = readJson(manifestHooksPath);
 
 assert(mcp.mcpServers?.nx, ".mcp.json must register the nx MCP server.");
 assert(mcp.mcpServers.nx.command === "npx", "nx MCP server must use npx.");
@@ -87,6 +104,7 @@ assert(pkg.bin?.["codex-nexus-hook"] === "./scripts/codex-nexus-hook.mjs", "pack
 assert(pkg.bin?.["codex-nexus"] === "./scripts/codex-nexus.mjs", "package bin must expose codex-nexus.");
 assert(Array.isArray(pkg.files), "package.json files must be an array.");
 assert(pkg.files.includes("plugins"), "package.json files must include the publishable plugins directory.");
+assert(packageFilesIncludePath(pkg.files, manifestHooksPath), "package.json files must include plugins/codex-nexus/hooks.json.");
 assert(!pkg.files.includes(".codex"), "package.json files must not include local .codex install artifacts.");
 assert(!pkg.files.includes(".agents"), "package.json files must not include local .agents install artifacts.");
 
