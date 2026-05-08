@@ -1033,6 +1033,216 @@
           "created_at": "2026-04-26T05:27:01.981Z"
         }
       ]
+    },
+    {
+      "schema_version": "1.0",
+      "completed_at": "2026-05-08T05:24:06.383Z",
+      "branch": "chore/nexus-core-0.21.0",
+      "plan": {
+        "id": 11,
+        "topic": "Adopt @moreih29/nexus-core 0.21.0 in codex-nexus",
+        "issues": [
+          {
+            "id": 1,
+            "title": "Decide release/versioning and upstream alignment strategy for adopting nexus-core 0.21.0",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "explorer",
+                "summary": "Explorer verified through local grep plus temporary @moreih29/nexus-core@0.21.0 nexus-sync that upstream now generates 8 subagents plus lead and 3 skills, with no strategist.toml. Impacted files include package.json/bun.lock/.mcp.json, generated plugin agents/skills/lead instructions, scripts/sync-from-nexus-core.mjs, scripts/codex-nexus.mjs, validation/tests, README/README.en/CHANGELOG. Failure modes if not aligned include stale docs/help, missing strategist agent at runtime, stale planning instructions trying to spawn Strategist, and weak validation because optional filtered lists can pass despite stale target references.",
+                "recorded_at": "2026-05-08T04:57:27.373Z",
+                "agent_id": "019e05ec-84f8-73d2-aa4c-ecc09ab2577e"
+              },
+              {
+                "role": "architect",
+                "summary": "Architect recommended treating 0.21.0 as an intentional subagent-set change and releasing codex-nexus@0.4.0. Rationale: removal of strategist.toml changes observable installed artifacts and CLI model-target behavior, so a pre-1.0 minor bump communicates compatibility impact better than a patch. Architect also recommended preserving only downstream compatibility fixes with concrete rationale: default model stripping and runtime MCP launcher rewrite.",
+                "recorded_at": "2026-05-08T04:57:33.208Z",
+                "agent_id": "019e05ec-85e1-7062-836a-d2503ba7fe4d"
+              }
+            ],
+            "decision": "Selected: adopt @moreih29/nexus-core 0.21.0 as an upstream-alignment release and ship codex-nexus as 0.4.0. The implementation should bump package.json and bun.lock, update plugin/runtime pins such as plugins/codex-nexus/.mcp.json and hook self-pins, run bun run sync:core, and accept the generated removal of plugins/codex-nexus/agents/strategist.toml plus regenerated Lead/agent/skill text. Keep only the downstream post-processing that has an existing compatibility purpose: stripping generated top-level model defaults so agents inherit scoped Codex defaults, and rewriting installed runtime agent MCP launchers to resolved runtime/server paths.\n\nRationale: local verification and explorer analysis show that nexus-core 0.21.0 no longer generates Strategist and updates planning/runner contracts around an 8-subagent model. Architect analysis judges this user-visible because installed artifacts and model-target behavior change. A 0.4.0 pre-1.0 minor release communicates that compatibility break better than a patch while still fitting the package's existing 0.x cadence.\n\nRejected alternatives: (1) releasing as 0.3.18 was rejected because it understates the removal of a published subagent/model target; (2) staying on nexus-core 0.20.1 was rejected because the wrapper's purpose is to track current upstream-generated contracts unless a concrete incompatibility blocks adoption; (3) manually retaining generated Strategist files or editing generated text by hand was rejected because it would create downstream divergence from nexus-core 0.21.0 without a proven runtime requirement.\n\nAssumption: upstream intent is inferred from the published 0.21.0 package contents and generated output, not from a separate release-note statement."
+          },
+          {
+            "id": 2,
+            "title": "Decide downstream handling for removed strategist model target and stale persisted overrides",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "explorer",
+                "summary": "Explorer identified scripts/codex-nexus.mjs as the highest-risk downstream runtime file: MODEL_AGENT_TARGETS still includes strategist, GENERATED_AGENT_TARGETS derives from it, help advertises strategist, and persisted model override reapplication can still target a missing strategist.toml after install. Failure modes include direct models --targets strategist failing with a misleading 'run install first' style missing-file error, --targets all expanding to a missing target, and stale persisted strategist overrides causing reinstall failure after managed surfaces have been written.",
+                "recorded_at": "2026-05-08T04:57:46.946Z",
+                "agent_id": "019e05ec-84f8-73d2-aa4c-ecc09ab2577e"
+              },
+              {
+                "role": "architect",
+                "summary": "Architect recommended removing Strategist everywhere instead of keeping a stub or alias. Narrow compatibility should be limited to current-target semantics: --targets all expands only to supported current targets, stale persisted model-overrides.json entries for strategist should be ignored or cleaned without failing install, and direct --targets strategist should fail clearly as removed/unknown. A stub would preserve stale 0.20.x semantics inside a 0.21.0 generated system and violate upstream alignment.",
+                "recorded_at": "2026-05-08T04:57:52.053Z",
+                "agent_id": "019e05ec-85e1-7062-836a-d2503ba7fe4d"
+              }
+            ],
+            "decision": "Selected: remove Strategist from the supported downstream runtime surface, while adding narrow migration tolerance for stale persisted model overrides. Concretely, remove strategist from MODEL_AGENT_TARGETS / GENERATED_AGENT_TARGETS and help output, make --targets all expand only to current supported targets, and make direct user input such as --targets strategist fail before writes with a clear removed/unknown-target message. During install or persisted override reapplication, stale strategist entries from older .codex/.codex-nexus/model-overrides.json should be ignored or cleaned so reinstall does not fail just because a target removed by upstream no longer has an agent TOML.\n\nRationale: upstream 0.21.0 no longer provides strategist.toml, so keeping it as a normal target is false advertising and causes runtime missing-file failures. However, persisted overrides are managed state from older codex-nexus versions; failing an install because of old managed state is a poor migration experience and can leave partially written surfaces. The right compatibility boundary is therefore strict for new user input, tolerant for old managed state.\n\nRejected alternatives: (1) keeping a strategist agent stub was rejected because it creates stale downstream-generated semantics and would not be supported by the 0.21.0 Lead/plan skill contracts; (2) aliasing strategist to another HOW role was rejected because there is no verified semantic replacement and it would hide an upstream removal; (3) letting direct strategist target fail only later as 'agent config not found' was rejected because the CLI can validate targets earlier and should give an intentional compatibility message; (4) failing reinstall on stale persisted strategist override was rejected because old managed config should not block adopting the new upstream agent set.\n\nAssumption: no user-facing replacement role for Strategist is available in 0.21.0; business/strategy questions should route through the remaining Lead/HOW process rather than a hidden alias."
+          },
+          {
+            "id": 3,
+            "title": "Decide verification, documentation, and release-readiness scope for the 0.21.0 adoption",
+            "status": "decided",
+            "analysis": [
+              {
+                "role": "explorer",
+                "summary": "Explorer found validation/tests/docs that need hardening: scripts/validate-plugin.mjs, test/plugin-layout.test.js, and test/installer.test.js hardcode agent lists with strategist but often filter missing files, so the suite can pass while stale target references remain. test/model-selection.test.js should add strategist negative coverage and --targets all/current-target coverage. README.md and README.en.md advertise strategist as a model target. CHANGELOG should record the compatibility impact. Final verification should include sync, validate, bun test, help, install/doctor smoke, and grep that strategist remains only in historical/changelog migration notes if intentionally retained.",
+                "recorded_at": "2026-05-08T04:58:08.571Z",
+                "agent_id": "019e05ec-84f8-73d2-aa4c-ecc09ab2577e"
+              },
+              {
+                "role": "architect",
+                "summary": "Architect prioritized verification around hardcoded role drift, model override migration, generated-vs-local divergence, and user-visible breakage. Recommended commands: bun run sync:core, bun run validate, bun test, node scripts/codex-nexus.mjs --help, install/doctor smoke for project and user scopes, grep for strategist, confirm .mcp.json pins 0.21.0, and confirm installed runtime agents still have resolved MCP launchers and no default model.",
+                "recorded_at": "2026-05-08T04:58:13.376Z",
+                "agent_id": "019e05ec-85e1-7062-836a-d2503ba7fe4d"
+              }
+            ],
+            "decision": "Selected: verification and documentation must explicitly encode the new 8-subagent contract and the Strategist migration behavior, not merely rely on broad tests that filter missing files. Update validation and tests so the expected generated/runtime agent set excludes strategist; add model-selection regression coverage for --targets all succeeding against the current target set, direct --targets strategist failing clearly without writes, and stale persisted strategist overrides not breaking reinstall. Update README.md, README.en.md, and CHANGELOG.md to remove Strategist from current target lists and record the compatibility impact. Final release-readiness verification should run the existing release checklist plus targeted migration checks: bun install, bun run sync:core, bun run validate, bun test, node scripts/codex-nexus.mjs --help, node scripts/codex-nexus.mjs doctor --scope project, npm pack --dry-run, temp install/doctor smoke for project and user scopes where practical, and grep for strategist so only historical changelog/migration mentions remain.\n\nRationale: explorer analysis shows existing filtered agent-list tests can pass despite stale references. Because this change removes a published target, tests/docs must verify both absence from the current surface and graceful migration from old managed state. The release checklist in .nexus/context/releasing.md already provides the baseline packaging/install verification; this release adds targeted coverage for the newly identified migration risk.\n\nRejected alternatives: (1) relying only on bun test after naive sync was rejected because the simulation showed tests can pass while --targets all still fails; (2) documenting only the dependency bump was rejected because users relying on Strategist need an explicit compatibility note; (3) treating grep results under generated local .codex/.agents artifacts as source failures was rejected because those are ignored local install artifacts, but package-source strategist references must be removed except intentional historical/migration notes.\n\nAssumption: final npm publication/tag push is out of scope for this planning turn unless the user later asks for release execution; this plan prepares the repo for release readiness."
+          }
+        ],
+        "research_summary": "Existing knowledge checked: .nexus/context/releasing.md requires package/plugin/hook version alignment, sync:core, validate, tests, help, doctor, npm pack dry-run, and temp install smoke; .nexus/memory/pattern-upstream-vs-downstream-triage.md says generated upstream behavior belongs to nexus-core while wrapper installer/CLI/docs behavior is local. nx_history_search for \"nexus-core 0.21 strategist\" returned no prior cycles. Current repo state verified: main is clean at codex-nexus 0.3.17 and pins @moreih29/nexus-core 0.20.1; npm registry latest @moreih29/nexus-core is 0.21.0 published 2026-05-08, while codex-nexus latest is 0.3.17. Lead ran a temporary 0.20.1→0.21.0 package/generated-output comparison: 0.21.0 removes the strategist agent, changes Lead to 8 subagents, updates agent bodies and nx-plan/nx-auto-plan/nx-run skills, and leaves nexus-mcp/server packaging present. Lead also ran a naive sync simulation in a temporary clone: validate/tests can pass after bumping .mcp.json, but direct runtime behavior still fails because scripts/codex-nexus.mjs keeps strategist in MODEL_AGENT_TARGETS; specifically models --targets strategist and models --targets all after install fail because .codex/agents/strategist.toml no longer exists. Local grep found strategist references in scripts/sync-from-nexus-core.mjs, scripts/validate-plugin.mjs, scripts/codex-nexus.mjs help/model target list, test/plugin-layout.test.js, test/installer.test.js, README.md, README.en.md, and generated current plugin assets. Explorer analysis (agent 019e05ec-84f8-73d2-aa4c-ecc09ab2577e) independently verified impacted files and failure modes: stale docs/help, persisted strategist model override reinstall failure risk, stale planning instructions selecting missing Strategist, weak validator/tests due filtered optional lists. Architect analysis (agent 019e05ec-85e1-7062-836a-d2503ba7fe4d) recommended codex-nexus 0.4.0, full strategist removal with narrow compatibility for stale persisted overrides, direct strategist target clear failure, no stub/alias, and verification focused on sync/validate/tests/help/install-doctor smoke plus grep for remaining package-source strategist references.",
+        "created_at": "2026-05-08T04:57:01.651Z"
+      },
+      "tasks": [
+        {
+          "id": 1,
+          "title": "Create the 0.21.0 adoption work branch",
+          "status": "completed",
+          "context": "Current repo is clean on main at codex-nexus 0.3.17 / @moreih29/nexus-core 0.20.1. Project rule prohibits working directly on main/master. This task must be first before any file edits.",
+          "acceptance": "A non-main branch such as chore/nexus-core-0.21.0 is checked out; git status is clean except expected local ignored artifacts; no source edits have been made on main.",
+          "approach": "Run git status, then create/switch to chore/nexus-core-0.21.0 before implementation tasks proceed.",
+          "risk": "Skipping this task would violate the repository workflow and mix release work directly into main.",
+          "plan_issue": 1,
+          "owner": {
+            "role": "lead",
+            "resume_tier": "ephemeral"
+          },
+          "created_at": "2026-05-08T04:58:41.052Z"
+        },
+        {
+          "id": 2,
+          "title": "Bump nexus-core to 0.21.0 and resync generated Codex assets",
+          "status": "completed",
+          "context": "Adopt upstream @moreih29/nexus-core 0.21.0 and codex-nexus 0.4.0. Upstream generated output removes plugins/codex-nexus/agents/strategist.toml and regenerates Lead/agent/skill bodies around an 8-subagent contract. Target files include package.json, bun.lock, plugins/codex-nexus/.mcp.json, plugins/codex-nexus/.codex-plugin/plugin.json, plugins/codex-nexus/hooks.json, plugins/codex-nexus/agents/*, plugins/codex-nexus/skills/*, plugins/codex-nexus/lead.instructions.md, and scripts/sync-from-nexus-core.mjs.",
+          "acceptance": "package.json version is 0.4.0 and pins @moreih29/nexus-core 0.21.0; bun.lock is consistent; plugin.json and hook self-pins are 0.4.0; .mcp.json pins @moreih29/nexus-core@0.21.0; bun run sync:core succeeds; generated plugin assets no longer include strategist.toml; downstream sync post-processing still strips top-level model fields and preserves required publishable MCP launcher metadata for remaining agents.",
+          "approach": "After task 1, update versions/pins, run bun install, run bun run sync:core, accept generated deletion/update output, and update sync-from-nexus-core.mjs managed agent list to match the 8 generated subagents.",
+          "risk": "Generated upstream text changed substantially, so accidental manual edits or stale hardcoded role lists can leave source/generated surfaces inconsistent.",
+          "plan_issue": 1,
+          "deps": [
+            1
+          ],
+          "owner": {
+            "role": "engineer",
+            "resume_tier": "bounded",
+            "agent_id": "019e05f7-8b57-75a0-8a7c-2be1bb92f627"
+          },
+          "created_at": "2026-05-08T04:58:50.683Z"
+        },
+        {
+          "id": 3,
+          "title": "Remove Strategist from model target runtime and migrate stale overrides",
+          "status": "completed",
+          "context": "nexus-core 0.21.0 no longer installs a strategist agent, but scripts/codex-nexus.mjs currently includes strategist in MODEL_AGENT_TARGETS/help and all-target expansion. A stale .codex/.codex-nexus/model-overrides.json from 0.3.x may also contain strategist and must not break reinstall.",
+          "acceptance": "scripts/codex-nexus.mjs no longer advertises or expands strategist as a supported current model target; --targets all applies only to default plus the remaining current subagents; direct --targets strategist fails before writes with a clear removed/unknown-target message; stale persisted strategist model overrides are ignored or cleaned during install/reapply so reinstall succeeds; current targets still support explicit model override and inherit behavior; lead remains excluded from configurable subagent targets.",
+          "approach": "Update MODEL_AGENT_TARGETS/GENERATED_AGENT_TARGETS and help text. Add/adjust target validation for removed targets. In persisted override reapply logic, skip unknown agent targets that no longer have runtime agent TOMLs while preserving strict validation for direct user input.",
+          "risk": "Overly broad skipping could hide real config corruption for current targets; migration tolerance should apply only to unknown/stale persisted targets, not to direct CLI input or missing files for supported current targets.",
+          "plan_issue": 2,
+          "deps": [
+            2
+          ],
+          "owner": {
+            "role": "engineer",
+            "resume_tier": "bounded",
+            "agent_id": "019e05fa-7f39-7401-a3f1-f13fafc10408"
+          },
+          "created_at": "2026-05-08T04:58:58.274Z"
+        },
+        {
+          "id": 4,
+          "title": "Harden tests and validation for 8-agent contract and Strategist migration",
+          "status": "completed",
+          "context": "Existing validation/tests include strategist in hardcoded lists but often filter missing files, so a naive 0.21 sync can pass while stale runtime target behavior remains broken. Target files include scripts/validate-plugin.mjs, test/plugin-layout.test.js, test/installer.test.js, and test/model-selection.test.js.",
+          "acceptance": "Validation asserts the current generated subagent set excludes strategist and includes exactly the expected 8 non-lead agents plus lead where appropriate; tests cover --targets all after install using the current target set; tests cover direct --targets strategist failing clearly without writes; tests cover stale persisted strategist override not breaking reinstall; existing model override/inherit, installer, plugin layout, and publishable source expectations still pass.",
+          "approach": "Update verification agent lists from optional filtered strategist-inclusive lists to exact current-contract lists where suitable. Add targeted regression tests around all-target expansion, removed-target validation, and stale persisted override migration. Keep tests in temp homes/repos only and avoid mutating repo-root install artifacts.",
+          "risk": "Tests can become too coupled to generated text if they snapshot bodies; verify structural contracts and target behavior rather than large generated instruction content.",
+          "plan_issue": 3,
+          "deps": [
+            2,
+            3
+          ],
+          "owner": {
+            "role": "tester",
+            "resume_tier": "bounded",
+            "agent_id": "019e05fe-5e8f-7b61-80eb-4dda7ef1ec35"
+          },
+          "created_at": "2026-05-08T04:59:05.989Z"
+        },
+        {
+          "id": 5,
+          "title": "Update docs and changelog for 0.4.0 / Strategist removal",
+          "status": "completed",
+          "context": "README.md and README.en.md currently advertise strategist as a valid codex-nexus models target. CHANGELOG.md needs a 0.4.0 entry documenting nexus-core 0.21.0 adoption and the compatibility impact of removing Strategist. Documentation must align with generated 8-subagent contracts and runtime CLI behavior.",
+          "acceptance": "README.md and README.en.md remove strategist from current model target lists and describe only current supported targets; CHANGELOG.md has a 0.4.0 entry dated for the release with nexus-core 0.21.0 sync, generated agent/skill refresh, Strategist removal, and stale override migration behavior; docs do not imply lead is configurable; wording is consistent between Korean and English docs.",
+          "approach": "Edit the model-selection sections in both READMEs and add a concise changelog release section. Keep historical changelog entries intact. State the compatibility impact directly without inventing an upstream replacement role.",
+          "risk": "If docs understate the removal, users relying on strategist will see confusing runtime errors; if they overstate migration, they may expect automatic semantic replacement that does not exist.",
+          "plan_issue": 3,
+          "deps": [
+            2,
+            3
+          ],
+          "owner": {
+            "role": "writer",
+            "resume_tier": "ephemeral",
+            "agent_id": "019e05fe-5edd-78b2-ac90-c475660e2e09"
+          },
+          "created_at": "2026-05-08T04:59:13.832Z"
+        },
+        {
+          "id": 6,
+          "title": "Review 0.4.0 documentation and migration wording",
+          "status": "completed",
+          "context": "Docs/changelog will explain the 0.4.0 / nexus-core 0.21.0 adoption and Strategist removal. Reviewer should verify the wording against implemented CLI/runtime behavior and the generated 8-subagent contract.",
+          "acceptance": "README.md, README.en.md, and CHANGELOG.md are internally consistent; current target lists exclude strategist and lead remains non-configurable; changelog accurately states the compatibility impact and stale override behavior; no docs claim a Strategist replacement or stub exists; Korean/English descriptions match in meaning.",
+          "approach": "Read the updated docs as a black-box user-facing artifact, cross-check against scripts/codex-nexus.mjs target behavior and package/generated asset state, and apply minimal wording fixes or report required revisions.",
+          "risk": "Reviewer may overfit to old historical changelog mentions; historical references may remain, but current instructions and new release notes must be clear.",
+          "plan_issue": 3,
+          "deps": [
+            5
+          ],
+          "owner": {
+            "role": "reviewer",
+            "resume_tier": "ephemeral",
+            "agent_id": "019e0601-3626-79b2-813d-3efcd7753b28"
+          },
+          "created_at": "2026-05-08T04:59:20.634Z"
+        },
+        {
+          "id": 7,
+          "title": "Run release-readiness verification for 0.4.0",
+          "status": "completed",
+          "context": "After implementation, tests, validation hardening, and docs review, run the release checklist plus targeted migration checks. .nexus/context/releasing.md warns to use temp package roots/repos for install smoke and not to use the repo root as CODEX_NEXUS_TEST_PACKAGE_ROOT for project-scope smoke.",
+          "acceptance": "bun install, bun run sync:core, bun run validate, bun test, node scripts/codex-nexus.mjs --help, node scripts/codex-nexus.mjs doctor --scope project, and npm pack --dry-run pass; targeted checks confirm --targets all succeeds on current targets, direct --targets strategist fails clearly, and stale strategist persisted override does not break reinstall; package-source grep shows strategist only in intentional historical/changelog/migration contexts; npm pack contents include required plugin/installer assets and exclude deleted strategist.toml; git status/diff are reviewed and ready for release PR/tag work.",
+          "approach": "Run the automated checklist and targeted model-selection/install smoke in temp directories. Record exact commands and outcomes. If doctor/project smoke mutates local ignored artifacts, restore or note them per releasing.md guidance before final status.",
+          "risk": "Project-scope smoke can pollute local .codex/.agents artifacts or use the wrong package root; keep smoke tests isolated and verify the package root/runtime paths point at the intended 0.4.0 build.",
+          "plan_issue": 3,
+          "deps": [
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "owner": {
+            "role": "tester",
+            "resume_tier": "bounded",
+            "agent_id": "019e0604-d796-7d03-a968-c5228344c0d1"
+          },
+          "created_at": "2026-05-08T04:59:28.970Z"
+        }
+      ]
     }
   ]
 }

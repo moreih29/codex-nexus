@@ -1,10 +1,21 @@
 import { expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import TOML from "@iarna/toml";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
 const pluginRoot = path.join(repoRoot, "plugins", "codex-nexus");
+const expectedSubagentFiles = [
+  "architect.toml",
+  "designer.toml",
+  "postdoc.toml",
+  "engineer.toml",
+  "researcher.toml",
+  "writer.toml",
+  "reviewer.toml",
+  "tester.toml"
+];
+const expectedAgentFiles = ["lead.toml", ...expectedSubagentFiles].sort();
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
@@ -43,14 +54,14 @@ test("generated nexus-core artifacts are present", () => {
   expect(existsSync(path.join(pluginRoot, "skills", "nx-plan", "SKILL.md"))).toBe(true);
   expect(existsSync(path.join(pluginRoot, "skills", "nx-run", "SKILL.md"))).toBe(true);
   expect(existsSync(path.join(pluginRoot, "agents", "lead.toml"))).toBe(true);
+  expect(readdirSync(path.join(pluginRoot, "agents")).filter((entry) => entry.endsWith(".toml")).sort()).toEqual(expectedAgentFiles);
+  expect(existsSync(path.join(pluginRoot, "agents", "strategist.toml"))).toBe(false);
   expect(TOML.parse(readFileSync(path.join(pluginRoot, "agents", "lead.toml"), "utf8")).model).toBeUndefined();
 });
 
 test("generated subagent nx MCP config stays aligned with upstream launcher metadata", () => {
-  const agentFiles = ["architect.toml", "designer.toml", "engineer.toml", "postdoc.toml", "researcher.toml", "reviewer.toml", "strategist.toml", "tester.toml", "writer.toml"]
-    .filter((entry) => existsSync(path.join(pluginRoot, "agents", entry)));
+  const agentFiles = expectedSubagentFiles;
 
-  expect(agentFiles.length).toBeGreaterThan(0);
   for (const agentFile of agentFiles) {
     const parsed = TOML.parse(readFileSync(path.join(pluginRoot, "agents", agentFile), "utf8"));
     const nx = parsed?.mcp_servers?.nx ?? {};

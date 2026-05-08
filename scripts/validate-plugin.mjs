@@ -12,6 +12,17 @@ const cliPath = path.join(repoRoot, "scripts", "codex-nexus.mjs");
 const pluginLeadInstructionsPath = path.join(pluginRoot, "lead.instructions.md");
 const skillsPath = path.join(pluginRoot, "skills");
 const agentsPath = path.join(pluginRoot, "agents");
+const expectedSubagentFiles = [
+  "architect.toml",
+  "designer.toml",
+  "postdoc.toml",
+  "engineer.toml",
+  "researcher.toml",
+  "writer.toml",
+  "reviewer.toml",
+  "tester.toml"
+];
+const expectedAgentFiles = ["lead.toml", ...expectedSubagentFiles].sort();
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
@@ -92,8 +103,15 @@ assert(
   !Object.prototype.hasOwnProperty.call(TOML.parse(readFileSync(path.join(agentsPath, "lead.toml"), "utf8")), "model"),
   "Lead agent must inherit the top-level Codex model by default."
 );
-assert(readdirSync(agentsPath).length >= 3, "Expected multiple generated agents in plugins/codex-nexus/agents.");
-for (const agentFile of ["architect.toml", "designer.toml", "engineer.toml", "postdoc.toml", "researcher.toml", "reviewer.toml", "strategist.toml", "tester.toml", "writer.toml"].filter((entry) => existsSync(path.join(agentsPath, entry)))) {
+const generatedAgentFiles = readdirSync(agentsPath)
+  .filter((entry) => entry.endsWith(".toml"))
+  .sort();
+assert(
+  JSON.stringify(generatedAgentFiles) === JSON.stringify(expectedAgentFiles),
+  `Generated agent TOMLs must be exactly ${expectedAgentFiles.join(", ")}. Found: ${generatedAgentFiles.join(", ") || "(none)"}.`
+);
+assert(!generatedAgentFiles.includes("strategist.toml"), "Generated agent TOMLs must not include removed strategist.toml.");
+for (const agentFile of expectedSubagentFiles) {
   const parsed = TOML.parse(readFileSync(path.join(agentsPath, agentFile), "utf8"));
   const nxConfig = parsed?.mcp_servers?.nx ?? {};
   assert(!Object.prototype.hasOwnProperty.call(parsed, "model"), `Agent ${agentFile} must inherit the top-level Codex model by default.`);

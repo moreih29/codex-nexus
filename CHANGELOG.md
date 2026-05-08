@@ -6,6 +6,22 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-08
+
+### Changed
+
+- `@moreih29/nexus-core`를 `0.21.0`으로 올리고 generated Lead / agent / skill 자산을 최신 upstream 계약에 맞게 다시 동기화했다
+- plugin manifest, MCP pin, hook self-pin 등 배포 메타데이터를 `codex-nexus 0.4.0` / `nexus-core 0.21.0` 기준으로 갱신했다
+
+### Removed
+
+- upstream `nexus-core 0.21.0`에서 Strategist가 제거됨에 따라 generated agent set과 `codex-nexus models` target set에서 `strategist`를 제거했다. `--targets all`은 이제 `default`와 현재 지원되는 non-lead 하위 에이전트만 대상으로 한다
+- `strategist`는 대체 역할, stub, alias 없이 제거되며, direct `--targets strategist` 입력은 쓰기 전에 명확한 removed/unsupported target 오류로 실패한다
+
+### Fixed
+
+- 예전 설치에서 persisted `.codex/.codex-nexus/model-overrides.json`에 남아 있던 stale `strategist` override는 install/reapply 중 건너뛰어 재설치를 막지 않도록 했다. override 파일을 다시 쓸 때는 현재 지원되는 target만 보존된다. 새 direct 입력에 대한 target 검증은 계속 엄격하게 유지된다
+
 ## [0.3.17] - 2026-04-30
 
 ### Changed
