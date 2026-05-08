@@ -73,7 +73,8 @@ npx -y codex-nexus models --scope project --targets engineer,tester --model inhe
 - In non-interactive direct mode, pass `--targets` and `--model` together.
 - The model choices include `inherit`. In direct mode, use `--model inherit`.
 - `--agents` is supported as an alias for `--targets`.
-- Valid targets are `default`, `architect`, `designer`, `postdoc`, `strategist`, `engineer`, `researcher`, `writer`, `reviewer`, `tester`, and `all`.
+- Current supported targets are `default`, `architect`, `designer`, `postdoc`, `engineer`, `researcher`, `writer`, `reviewer`, `tester`, and `all`.
+- `all` includes `default` and only the currently supported non-lead subagents.
 - `default` writes the top-level `model` in the scoped `.codex/config.toml`.
 - Subagent targets write the top-level `model` in the scoped `.codex/agents/<agent>.toml`.
 - Choosing `inherit` removes the target TOML's top-level `model` field. Subagents then inherit the top-level model from the scoped `.codex/config.toml`.
@@ -82,7 +83,7 @@ npx -y codex-nexus models --scope project --targets engineer,tester --model inhe
 Freshly installed subagent TOMLs do not include a `model` field.
 Unless an explicit override is configured, subagents inherit the top-level model from the scoped `.codex/config.toml`.
 
-Selections are also stored in the scoped `.codex/.codex-nexus/model-overrides.json`, so non-lead agent model overrides are reapplied after future `codex-nexus install` runs.
+Selections are also stored in the scoped `.codex/.codex-nexus/model-overrides.json`, so currently supported target model overrides are reapplied after future `codex-nexus install` runs.
 
 ## Installation scopes
 

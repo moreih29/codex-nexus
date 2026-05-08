@@ -48,7 +48,6 @@ const MODEL_AGENT_TARGETS = [
   "architect",
   "designer",
   "postdoc",
-  "strategist",
   "engineer",
   "researcher",
   "writer",
@@ -57,6 +56,7 @@ const MODEL_AGENT_TARGETS = [
 ];
 const MODEL_TARGET_ALL = "all";
 const MODEL_TARGETS = [MODEL_TARGET_DEFAULT, ...MODEL_AGENT_TARGETS];
+const REMOVED_MODEL_TARGETS = new Set(["strategist"]);
 const GENERATED_AGENT_TARGETS = ["lead", ...MODEL_AGENT_TARGETS];
 const MODEL_INHERIT = "inherit";
 
@@ -1334,6 +1334,9 @@ function validateModelTarget(target) {
   if (target === "lead") {
     throw new Error("The lead agent cannot be configured by codex-nexus models.");
   }
+  if (REMOVED_MODEL_TARGETS.has(target)) {
+    throw new Error(`Model target "${target}" has been removed and is no longer supported. Expected one of: ${MODEL_TARGETS.join(", ")}.`);
+  }
   if (!MODEL_TARGETS.includes(target)) {
     throw new Error(`Unknown model target "${target}". Expected one of: ${MODEL_TARGETS.join(", ")}.`);
   }
@@ -2209,7 +2212,7 @@ Usage:
   codex-nexus --version
 
 Model targets:
-  default, architect, designer, postdoc, strategist, engineer, researcher, writer, reviewer, tester
+  default, architect, designer, postdoc, engineer, researcher, writer, reviewer, tester
   all
 
 Model values:

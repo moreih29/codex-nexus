@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
@@ -15,6 +15,17 @@ import {
 const packageRoot = path.resolve(path.join(import.meta.dir, ".."));
 const cliPath = path.join(packageRoot, "scripts", "codex-nexus.mjs");
 const pkg = JSON.parse(readFileSync(path.join(packageRoot, "package.json"), "utf8"));
+const expectedSubagentFiles = [
+  "architect.toml",
+  "designer.toml",
+  "postdoc.toml",
+  "engineer.toml",
+  "researcher.toml",
+  "writer.toml",
+  "reviewer.toml",
+  "tester.toml"
+];
+const expectedAgentFiles = ["lead.toml", ...expectedSubagentFiles].sort();
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
@@ -30,9 +41,14 @@ function writeToml(filePath, value) {
   writeFileSync(filePath, TOML.stringify(value), "utf8");
 }
 
+function readAgentTomlFiles(agentDir) {
+  return readdirSync(agentDir)
+    .filter((entry) => entry.endsWith(".toml"))
+    .sort();
+}
+
 function readAgentNxConfigs(agentDir) {
-  return ["architect.toml", "designer.toml", "engineer.toml", "postdoc.toml", "researcher.toml", "reviewer.toml", "strategist.toml", "tester.toml", "writer.toml"]
-    .filter((entry) => existsSync(path.join(agentDir, entry)))
+  return expectedSubagentFiles
     .map((entry) => {
       const parsed = TOML.parse(readFileSync(path.join(agentDir, entry), "utf8"));
       return {
@@ -90,8 +106,10 @@ test("project install wires plugin, config, hooks, agents, and skills", async ()
     expect(hooksContent).toContain("mcp__");
     expect(readFileSync(path.join(repoRoot, ".gitignore"), "utf8")).toContain(".codex/");
     expect(readFileSync(path.join(repoRoot, ".gitignore"), "utf8")).toContain(".agents/");
+    expect(readAgentTomlFiles(path.join(repoRoot, ".codex", "agents"))).toEqual(expectedAgentFiles);
+    expect(readAgentTomlFiles(path.join(repoRoot, "plugins", "codex-nexus", "agents"))).toEqual(expectedAgentFiles);
     const installedAgentNxConfigs = readAgentNxConfigs(path.join(repoRoot, ".codex", "agents"));
-    expect(installedAgentNxConfigs.length).toBeGreaterThan(0);
+    expect(installedAgentNxConfigs).toHaveLength(expectedSubagentFiles.length);
     for (const agent of installedAgentNxConfigs) {
       expect(agent.model).toBeUndefined();
       expect(agent.nx.command).toBe(result.runtimeCommand);
@@ -99,7 +117,7 @@ test("project install wires plugin, config, hooks, agents, and skills", async ()
       expect(Array.isArray(agent.nx.disabled_tools)).toBe(true);
     }
     const installedPluginAgentNxConfigs = readAgentNxConfigs(path.join(repoRoot, "plugins", "codex-nexus", "agents"));
-    expect(installedPluginAgentNxConfigs.length).toBeGreaterThan(0);
+    expect(installedPluginAgentNxConfigs).toHaveLength(expectedSubagentFiles.length);
     for (const agent of installedPluginAgentNxConfigs) {
       expect(agent.model).toBeUndefined();
       expect(agent.nx.command).toBe("nexus-mcp");
@@ -129,8 +147,10 @@ test("user install targets home-scoped marketplace and codex directories", async
     expect(existsSync(path.join(homeDir, ".agents", "skills", "nx-run", "SKILL.md"))).toBe(true);
     expect(readFileSync(path.join(homeDir, ".codex", "config.toml"), "utf8")).not.toContain('command = "npx"');
     expect(readFileSync(path.join(homeDir, ".codex", "config.toml"), "utf8")).toContain("dist/mcp/server.js");
+    expect(readAgentTomlFiles(path.join(homeDir, ".codex", "agents"))).toEqual(expectedAgentFiles);
+    expect(readAgentTomlFiles(path.join(homeDir, ".codex", "plugins", "codex-nexus", "agents"))).toEqual(expectedAgentFiles);
     const installedAgentNxConfigs = readAgentNxConfigs(path.join(homeDir, ".codex", "agents"));
-    expect(installedAgentNxConfigs.length).toBeGreaterThan(0);
+    expect(installedAgentNxConfigs).toHaveLength(expectedSubagentFiles.length);
     for (const agent of installedAgentNxConfigs) {
       expect(agent.model).toBeUndefined();
       expect(agent.nx.command).toBe(result.runtimeCommand);
@@ -138,7 +158,7 @@ test("user install targets home-scoped marketplace and codex directories", async
       expect(Array.isArray(agent.nx.disabled_tools)).toBe(true);
     }
     const installedPluginAgentNxConfigs = readAgentNxConfigs(path.join(homeDir, ".codex", "plugins", "codex-nexus", "agents"));
-    expect(installedPluginAgentNxConfigs.length).toBeGreaterThan(0);
+    expect(installedPluginAgentNxConfigs).toHaveLength(expectedSubagentFiles.length);
     for (const agent of installedPluginAgentNxConfigs) {
       expect(agent.model).toBeUndefined();
       expect(agent.nx.command).toBe("nexus-mcp");

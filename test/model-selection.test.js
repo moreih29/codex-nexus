@@ -13,6 +13,17 @@ import {
 } from "../scripts/codex-nexus.mjs";
 
 const packageRoot = path.resolve(path.join(import.meta.dir, ".."));
+const currentAgentTargets = [
+  "architect",
+  "designer",
+  "postdoc",
+  "engineer",
+  "researcher",
+  "writer",
+  "reviewer",
+  "tester"
+];
+const currentModelTargets = ["default", ...currentAgentTargets];
 const modelCatalog = [
   { slug: "gpt-5.5", display_name: "GPT-5.5", visibility: "list" },
   { slug: "gpt-5.4", display_name: "gpt-5.4", visibility: "list" },
@@ -32,8 +43,35 @@ function writeAgent(repoRoot, agent, content = null) {
   return agentPath;
 }
 
+function writeJson(filePath, value) {
+  mkdirSync(path.dirname(filePath), { recursive: true });
+  writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+function readJson(filePath) {
+  return JSON.parse(readFileSync(filePath, "utf8"));
+}
+
 function readToml(filePath) {
   return TOML.parse(readFileSync(filePath, "utf8"));
+}
+
+async function captureStdout(callback) {
+  let stdout = "";
+  const originalWrite = process.stdout.write;
+  process.stdout.write = (chunk, ...args) => {
+    stdout += String(chunk);
+    if (typeof args.at(-1) === "function") {
+      args.at(-1)();
+    }
+    return true;
+  };
+  try {
+    const result = await callback();
+    return { result, stdout };
+  } finally {
+    process.stdout.write = originalWrite;
+  }
 }
 
 function testEnv(extra = {}) {
@@ -170,9 +208,68 @@ test("models command rejects lead, unknown targets, and unsupported models", asy
     )).rejects.toThrow("Unknown model target");
 
     await expect(modelsCommand(
+      { scope: "project", targets: "strategist", model: "gpt-5.4" },
+      { cwd: repoRoot, modelCatalog }
+    )).rejects.toThrow('Model target "strategist" has been removed');
+
+    await expect(modelsCommand(
       { scope: "project", targets: "engineer", model: "not-a-model" },
       { cwd: repoRoot, modelCatalog }
     )).rejects.toThrow("not available");
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("runCli --targets all after install applies the current non-lead agent set", async () => {
+  const repoRoot = makeProject();
+  try {
+    const env = testEnv();
+    await installCommand({ scope: "project" }, { cwd: repoRoot, env, inlineHooksSupported: false });
+
+    const { result: exitCode, stdout } = await captureStdout(() => runCli(
+      ["node", "codex-nexus", "models", "--scope", "project", "--targets", "all", "--model", "gpt-5.4"],
+      { cwd: repoRoot, env, modelCatalog }
+    ));
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("codex-nexus models complete");
+    for (const target of currentModelTargets) {
+      expect(stdout).toContain(`${target} -> gpt-5.4`);
+    }
+    expect(stdout).not.toContain("strategist ->");
+
+    expect(readToml(path.join(repoRoot, ".codex", "config.toml")).model).toBe("gpt-5.4");
+    for (const target of currentAgentTargets) {
+      expect(readToml(path.join(repoRoot, ".codex", "agents", `${target}.toml`)).model).toBe("gpt-5.4");
+    }
+    expect(readToml(path.join(repoRoot, ".codex", "agents", "lead.toml")).model).toBeUndefined();
+    expect(existsSync(path.join(repoRoot, ".codex", "agents", "strategist.toml"))).toBe(false);
+
+    const overrides = readJson(path.join(repoRoot, ".codex", ".codex-nexus", "model-overrides.json"));
+    expect(overrides.targets).toEqual(Object.fromEntries(currentModelTargets.map((target) => [target, "gpt-5.4"])));
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("runCli direct strategist target fails clearly before writing", async () => {
+  const repoRoot = makeProject();
+  try {
+    let error = null;
+    try {
+      await runCli(
+        ["node", "codex-nexus", "models", "--scope", "project", "--targets", "strategist", "--model", "gpt-5.4"],
+        { cwd: repoRoot, modelCatalog }
+      );
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toContain('Model target "strategist" has been removed');
+    expect(error.message).toContain("default, architect, designer, postdoc, engineer, researcher, writer, reviewer, tester");
+    expect(existsSync(path.join(repoRoot, ".codex"))).toBe(false);
   } finally {
     rmSync(repoRoot, { recursive: true, force: true });
   }
@@ -229,6 +326,34 @@ test("persisted model overrides are reapplied after install", async () => {
     expect(readToml(path.join(repoRoot, ".codex", "config.toml")).model).toBe("gpt-5.5");
     expect(readToml(path.join(repoRoot, ".codex", "agents", "engineer.toml")).model).toBe("gpt-5.5");
     expect(readToml(path.join(repoRoot, ".codex", "agents", "lead.toml")).model).toBeUndefined();
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("stale persisted strategist override is skipped during reinstall", async () => {
+  const repoRoot = makeProject();
+  try {
+    const env = testEnv();
+    await installCommand({ scope: "project" }, { cwd: repoRoot, env, inlineHooksSupported: false });
+    writeJson(path.join(repoRoot, ".codex", ".codex-nexus", "model-overrides.json"), {
+      schemaVersion: 1,
+      packageName: "codex-nexus",
+      scope: "project",
+      updatedAt: "2026-05-08T00:00:00.000Z",
+      targets: {
+        default: "gpt-5.5",
+        engineer: "gpt-5.5",
+        strategist: "gpt-5.4"
+      }
+    });
+
+    await installCommand({ scope: "project" }, { cwd: repoRoot, env, inlineHooksSupported: false });
+
+    expect(readToml(path.join(repoRoot, ".codex", "config.toml")).model).toBe("gpt-5.5");
+    expect(readToml(path.join(repoRoot, ".codex", "agents", "engineer.toml")).model).toBe("gpt-5.5");
+    expect(readToml(path.join(repoRoot, ".codex", "agents", "lead.toml")).model).toBeUndefined();
+    expect(existsSync(path.join(repoRoot, ".codex", "agents", "strategist.toml"))).toBe(false);
   } finally {
     rmSync(repoRoot, { recursive: true, force: true });
   }

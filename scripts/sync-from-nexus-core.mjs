@@ -16,7 +16,6 @@ const downstreamManagedAgentFiles = [
   "postdoc.toml",
   "researcher.toml",
   "reviewer.toml",
-  "strategist.toml",
   "tester.toml",
   "writer.toml"
 ];

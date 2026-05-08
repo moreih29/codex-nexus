@@ -75,7 +75,8 @@ npx -y codex-nexus models --scope project --targets engineer,tester --model inhe
 - 비대화형 direct mode에서는 `--targets`와 `--model`을 함께 쓴다.
 - 모델 선택지에는 `inherit`도 포함된다. direct mode에서는 `--model inherit`을 사용한다.
 - `--agents`는 `--targets`의 alias로 지원한다.
-- 대상은 `default`, `architect`, `designer`, `postdoc`, `strategist`, `engineer`, `researcher`, `writer`, `reviewer`, `tester`, `all`이다.
+- 현재 지원되는 대상은 `default`, `architect`, `designer`, `postdoc`, `engineer`, `researcher`, `writer`, `reviewer`, `tester`, `all`이다.
+- `all`은 `default`와 현재 지원되는 non-lead 하위 에이전트만 포함한다.
 - `default`는 scoped `.codex/config.toml`의 top-level `model`을 설정한다.
 - 하위 에이전트 대상은 scoped `.codex/agents/<agent>.toml`의 top-level `model`을 설정한다.
 - `inherit`을 선택하면 해당 대상 TOML의 top-level `model` 필드를 제거한다. 하위 에이전트는 scoped `.codex/config.toml`의 top-level 모델을 상속한다.
@@ -84,7 +85,7 @@ npx -y codex-nexus models --scope project --targets engineer,tester --model inhe
 기본 설치 상태의 하위 에이전트 TOML에는 `model` 필드를 쓰지 않는다.
 따라서 별도 override를 설정하지 않은 에이전트는 scoped `.codex/config.toml`의 top-level 모델을 상속한다.
 
-선택한 값은 scoped `.codex/.codex-nexus/model-overrides.json`에도 저장되어, 이후 `codex-nexus install`을 다시 실행해도 non-lead agent model override가 다시 적용된다.
+선택한 값은 scoped `.codex/.codex-nexus/model-overrides.json`에도 저장되어, 이후 `codex-nexus install`을 다시 실행해도 현재 지원되는 target model override가 다시 적용된다.
 
 ## 설치 범위
 
