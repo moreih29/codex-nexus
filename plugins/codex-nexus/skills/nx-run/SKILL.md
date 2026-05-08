@@ -41,6 +41,7 @@ For each task, call `update_plan([{ name: "<label>", state: "pending" }])` to re
 #### State Transitions
 
 - On task start, update to `in_progress` via `nx_task_update`; on completion, update to `completed`.
+- When transitioning a task to `completed`, include `result: {outcome, summary, artifacts?}` in the same `nx_task_update` call. `recorded_at` is server-stamped. Note that `status` records the workflow stage and `result.outcome` records the end verdict — they are orthogonal.
 - When a subagent is freshly spawned, include `owner={role, agent_id: <id from spawn>, resume_tier: <ephemeral|bounded|persistent>}` in the same `nx_task_update` call so that a future `nx_task_resume` can return this id.
 - At the same moment, update progress tracking with `update_plan([{ name: "<label>", state: "in_progress" }])` / `update_plan([{ name: "<label>", state: "completed" }])`. Reuse the exact label set at initial registration.
 
@@ -58,28 +59,84 @@ If `nx_task_resume` returns `agent_id: null`, or the harness can no longer locat
 
 ### Escalation Chain
 
-The default path is a ping-pong between Do and Check. If Check fails twice consecutively, escalate to HOW. If failure continues after HOW review, Lead escalates to the user.
+After receiving the Check result, Lead routes. Two inputs are read: Verdict and Flagged issues classification.
 
-Maximum path:
+#### Verdict Inputs
+
+| Verifier | PASS | Routing entry |
+|---|---|---|
+| Tester | PASS | FAIL |
+| Reviewer | APPROVED | REVISION_REQUIRED · BLOCKED |
+
+#### Routing Rules
+
+Lead decides the next action based on the Flagged issues classification in the Check report.
+
+| Flagged issues classification | Next action |
+|---|---|
+| Design flaw · architectural change required | Spawn the domain-matched HOW → consult → re-delegate to Do |
+| Scope conflict · user decision required · ambiguous judgment | Report to user · request direction |
+| Environment problem · unverifiable (UNVERIFIABLE included) | Fix environment / retry. If unresolvable, report to user |
+| Other (simple failure) | Re-delegate to the same Do (count +1) |
+
+Failures with a clear classification branch immediately at count zero. Only simple failures accumulate the count.
+
+#### Simple-Failure Cumulative Count
 
 ```
-Do → Check(fail) → Do → Check(fail) → HOW(review) → Do → Check(fail) → Lead → user
+Do → Check(fail) → Do → Check(fail) → HOW → Do → Check(fail) → Lead → user
 ```
 
-- **Check fails once** → re-delegate to the same Do agent (resume allowed), pass failure feedback, and run Check again after correction.
-- **Check fails twice consecutively** → Lead selects and spawns the HOW agent appropriate to the task domain, receives a reviewed/adjusted approach, then re-delegates to Do.
-- **Check still fails after HOW review** → Lead reports to the user with diagnostic details and requests direction.
+- **1st** → re-delegate to the same Do (attach failure feedback to the prompt)
+- **2nd consecutive** → spawn the domain-matched HOW → consult on approach → re-delegate to Do
+- **Still failing after HOW consultation** → report to the user with diagnostic details and request direction
+
+#### Mid-Do Notification Handling
+
+Do/Check agents may notify directly mid-task or in their completion reports per their own body definitions. When Lead receives such a notification, it applies the routing rules above immediately — independent of the chain count.
 
 ### Step 3: Verify
 
-Check subagents verify autonomously based on each task's `acceptance` field. Detailed judgment is left to the subagent.
+Lead delegates verification to the Check subagent using each task's `acceptance` field. Detailed judgment is the subagent's autonomous domain.
 
 - **Tester** — code verification (engineer deliverables).
 - **Reviewer** — document verification (writer deliverables).
 
 Verification failures follow the Escalation Chain above.
 
-### Step 4: Complete
+### Step 4: End-of-Cycle Review
+
+Once all tasks reach `completed` state, Lead reviews the cycle and decides whether to close.
+
+**Review scope**
+
+- Alignment between the original user request and the result — any missing area?
+- Cross-task deliverable integration — do the outputs operate without contradiction?
+- Any follow-ups implied but not explicitly stated within the request?
+
+**HOW consultation**
+
+Spawning the domain-matched HOW for cross-task review is the default — Architect for code, Designer for UX, Postdoc for research methodology. **If you skip the consultation, state the reason in the cycle-end report** — justified-skip examples: existing decisions or retrospectives already cover the cycle outcome / a single-task cycle with no cross-task review target / change radius is contained within one module with low irreversibility.
+
+When recording cycle-end synthesis or task failure notes via `nx_plan_analysis_add`, use `role='retrospective'` for end-of-cycle synthesis and `role='failure-note'` for per-task failure annotations. These two values are reserved as classification anchors for `nx_history_search`; arbitrary role values are also permitted.
+
+**Actions by decision**
+
+| Decision | Action |
+|---|---|
+| No additional work | Proceed to Step 5 Complete |
+| Missing coverage found | Register a new task with `nx_task_add` → return to Step 2 Execute |
+| Existing task needs rework | Reopen with `nx_task_update` → return to Step 2 Execute |
+
+**Iteration cap**
+
+The review runs at most **twice per cycle** (initial + one re-review). After follow-up work brings all tasks back to `completed`, the second review runs. If gaps remain at the second review, do NOT auto-register more work — report to the user and let them decide whether to extend the cycle. Extending the cycle is the user's decision domain.
+
+**Scope discipline**
+
+Catch missing coverage only within the original user request. Quality-improvement ideas outside the request are deferred to a new plan cycle — preventing scope creep within the current cycle.
+
+### Step 5: Complete
 
 Execute in order.
 
@@ -101,7 +158,8 @@ Execute in order.
 | 1. Preparation | Lead | Branch Guard, read tasks.json via `nx_task_list` / invoke nx-auto-plan if absent |
 | 2. Execute | Do subagents | Spawn per owner, resume decision via `nx_task_resume`, state transitions via `nx_task_update` |
 | 3. Verify | Check subagents | Tester (code) / Reviewer (document) verification against `acceptance` criteria |
-| 4. Complete | Lead | `nx_task_close`, git commit, report |
+| 4. End-of-Cycle Review | Lead (HOW if needed) | Cycle-level review, register additional work or close |
+| 5. Complete | Lead | `nx_task_close`, git commit, report |
 
 ---
 

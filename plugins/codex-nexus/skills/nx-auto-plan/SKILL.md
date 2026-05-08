@@ -7,17 +7,25 @@ triggers:
 ---
 ## Role
 
-Performs the same research and analysis process as nx-plan, but **Lead makes decisions autonomously without presenting options or waiting for user responses** to produce an execution plan. HOW subagent usage, researcher/explore investigations, prior-knowledge lookup, and issue decomposition are identical to nx-plan. The only difference is at decision time — instead of emitting a comparison table and awaiting user response, Lead deliberates internally and records the decision immediately.
+For each issue, collaborate with HOW subagents (architect/designer/postdoc), researcher, and explore to gather multi-angle analysis, then synthesize the results so Lead records the decision directly without waiting for a user response.
+
+The flow is as follows:
+
+1. For each issue, dynamically spawn the HOW subagent(s) matching its domain to receive independent analysis.
+2. Use explore when codebase orientation is needed and researcher when external investigation is needed.
+3. Lead synthesizes the gathered analysis, compares candidate options, and selects the most reasonable one.
+4. Decisions are recorded by Lead directly via `nx_plan_decide` without user confirmation; once all issues are decided, brief the user in a single pass.
 
 This skill does not execute. Execution is handled separately by the `[run]` flow. It is also the path `[run]` invokes internally when tasks.json is absent.
 
 ## Core Rules — Absolute Rules
 
-The three rules below are the identity of this skill. **Violating even one makes this plan, not auto-plan.**
+The four rules below are the identity of this skill. **Violating even one departs from auto-plan's intended form.**
 
-1. **Lead decides autonomously.** NEVER ask the user for option choices, delegate decision authority, or request acceptance. All decisions are recorded directly by Lead via `nx_plan_decide` after internal deliberation.
-2. **NEVER produce output that elicits a decision.** Do not emit comparison tables, A/B/C option enumerations, or questions like "which option would you prefer?" to the user. All candidate comparison happens entirely in Lead's internal deliberation; external output is limited to progress status or the final briefing.
-3. **NEVER stop between issues.** Proceed **without interruption** from issue analysis → `nx_plan_decide` → next issue. Do not seek confirmation or give intermediate reports immediately after individual decisions. Reporting happens once in Step 7 after all decisions are made.
+1. **Collaborate with HOW/researcher/explore to analyze each issue.** Spawning the HOW subagent matching the issue's domain is the default; bring in explore for code understanding and researcher for external investigation. Do NOT settle issues by Lead's solo reasoning — to skip collaboration, state the reason explicitly in the analysis text.
+2. **Lead decides autonomously.** NEVER ask the user for option choices, delegate decision authority, or request acceptance. All decisions are recorded directly by Lead via `nx_plan_decide` after internal deliberation grounded in the collaboration results.
+3. **NEVER produce output that asks the user to decide.** Do not emit comparison tables, A/B/C option enumerations, or questions like "which option would you prefer?" to the user. However, **the comparison work and per-issue analysis records themselves are normal activity** — candidate comparison happens in Lead's internal deliberation, and its core findings and dismissal rationale are written into the decision text in prose form. They are not externalized, but that does not mean they must not be produced.
+4. **NEVER stop for user confirmation.** Proceed from issue analysis → `nx_plan_decide` → next issue without seeking confirmation or sending intermediate approval requests immediately after individual decisions. The user-facing report happens only once at the Step 7 briefing after all issues are decided. **Waiting for HOW subagent results is not stopping** — when the issue's depth requires it, spawn HOW and wait for the results before deciding. What must not stop is "user confirmation," not "analytical depth."
 
 ## Supplementary Rules
 
@@ -41,12 +49,6 @@ Determine issue scope and complexity from the request itself. **Do NOT conduct a
 - Direction-setting → Lead selects the most reasonable direction based on research findings.
 - Abstract → broaden research scope and have Lead infer the root goal.
 
-#### HOW Subagent Selection
-
-- Lead autonomously selects HOW subagents matching the issue scope.
-- If the user explicitly named HOW agents, use them as-is and add missing axes when visible.
-- Additional HOW subagents can be spawned at any point during analysis.
-
 ### Step 2: Research
 
 Understand code, core knowledge, and prior decisions before forming the planning agenda.
@@ -54,7 +56,7 @@ Understand code, core knowledge, and prior decisions before forming the planning
 #### Existing Knowledge First
 
 - Read `.nexus/memory/` and `.nexus/context/` first.
-- Use `nx_history_search` to check whether prior decisions exist on similar topics.
+- Use `nx_history_search` to check for prior decisions, failures, and retrospectives on similar topics. Narrow the call with `scope` (e.g., `'decision'`, `'analysis'`, `'task.result.outcome'`) to retrieve only the relevant cell type and reduce context consumption.
 - If the needed information is already available, use it directly and skip or narrow subagent spawning.
 
 #### Approach Selection
@@ -76,25 +78,24 @@ Once research is complete, open the planning session with `nx_plan_start`. Any e
 Process issues one at a time. For each issue:
 
 1. Lead summarizes the current state and the problem.
-2. If needed, spawn HOW subagents for independent analysis.
+2. Spawn HOW subagents per the mapping below for independent analysis.
    - If reusing context from a prior HOW session for the same role is advantageous, check resume routing information with `nx_plan_resume` first.
    - If resumable, invoke `resume_agent({ id: "<id>" }) then send_input({ target: "<id>", message: "<resume prompt>" })` with the `agent_id` returned by `nx_plan_resume`; otherwise, spawn fresh.
 3. When HOW results return, record them on the issue with `nx_plan_analysis_add(issue_id, role, agent_id=<id from spawn>, summary)`. The `agent_id` is the value `nx_plan_resume` will return on a future resume request for the same role, so always pass the agent id obtained from the spawn tool response. Do not substitute a human-readable assigned name; names are only for messaging a currently running subagent and are not a safe resume identifier for a completed session.
 4. **Lead internal deliberation**: enumerate candidate options, compare pros/cons and trade-offs, and select the most reasonable one. **The outputs of this process (comparison tables, option lists, recommendation questions) MUST NOT be shown to the user.** All comparison happens entirely inside Lead; the conclusion and dismissal rationale are recorded in prose form in the Step 5 decision text.
 5. **⚡ Never stop.** Do not wait for user response; proceed immediately to Step 5 to record the decision. Do NOT send intermediate confirmation messages.
 
-#### HOW Domain Mapping
+#### HOW Subagent Selection
+
+For each issue, spawning the domain-matched HOW subagent for independent analysis is the default. Lead selects autonomously based on issue scope; use any HOW the user explicitly named, and propose additions for uncovered axes visible in the mapping table. Additional spawns are free at any point during analysis.
 
 | Domain Keywords | Recommended HOW |
 |---|---|
 | UI, UX, design, interface, user experience, layout | Designer |
 | Architecture, system design, performance, structural change, API, schema | Architect |
-| Business, market, strategy, positioning, competition, revenue | Strategist |
 | Research methodology, evidence evaluation, literature, experiment design | Postdoc |
 
-- If an issue matches a domain above, spawning the corresponding HOW is the default.
-- If the issue crosses multiple domains, spawn multiple HOWs together.
-- To skip spawning, state the reason explicitly in the analysis text.
+When an issue crosses multiple domains, spawn multiple HOWs together. **If you skip spawning, state the reason in the analysis text** — justified-skip examples: existing memory or history already covers the decision basis / no clear domain match in the table for a procedural issue / decision is self-evident with low irreversibility.
 
 ### Step 5: Record Decision
 
@@ -135,7 +136,7 @@ Fill in the following fields for each task:
 - `deps` — execution-order dependencies
 - `owner` — assigned according to the criteria below
 
-For issues where HOW subagents participated, reference the analysis recorded in Step 4, or re-spawn the same HOW to request domain-appropriate decomposition.
+For issues where HOW subagents participated, reference the analysis recorded in Step 4, or re-spawn the same HOW to receive domain-appropriate decomposition together with cross-issue consistency and missing-coverage checks.
 
 #### Owner Assignment Criteria
 
