@@ -47,9 +47,9 @@ jobs:
           echo "CODEX_NEXUS_TEST_PACKAGE_ROOT=${TMP_PACKAGE_ROOT}" >> "$GITHUB_ENV"
 
       - name: Install project-scoped assets for doctor check
-        run: node scripts/codex-nexus.mjs install --scope project
+        run: node scripts/codex-nexus.mjs install --scope project --trust-hooks
 
-      - name: Verify local doctor
+      - name: Verify local doctor after hook trust
         run: node scripts/codex-nexus.mjs doctor --scope project
 
       - name: Verify npm package contents

@@ -6,7 +6,7 @@
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-05-08
+## [0.4.1] - 2026-05-09
 
 ### Added
 
@@ -29,10 +29,22 @@
 - 사용자가 직접 소유한 `codex_hooks` 값은 보존된다. 오래된 Codex와 `codex_hooks`가 필요한 환경은 이 릴리스의 현재 지원 대상이 아니므로 이전 호환 조합을 유지해야 한다
 - 업데이트 후 `doctor`가 untrusted hook을 보고하면 `codex-nexus install --scope <user|project> --trust-hooks`를 실행하거나 TTY trust prompt를 수락해 trust state를 기록한다
 
+### Changed
+
+- generated Lead / agent / skill 자산을 로컬 `@moreih29/nexus-core@0.21.0` 기준으로 다시 동기화해 stale Strategist 문구와 산출물을 제거했다
+- plugin manifest, hook self-pin 등 배포 메타데이터를 `codex-nexus 0.4.1` / `nexus-core 0.21.0` 기준으로 갱신했다
+
+### Fixed
+
+- GitHub Actions validate workflow가 v0.129 trust model에 맞게 `--trust-hooks` 후 `doctor`를 실행하도록 조정했다
+- `sync:core`가 downstream에서 지원하지 않는 generated agent TOML을 publishable plugin agent set에 남기지 않도록 정리했다
+
 ### Verification notes
 
 - 릴리스 전 자동 검증은 `bun run check`, CLI help, isolated temp install/doctor, `npm pack --dry-run`을 포함해야 한다
 - live Codex v0.129 smoke에서 `codex-cli 0.129.0` 기준 clean user/project install, 기본 untrusted doctor, `--trust-hooks` 후 doctor 통과, project trust의 user config 기록, `plugin_hooks = true` duplicate 진단, trusted `SessionStart` hook dispatch를 확인했다. `/hooks` TUI와 `PreToolUse`/`PermissionRequest` runtime path는 자동화하지 않은 제한으로 남긴다
+
+## [0.4.0] - 2026-05-08
 
 ### Changed
 
