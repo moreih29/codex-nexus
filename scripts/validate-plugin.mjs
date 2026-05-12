@@ -23,6 +23,7 @@ const expectedSubagentFiles = [
   "tester.toml"
 ];
 const expectedAgentFiles = ["lead.toml", ...expectedSubagentFiles].sort();
+const expectedNxAgentFiles = [...expectedSubagentFiles];
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
@@ -129,7 +130,7 @@ assert(
   `Generated agent TOMLs must be exactly ${expectedAgentFiles.join(", ")}. Found: ${generatedAgentFiles.join(", ") || "(none)"}.`
 );
 assert(!generatedAgentFiles.includes("strategist.toml"), "Generated agent TOMLs must not include removed strategist.toml.");
-for (const agentFile of expectedSubagentFiles) {
+for (const agentFile of expectedNxAgentFiles) {
   const parsed = TOML.parse(readFileSync(path.join(agentsPath, agentFile), "utf8"));
   const nxConfig = parsed?.mcp_servers?.nx ?? {};
   assert(!Object.prototype.hasOwnProperty.call(parsed, "model"), `Agent ${agentFile} must inherit the top-level Codex model by default.`);

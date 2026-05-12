@@ -6,6 +6,22 @@
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-05-12
+
+### Changed
+
+- Lead 지시 설치 방식을 `model_instructions_file = "lead.instructions.md"` base-instruction wiring에서 `developer_instructions` 인라인 wiring으로 전환해, Codex custom subagent role TOML의 `developer_instructions`가 Lead 지시를 덮어쓸 수 있게 했다.
+- 부정확한 built-in role 재정의를 피하기 위해 `default` / `worker` / `explorer` shadow TOML은 설치하지 않고, Nexus custom subagent TOML만 Lead 지시를 덮어쓰도록 유지한다.
+
+### Compatibility
+
+- Nexus custom subagent는 각 role TOML의 `developer_instructions`로 Lead 지시를 덮어쓰지만, Codex built-in `default` / `worker` / `explorer` role을 임의로 재정의하지는 않는다.
+
+### Verification notes
+
+- 릴리스 전 자동 검증은 `bun install --frozen-lockfile`, `bun run check`, CLI help, `npm pack --dry-run`, tarball 기반 isolated user/project install smoke를 포함했다.
+- live Codex 확인은 `codex-cli 0.130.0`에서 버전과 noninteractive `codex exec` 실행만 확인했다. `codex exec`에서는 hook firing 증거가 관측되지 않아 실제 interactive session hook firing은 이번 릴리스의 runtime-verified 항목으로 주장하지 않는다.
+
 ## [0.4.1] - 2026-05-09
 
 ### Added

@@ -19,6 +19,7 @@ const downstreamManagedAgentFiles = [
   "tester.toml",
   "writer.toml"
 ];
+const agentFilesWithNx = [...downstreamManagedAgentFiles];
 const generatedAgentFiles = ["lead.toml", ...downstreamManagedAgentFiles];
 const nexusCoreSpecLeadPath = path.join(
   repoRoot,
@@ -148,7 +149,7 @@ function stripTopLevelModelFromPublishableAgent(agentPath) {
 }
 
 function applyDownstreamAgentLauncherCompatibilityFix(agentDir) {
-  for (const agentFile of downstreamManagedAgentFiles) {
+  for (const agentFile of agentFilesWithNx) {
     const agentPath = path.join(agentDir, agentFile);
     if (!existsSync(agentPath)) {
       continue;

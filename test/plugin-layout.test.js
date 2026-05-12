@@ -16,6 +16,7 @@ const expectedSubagentFiles = [
   "tester.toml"
 ];
 const expectedAgentFiles = ["lead.toml", ...expectedSubagentFiles].sort();
+const expectedNxAgentFiles = [...expectedSubagentFiles];
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
@@ -77,7 +78,7 @@ test("generated nexus-core artifacts are present", () => {
 });
 
 test("generated subagent nx MCP config stays aligned with upstream launcher metadata", () => {
-  const agentFiles = expectedSubagentFiles;
+  const agentFiles = expectedNxAgentFiles;
 
   for (const agentFile of agentFiles) {
     const parsed = TOML.parse(readFileSync(path.join(pluginRoot, "agents", agentFile), "utf8"));

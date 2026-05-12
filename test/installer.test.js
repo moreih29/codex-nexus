@@ -30,6 +30,7 @@ const expectedSubagentFiles = [
   "tester.toml"
 ];
 const expectedAgentFiles = ["lead.toml", ...expectedSubagentFiles].sort();
+const expectedNxAgentFiles = [...expectedSubagentFiles];
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
@@ -52,7 +53,7 @@ function readAgentTomlFiles(agentDir) {
 }
 
 function readAgentNxConfigs(agentDir) {
-  return expectedSubagentFiles
+  return expectedNxAgentFiles
     .map((entry) => {
       const parsed = TOML.parse(readFileSync(path.join(agentDir, entry), "utf8"));
       return {
@@ -99,7 +100,8 @@ test("project install wires plugin, config, hooks, agents, and skills", async ()
     expect(existsSync(result.managedStatePath)).toBe(true);
     const configContent = readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8");
     const config = TOML.parse(configContent);
-    expect(configContent).toContain('model_instructions_file = "lead.instructions.md"');
+    expect(config.model_instructions_file).toBeUndefined();
+    expect(config.developer_instructions).toBe(readFileSync(path.join(repoRoot, ".codex", "lead.instructions.md"), "utf8"));
     expect(config.features.multi_agent).toBe(true);
     expect(config.features.hooks).toBe(true);
     expect(config.features.codex_hooks).toBeUndefined();
@@ -116,7 +118,7 @@ test("project install wires plugin, config, hooks, agents, and skills", async ()
     expect(readAgentTomlFiles(path.join(repoRoot, ".codex", "agents"))).toEqual(expectedAgentFiles);
     expect(readAgentTomlFiles(path.join(repoRoot, "plugins", "codex-nexus", "agents"))).toEqual(expectedAgentFiles);
     const installedAgentNxConfigs = readAgentNxConfigs(path.join(repoRoot, ".codex", "agents"));
-    expect(installedAgentNxConfigs).toHaveLength(expectedSubagentFiles.length);
+    expect(installedAgentNxConfigs).toHaveLength(expectedNxAgentFiles.length);
     for (const agent of installedAgentNxConfigs) {
       expect(agent.model).toBeUndefined();
       expect(agent.nx.command).toBe(result.runtimeCommand);
@@ -124,7 +126,7 @@ test("project install wires plugin, config, hooks, agents, and skills", async ()
       expect(Array.isArray(agent.nx.disabled_tools)).toBe(true);
     }
     const installedPluginAgentNxConfigs = readAgentNxConfigs(path.join(repoRoot, "plugins", "codex-nexus", "agents"));
-    expect(installedPluginAgentNxConfigs).toHaveLength(expectedSubagentFiles.length);
+    expect(installedPluginAgentNxConfigs).toHaveLength(expectedNxAgentFiles.length);
     for (const agent of installedPluginAgentNxConfigs) {
       expect(agent.model).toBeUndefined();
       expect(agent.nx.command).toBe("nexus-mcp");
@@ -154,6 +156,8 @@ test("user install targets home-scoped marketplace and codex directories", async
     expect(existsSync(path.join(homeDir, ".codex", "agents", "lead.toml"))).toBe(true);
     expect(existsSync(path.join(homeDir, ".agents", "skills", "nx-run", "SKILL.md"))).toBe(true);
     const config = TOML.parse(readFileSync(path.join(homeDir, ".codex", "config.toml"), "utf8"));
+    expect(config.model_instructions_file).toBeUndefined();
+    expect(config.developer_instructions).toBe(readFileSync(path.join(homeDir, ".codex", "lead.instructions.md"), "utf8"));
     expect(config.features.hooks).toBe(true);
     expect(config.features.codex_hooks).toBeUndefined();
     expect(JSON.stringify(config.hooks.state)).toContain("trusted_hash");
@@ -162,7 +166,7 @@ test("user install targets home-scoped marketplace and codex directories", async
     expect(readAgentTomlFiles(path.join(homeDir, ".codex", "agents"))).toEqual(expectedAgentFiles);
     expect(readAgentTomlFiles(path.join(homeDir, ".codex", "plugins", "codex-nexus", "agents"))).toEqual(expectedAgentFiles);
     const installedAgentNxConfigs = readAgentNxConfigs(path.join(homeDir, ".codex", "agents"));
-    expect(installedAgentNxConfigs).toHaveLength(expectedSubagentFiles.length);
+    expect(installedAgentNxConfigs).toHaveLength(expectedNxAgentFiles.length);
     for (const agent of installedAgentNxConfigs) {
       expect(agent.model).toBeUndefined();
       expect(agent.nx.command).toBe(result.runtimeCommand);
@@ -170,7 +174,7 @@ test("user install targets home-scoped marketplace and codex directories", async
       expect(Array.isArray(agent.nx.disabled_tools)).toBe(true);
     }
     const installedPluginAgentNxConfigs = readAgentNxConfigs(path.join(homeDir, ".codex", "plugins", "codex-nexus", "agents"));
-    expect(installedPluginAgentNxConfigs).toHaveLength(expectedSubagentFiles.length);
+    expect(installedPluginAgentNxConfigs).toHaveLength(expectedNxAgentFiles.length);
     for (const agent of installedPluginAgentNxConfigs) {
       expect(agent.model).toBeUndefined();
       expect(agent.nx.command).toBe("nexus-mcp");
@@ -639,6 +643,7 @@ test("project uninstall restores prior files and preserves unrelated settings", 
       path.join(repoRoot, ".codex", "config.toml"),
       [
         'model_instructions_file = "custom.md"',
+        'developer_instructions = "custom developer guidance"',
         "[features]",
         "experimental = true",
         "[mcp_servers.nx]",
@@ -698,6 +703,7 @@ test("project uninstall restores prior files and preserves unrelated settings", 
 
     const config = TOML.parse(readFileSync(path.join(repoRoot, ".codex", "config.toml"), "utf8"));
     expect(config.model_instructions_file).toBe("custom.md");
+    expect(config.developer_instructions).toBe("custom developer guidance");
     expect(config.features.experimental).toBe(true);
     expect(config.features.multi_agent).toBeUndefined();
     expect(config.mcp_servers.nx.command).toBe("custom-node");
@@ -849,6 +855,7 @@ test("uninstall falls back to best-effort cleanup when rollback metadata is miss
     expect(config.features.other).toBe(true);
     expect(config.features.multi_agent).toBeUndefined();
     expect(config.model_instructions_file).toBeUndefined();
+    expect(config.developer_instructions).toBeUndefined();
 
     const hooks = readJson(path.join(repoRoot, ".codex", "hooks.json"));
     expect(JSON.stringify(hooks)).toContain("keep-fallback-hook");

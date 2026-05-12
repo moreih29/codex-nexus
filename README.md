@@ -136,14 +136,14 @@ npx -y codex-nexus install --scope project
 
 installer는 선택한 버전을 기준으로 아래를 맞춰 준다.
 
-- `model_instructions_file = "lead.instructions.md"`
+- Lead 지시를 `developer_instructions`에 인라인으로 기록
 - `[features].multi_agent = true`
 - `[features].child_agents_md = true`
 - `[features].hooks = true`
 - `[mcp_servers.nx]`
 - Codex v0.129+ inline hook wiring (`config.toml` `[hooks]`)
 - hook 정의만 기본으로 설치하고, opt-in 전에는 `hooks.state` trust entry를 쓰지 않음
-- `.codex/agents/*`
+- `.codex/agents/*` (Nexus custom subagent)
 - `.agents/skills/*`
 - marketplace entry
 - native hook surface 준비용 plugin manifest 항목 (`hooks: "./hooks.json"`)

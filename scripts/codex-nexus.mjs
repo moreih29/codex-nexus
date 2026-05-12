@@ -914,9 +914,9 @@ function readAgentNxServerConfigs(agentDir) {
     .filter((entry) => entry.command.length > 0 || entry.args.length > 0 || entry.disabledTools.length > 0);
 }
 
-function managedConfigPatch(runtimeCommand, serverPath) {
+function managedConfigPatch(runtimeCommand, serverPath, leadInstructions = "") {
   return {
-    modelInstructionsFile: LEAD_INSTRUCTIONS_FILE,
+    developerInstructions: leadInstructions,
     features: {
       multi_agent: true,
       child_agents_md: true,
@@ -926,19 +926,24 @@ function managedConfigPatch(runtimeCommand, serverPath) {
   };
 }
 
-function mergeConfigToml(existingContent, runtimeCommand, serverPath, managedHookSpec = null, configState = null) {
+function mergeConfigToml(existingContent, runtimeCommand, serverPath, managedHookSpec = null, configState = null, leadInstructions = "") {
   const parsed = existingContent ? TOML.parse(existingContent) : {};
   const features = {
     ...safeObject(parsed.features)
   };
   const mcpServers = safeObject(parsed.mcp_servers);
-  const managed = managedConfigPatch(runtimeCommand, serverPath);
+  const managed = managedConfigPatch(runtimeCommand, serverPath, leadInstructions);
 
   if (features.codex_hooks === true && configState?.features?.codex_hooks?.existed === false) {
     delete features.codex_hooks;
   }
 
-  parsed.model_instructions_file = managed.modelInstructionsFile;
+  if (parsed.model_instructions_file === LEAD_INSTRUCTIONS_FILE) {
+    delete parsed.model_instructions_file;
+  }
+  if (managed.developerInstructions.length > 0) {
+    parsed.developer_instructions = managed.developerInstructions;
+  }
   parsed.features = {
     ...features,
     ...managed.features
@@ -1154,6 +1159,7 @@ function captureConfigState(filePath) {
   return {
     fileExisted: content !== null,
     modelInstructionsFile: captureValueState(parsed, "model_instructions_file"),
+    developerInstructions: captureValueState(parsed, "developer_instructions"),
     features: Object.fromEntries(MANAGED_FEATURE_KEYS.map((key) => [key, captureValueState(features, key)])),
     mcpServerNx: captureValueState(mcpServers, "nx")
   };
@@ -1169,6 +1175,7 @@ function restoreConfigToml(existingContent, configState) {
   };
 
   restoreValueState(parsed, "model_instructions_file", configState.modelInstructionsFile);
+  restoreValueState(parsed, "developer_instructions", configState.developerInstructions);
 
   for (const key of MANAGED_FEATURE_KEYS) {
     restoreValueState(features, key, configState.features?.[key]);
@@ -1204,7 +1211,7 @@ function looksManagedNxServerConfig(nxConfig) {
     serverPath.endsWith(NEXUS_CORE_SERVER_RELATIVE_PATH);
 }
 
-function removeExactManagedConfigToml(existingContent) {
+function removeExactManagedConfigToml(existingContent, leadInstructions = "") {
   const parsed = existingContent ? TOML.parse(existingContent) : {};
   const features = {
     ...safeObject(parsed.features)
@@ -1215,6 +1222,9 @@ function removeExactManagedConfigToml(existingContent) {
 
   if (parsed.model_instructions_file === LEAD_INSTRUCTIONS_FILE) {
     delete parsed.model_instructions_file;
+  }
+  if (leadInstructions.length > 0 && parsed.developer_instructions === leadInstructions) {
+    delete parsed.developer_instructions;
   }
 
   for (const key of MANAGED_FEATURE_KEYS) {
@@ -1479,9 +1489,11 @@ function detectExistingManagedInstall(scopePaths) {
   const hooks = readTextIfExists(scopePaths.hooksJsonPath) ?? "";
   const marketplace = readTextIfExists(scopePaths.marketplacePath) ?? "";
   const parsedConfig = config ? TOML.parse(config) : {};
+  const leadInstructions = readTextIfExists(scopePaths.leadInstructionsPath) ?? "";
   const pluginManifest = readJsonIfExists(path.join(scopePaths.pluginInstallDir, ".codex-plugin", "plugin.json"));
 
   return parsedConfig.model_instructions_file === LEAD_INSTRUCTIONS_FILE ||
+    (leadInstructions.length > 0 && parsedConfig.developer_instructions === leadInstructions) ||
     hasManagedHooksRecord(parsedConfig.hooks) ||
     hooks.includes("codex-nexus-hook") ||
     marketplace.includes(`"name": "${PLUGIN_NAME}"`) ||
@@ -1542,6 +1554,20 @@ function writeManagedInstallState(scopePaths, state) {
 function ensureManagedInstallState(scopePaths) {
   const existingState = readManagedInstallState(scopePaths);
   if (existingState) {
+    if (!existingState.legacy && !objectHas(safeObject(existingState.config), "developerInstructions")) {
+      const state = {
+        ...existingState,
+        config: {
+          ...safeObject(existingState.config),
+          developerInstructions: captureValueState(
+            TOML.parse(readTextIfExists(scopePaths.configTomlPath) ?? ""),
+            "developer_instructions"
+          )
+        }
+      };
+      writeManagedInstallState(scopePaths, state);
+      return state;
+    }
     return existingState;
   }
 
@@ -1796,6 +1822,7 @@ async function installManagedSurfaces(installedPackageRoot, scopePaths, runtime 
   const nexusCoreServerPath = resolveNexusCoreServerPath(installedPackageRoot);
   const hookSurface = await resolveManagedHookSurface(scopePaths, runtime);
   const managedHookSpec = buildManagedHookSpec(installedPackageRoot);
+  const leadInstructions = readFileSync(path.join(pluginSourceRoot, LEAD_INSTRUCTIONS_FILE), "utf8");
 
   copyDirectory(pluginSourceRoot, scopePaths.pluginInstallDir);
   stripDefaultModelsFromAgentDir(path.join(scopePaths.pluginInstallDir, "agents"));
@@ -1803,10 +1830,7 @@ async function installManagedSurfaces(installedPackageRoot, scopePaths, runtime 
   stripDefaultModelsFromAgentDir(scopePaths.agentsDir);
   rewriteManagedAgentNxServerConfigs(scopePaths.agentsDir, runtimeCommand, nexusCoreServerPath);
   copyDirectory(path.join(scopePaths.pluginInstallDir, "skills"), scopePaths.skillsDir);
-  writeText(
-    scopePaths.leadInstructionsPath,
-    readFileSync(path.join(scopePaths.pluginInstallDir, LEAD_INSTRUCTIONS_FILE), "utf8")
-  );
+  writeText(scopePaths.leadInstructionsPath, leadInstructions);
   writeText(
     scopePaths.configTomlPath,
     mergeConfigToml(
@@ -1814,7 +1838,8 @@ async function installManagedSurfaces(installedPackageRoot, scopePaths, runtime 
       runtimeCommand,
       nexusCoreServerPath,
       hookSurface === HOOK_SURFACE_INLINE ? managedHookSpec : null,
-      managedState?.config ?? null
+      managedState?.config ?? null,
+      leadInstructions
     )
   );
   if (hookSurface === HOOK_SURFACE_JSON) {
@@ -1942,7 +1967,13 @@ async function uninstallCommand(options = {}, runtime = {}) {
     };
   }
 
-  writeMaybeText(scopePaths.configTomlPath, removeExactManagedConfigToml(readTextIfExists(scopePaths.configTomlPath)));
+  writeMaybeText(
+    scopePaths.configTomlPath,
+    removeExactManagedConfigToml(
+      readTextIfExists(scopePaths.configTomlPath),
+      readTextIfExists(scopePaths.leadInstructionsPath) ?? ""
+    )
+  );
   writeMaybeText(scopePaths.hooksJsonPath, stripManagedHooksJson(readTextIfExists(scopePaths.hooksJsonPath), false));
   writeMaybeText(scopePaths.marketplacePath, removeExactManagedMarketplaceJson(readTextIfExists(scopePaths.marketplacePath)));
 
@@ -2009,6 +2040,9 @@ function doctorCommand(options = {}, runtime = {}) {
     content.includes("node ./scripts/codex-nexus-hook.mjs")
   );
   const installedAgentNxConfigs = readAgentNxServerConfigs(paths.agentsDir);
+  const leadInstructions = readTextIfExists(paths.leadInstructionsPath) ?? "";
+  const hasManagedLeadDeveloperInstructions = leadInstructions.length > 0 &&
+    parsedConfig.developer_instructions === leadInstructions;
   const usesResolvedNxLauncher = (agentConfigs) => agentConfigs.length > 0 &&
     agentConfigs.every((agent) =>
       agent.command.length > 0 &&
@@ -2026,7 +2060,8 @@ function doctorCommand(options = {}, runtime = {}) {
       label: "config.toml",
       ok:
         existsSync(paths.configTomlPath) &&
-        config.includes(`model_instructions_file = "${LEAD_INSTRUCTIONS_FILE}"`) &&
+        parsedConfig.model_instructions_file !== LEAD_INSTRUCTIONS_FILE &&
+        hasManagedLeadDeveloperInstructions &&
         config.includes("[mcp_servers.nx]") &&
         nxCommand.length > 0 &&
         existsSync(nxCommand) &&

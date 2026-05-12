@@ -134,14 +134,14 @@ Installs into:
 
 The installer writes or updates:
 
-- `model_instructions_file = "lead.instructions.md"`
+- Lead instructions materialized inline as `developer_instructions`
 - `[features].multi_agent = true`
 - `[features].child_agents_md = true`
 - `[features].hooks = true`
 - `[mcp_servers.nx]`
 - Codex v0.129+ inline hook wiring (`config.toml` `[hooks]`)
 - hook definitions by default, without `hooks.state` trust entries unless you opt in
-- `.codex/agents/*`
+- `.codex/agents/*` (Nexus custom subagents)
 - `.agents/skills/*`
 - the marketplace entry
 - a native hook-ready plugin manifest entry (`hooks: "./hooks.json"`)
